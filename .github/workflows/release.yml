@@ -79,23 +79,26 @@ jobs:
   # built above for the GitHub Release — one artifact, many channels. Downloads
   # each release tarball, extracts its binary, stamps the version across the main
   # shim + per-platform packages, then publishes platform packages first and the
-  # main package last. Guarded by NPM_TOKEN (skipped on forks / when unset).
+  # main package last, via OIDC trusted publishing — NO stored token. Requires each
+  # package to already exist on npm with a configured trusted publisher (one-time
+  # bootstrap; see RELEASING.md). Provenance is generated automatically.
   publish-npm:
     needs: upload-assets
     runs-on: ubuntu-latest
     permissions:
+      id-token: write   # REQUIRED: mint the short-lived OIDC token for trusted publishing
       contents: read
     env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # for `gh release download`
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24                       # bundles npm 11.x
           registry-url: https://registry.npmjs.org
+      - name: Ensure npm >= 11.5.1 (OIDC trusted publishing)
+        run: npm install -g npm@latest && npm --version
       - name: Download release binaries and extract per target
-        if: ${{ env.NODE_AUTH_TOKEN != '' }}
         run: |
           set -eux
           tag="${{ github.ref_name }}"
@@ -116,22 +119,19 @@ jobs:
             fi
           done
       - name: Stamp version + inject binaries
-        if: ${{ env.NODE_AUTH_TOKEN != '' }}
         run: |
           set -eux
           version="${GITHUB_REF_NAME#v}"
           node npm/scripts/build-npm.mjs "$version" dist
-      - name: Publish platform packages then main package
-        if: ${{ env.NODE_AUTH_TOKEN != '' }}
+      # No NODE_AUTH_TOKEN: `npm publish` auto-detects the OIDC id-token. Unscoped
+      # packages are public by default; provenance is emitted automatically.
+      - name: Publish platform packages then main package (OIDC)
         run: |
           set -eux
           for plat in linux-x64-musl linux-arm64-musl darwin-x64 darwin-arm64 win32-x64; do
-            npm publish "npm/platforms/${plat}" --access public
+            npm publish "npm/platforms/${plat}"
           done
-          npm publish npm --access public
-      - name: Note when NPM_TOKEN is unset
-        if: ${{ env.NODE_AUTH_TOKEN == '' }}
-        run: echo "NPM_TOKEN not set; skipping npm publish."
+          npm publish npm
 
   # Requires a tap repo (fredrikolis/homebrew-tap) and a HOMEBREW_TAP_TOKEN
   # PAT with contents:write on it. Opens a formula-bump PR from the release assets.
