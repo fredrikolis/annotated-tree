@@ -33,9 +33,11 @@ node npm/scripts/build-npm.mjs "$version" dist
 
 echo ">> Publishing 6 packages (npm will prompt for your 2FA OTP each time)…"
 for plat in linux-x64-musl linux-arm64-musl darwin-x64 darwin-arm64 win32-x64; do
-  npm publish "npm/platforms/${plat}"
+  npm publish "./npm/platforms/${plat}"
 done
-npm publish npm
+# Leading ./ is REQUIRED: `npm publish npm` treats `npm` as the package spec (and
+# tries to republish the npm CLI); `./npm` publishes the local directory.
+npm publish ./npm
 
 cat <<'EOF'
 >> Bootstrap publish complete.
