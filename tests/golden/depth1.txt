@@ -1,0 +1,6 @@
+├── cmd/
+├── db/
+├── frontend/
+├── packages/
+├── services/
+└── README.md  # Covers: What the sample tree demonstrates and how to read it. Not: Real product docs. Use when: Understanding the annotated-tree test fixture.

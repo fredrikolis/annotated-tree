@@ -1,0 +1,4 @@
+# Cycle fixture: a deliberately-cyclic architecture. `alpha` and `beta` depend on
+# each other via Cargo path dependencies, which `forbid_cycles` below flags.
+[rules]
+forbid_cycles = true

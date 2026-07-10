@@ -1,0 +1,161 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (symbols feature)
+        run: cargo clippy --all-targets --features symbols -- -D warnings
+      - name: Clippy (mcp feature)
+        run: cargo clippy --all-targets --features mcp -- -D warnings
+      - name: Test
+        run: cargo test --all
+      - name: Test (symbols feature)
+        run: cargo test --all --features symbols
+      - name: Test (mcp feature)
+        run: cargo test --all --features mcp
+
+  # Dogfood: the tool must pass its own annotation convention.
+  self-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --release -- --strict-check src
+
+  # Lint the POSIX installer script.
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: ./installer
+
+  # E2E: build the release binary, package it under the release asset name +
+  # .sha256, serve it locally, run install.sh against it, and assert the
+  # installed binary runs. Freezes the download -> verify -> install contract.
+  installer-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binary
+        run: cargo build --release
+      - name: Package release asset + checksum
+        run: |
+          set -eux
+          # Host runner is linux x86_64; the installer requests the musl asset
+          # name for that platform, so publish the built binary under that name.
+          target="x86_64-unknown-linux-musl"
+          archive="annotated-tree-${target}.tar.gz"
+          mkdir -p srv
+          tar czf "srv/${archive}" -C target/release annotated-tree
+          ( cd srv && sha256sum "${archive}" > "${archive}.sha256" )
+      - name: Serve assets
+        run: |
+          ( cd srv && python3 -m http.server 8137 >/dev/null 2>&1 & )
+          # Wait for the server to accept connections.
+          for _ in $(seq 1 20); do
+            if curl -fsS "http://localhost:8137/" >/dev/null 2>&1; then break; fi
+            sleep 0.5
+          done
+      - name: Run installer and assert it works
+        run: |
+          set -eux
+          INSTALL_DIR="$(mktemp -d)"
+          ANNOTATED_TREE_BASE_URL="http://localhost:8137" INSTALL_DIR="$INSTALL_DIR" \
+            sh installer/install.sh
+          "$INSTALL_DIR/annotated-tree" --version
+      - name: Assert checksum mismatch aborts without installing
+        run: |
+          set -eux
+          target="x86_64-unknown-linux-musl"
+          archive="annotated-tree-${target}.tar.gz"
+          printf 'deadbeef  %s\n' "$archive" > "srv/${archive}.sha256"
+          INSTALL_DIR="$(mktemp -d)"
+          if ANNOTATED_TREE_BASE_URL="http://localhost:8137" INSTALL_DIR="$INSTALL_DIR" \
+              sh installer/install.sh; then
+            echo "installer did not abort on checksum mismatch" >&2
+            exit 1
+          fi
+          if [ -e "$INSTALL_DIR/annotated-tree" ]; then
+            echo "installer left a binary behind despite mismatch" >&2
+            exit 1
+          fi
+
+  # E2E: freeze the npm shim (npm/bin/annotated-tree.js) as glue. Build the
+  # release binary, stage it into the host platform package exactly as npm would
+  # install it, then drive the shim: assert --version works, a nonzero tool exit
+  # is forwarded, and a missing platform package errors explicitly (never silent).
+  npm-shim-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: main package.json is valid
+        run: node -e "require('./npm/package.json')"
+      - name: npm pack (main + a platform package)
+        run: |
+          set -eux
+          npm pack --dry-run ./npm
+          npm pack --dry-run ./npm/platforms/linux-x64-musl
+      - name: Build release binary
+        run: cargo build --release
+      - name: Stage the built binary into the host platform package
+        run: |
+          set -eux
+          # Host runner is linux x64 -> the linux-x64-musl package. Place it on
+          # the shim's module resolution path (npm/node_modules) exactly as an
+          # `npm install` of the optional dep would.
+          dest="npm/node_modules/annotated-tree-linux-x64-musl"
+          mkdir -p "$dest"
+          cp target/release/annotated-tree "$dest/"
+          cp npm/platforms/linux-x64-musl/package.json "$dest/"
+      - name: Shim forwards --version
+        run: |
+          set -eux
+          node npm/bin/annotated-tree.js --version
+      - name: Shim forwards a nonzero tool exit code
+        run: |
+          set -eux
+          bad="$(mktemp -d)"
+          printf '// no io contract here\n' > "$bad/bad.rs"
+          code=0
+          node npm/bin/annotated-tree.js --strict-check "$bad" || code=$?
+          test "$code" -eq 1
+      - name: Missing platform package errors explicitly (nonzero, not silent)
+        run: |
+          set -eux
+          rm -rf npm/node_modules
+          if node npm/bin/annotated-tree.js --version; then
+            echo "expected the shim to fail when no platform package is installed" >&2
+            exit 1
+          fi

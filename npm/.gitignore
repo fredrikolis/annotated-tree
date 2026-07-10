@@ -1,0 +1,5 @@
+# Injected at publish time from release artifacts — never committed.
+node_modules/
+*.tgz
+platforms/*/annotated-tree
+platforms/*/annotated-tree.exe

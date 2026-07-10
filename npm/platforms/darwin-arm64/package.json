@@ -1,0 +1,19 @@
+{
+  "name": "annotated-tree-darwin-arm64",
+  "version": "0.1.0",
+  "description": "Prebuilt annotated-tree binary for macOS arm64 (Apple silicon). Installed automatically as an optional dependency of `annotated-tree`.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fredrikolis/annotated-tree.git"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "annotated-tree"
+  ]
+}

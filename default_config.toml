@@ -1,0 +1,73 @@
+# Built-in default configuration for annotated-tree.
+# Precedence (low -> high): these defaults < ~/.config/annotated-tree/config.toml
+# < ./.annotated-tree.toml (nearest ancestor) < command-line flags.
+
+[convention]
+# Regex a code annotation must match to pass --strict-check. The default enforces
+# the "| I/O:" contract section. Rust's regex engine is linear-time, so this
+# pattern is safe to override with untrusted repo config.
+require = '\|\s*I/O:'
+hint = "| I/O:"
+
+[limits]
+# Runaway-scope safety valve. Aborts (exit 2, nothing written) once a root exceeds
+# this many code files, before any model/graph/render work. Raise with --max-files
+# <N>, disable with --no-limit, or set ANNOTATED_TREE_MAX_FILES. Peak memory scales
+# with FILE COUNT (per file we read only a 64 KB annotation head + metadata().len(),
+# never whole contents), so a file cap — not a byte cap — is the right guard here.
+max_files = 10000
+
+[rules]
+# Architectural dependency rules, enforced by --strict-check alongside annotation
+# linting. All optional; these defaults enforce nothing. Names are canonical
+# package names (as shown in the dependency tree).
+deny = []              # e.g. [["web", "core"]] forbids package `web` depending on `core`
+forbid_cycles = false  # flag any dependency cycle among internal packages
+forbid_orphans = false # flag internal packages with no dependency edge in or out
+
+[display]
+show_age = false        # append file mtimes (non-deterministic); opt in with --age
+show_tokens = false     # append a rough per-file/package token estimate; opt in with --tokens
+show_symbols = false    # outline top-level definitions per file (needs a `symbols`-feature build); opt in with --symbols
+ascii = false           # Unicode box-drawing by default; --ascii for restricted terminals
+gitignore = true        # respect .gitignore by default; --no-gitignore to disable
+include_tests = false   # "tests" directories are hidden unless --include-tests
+
+# --- Languages -------------------------------------------------------------
+# Each entry maps file extensions to how the first-line annotation is found.
+# The extraction engine always: skips a shebang, skips blank lines, then reads
+# the first comment using the tokens below. Set `pattern` to bypass the engine
+# with a capture-group regex: the annotation is taken from the capture group named
+# `annotation` if present, else capture group 1. Set `require`/`hint` to override
+# the convention for that language.
+
+[languages.python]
+extensions = [".py"]
+comment = "#"
+docstring = ['"""', "'''"]
+
+[languages.rust]
+extensions = [".rs"]
+comment = "//"
+
+[languages.go]
+extensions = [".go"]
+comment = "//"
+
+[languages.typescript]
+extensions = [".ts", ".tsx", ".js", ".jsx"]
+comment = "//"
+
+[languages.vue]
+extensions = [".vue", ".svelte"]
+block = ["<!--", "-->"]
+
+[languages.sql]
+extensions = [".sql"]
+comment = "--"
+
+[languages.markdown]
+extensions = [".md"]
+block = ["<!--", "-->"]
+require = '\S'           # markdown only needs *an* annotation, not the I/O contract
+hint = "an HTML comment"

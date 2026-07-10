@@ -1,0 +1,78 @@
+[package]
+name = "annotated-tree"
+version = "0.1.0"
+edition = "2021"
+description = "Map an unfamiliar codebase in one command: an annotated directory tree with a cross-ecosystem (Python/npm/Cargo/Go) package dependency graph."
+license = "MIT"
+repository = "https://github.com/fredrikolis/annotated-tree"
+readme = "README.md"
+keywords = ["codebase", "dependency-graph", "tree", "monorepo", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "annotated-tree"
+path = "src/main.rs"
+
+[lib]
+name = "annotated_tree"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+globset = "0.4"
+ignore = "0.4"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Symbol-outline extraction (opt-in `symbols` feature). Kept OPTIONAL so the
+# default `cargo build`/`cargo install` pulls in ZERO tree-sitter crates — the
+# grammars are large and only earn their weight for `--symbols` users.
+tree-sitter = { version = "0.25", optional = true }
+tree-sitter-python = { version = "0.23", optional = true }
+tree-sitter-rust = { version = "0.23", optional = true }
+tree-sitter-go = { version = "0.23", optional = true }
+tree-sitter-typescript = { version = "0.23", optional = true }
+# tree-sitter 0.25+ `QueryCursor::matches` yields a StreamingIterator, not a
+# std Iterator; this trait provides `.next()` over borrowed matches.
+streaming-iterator = { version = "0.1", optional = true }
+
+# MCP server mode (opt-in `mcp` feature). The ONLY async surface in the tool, so
+# both the runtime and the SDK are OPTIONAL: a default `cargo build`/`cargo install`
+# links NO tokio and NO rmcp, keeping the sync-core justification in `lib.rs` true.
+# Transport is stdio only (the correct local-desktop MCP transport); no HTTP stack.
+rmcp = { version = "2", default-features = false, features = [
+    "server",
+    "transport-io",
+    "macros",
+], optional = true }
+tokio = { version = "1", default-features = false, features = [
+    "rt-multi-thread",
+    "io-std",
+], optional = true }
+
+[features]
+# Tree-sitter symbol/definition outline. All grammar crates live behind this one
+# switch so the base binary stays lean and dependency-light.
+symbols = [
+    "dep:tree-sitter",
+    "dep:tree-sitter-python",
+    "dep:tree-sitter-rust",
+    "dep:tree-sitter-go",
+    "dep:tree-sitter-typescript",
+    "dep:streaming-iterator",
+]
+
+# MCP server mode. Pulls in the tokio runtime + the rmcp MCP SDK behind this one
+# switch; the default binary stays async-runtime-free.
+mcp = ["dep:rmcp", "dep:tokio"]
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+# NOT `panic = "abort"`: the `--mcp` server converts a panicked handler task into a
+# JSON-RPC error so the long-lived server survives (see `mcp.rs`), which only works
+# when panics unwind. The small binary-size cost is worth a server that stays alive.

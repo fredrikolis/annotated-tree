@@ -1,0 +1,23 @@
+{
+  "name": "annotated-tree-linux-arm64-musl",
+  "version": "0.1.0",
+  "description": "Prebuilt annotated-tree binary for linux arm64 (static musl). Installed automatically as an optional dependency of `annotated-tree`.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fredrikolis/annotated-tree.git"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "musl",
+    "glibc"
+  ],
+  "files": [
+    "annotated-tree"
+  ]
+}

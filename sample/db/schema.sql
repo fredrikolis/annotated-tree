@@ -1,0 +1,1 @@
+-- Schema: Defines the jobs and results tables. Responsible for storage shape. NOT concerned with queries. | I/O: (DDL) -> tables

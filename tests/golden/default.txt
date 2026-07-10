@@ -1,0 +1,39 @@
+├── cmd/
+│   └── tool/  # ext: github.com/spf13/cobra
+│       └── main.go  # CLI entrypoint: Parses flags and dispatches subcommands. Responsible for arg handling. NOT concerned with business logic. | I/O: (args) -> exit_code
+├── db/
+│   └── schema.sql  # Schema: Defines the jobs and results tables. Responsible for storage shape. NOT concerned with queries. | I/O: (DDL) -> tables
+├── frontend/
+│   ├── ui/  # used by: [@acme/web]
+│   │   └── src/
+│   │       └── index.ts  # Barrel: Re-exports every shared UI component.
+│   └── web/  # <- depends on [@acme/ui]
+│       └── src/
+│           ├── App.tsx  # App: Top-level component composing the page shell. Responsible for layout. NOT concerned with data fetching. | I/O: (Props) -> JSX
+│           ├── Button.vue  # Button: A clickable primary/secondary button. Responsible for click emit. NOT concerned with form state. | I/O: (props) -> emit(click)
+│           ├── Widget.svelte  # Widget: Displays a live metric tile. Responsible for formatting. NOT concerned with fetching. | I/O: (value) -> markup
+│           └── index.ts  # Entry: Mounts the React root into the DOM. Responsible for bootstrap only. NOT concerned with routing. | I/O: (HTMLElement) -> void
+├── packages/
+│   ├── api/  # <- depends on [acme-core]
+│   │   └── acme_api/
+│   │       ├── __init__.py  # Package marker: Exposes the HTTP application factory. | I/O: () -> module
+│   │       ├── main.py  # App factory: Builds and configures the ASGI application. Responsible for wiring routes and middleware. NOT concerned with business logic. | I/O: (Settings) -> ASGIApp
+│   │       ├── models.py  # Schemas: Pydantic request/response models. Responsible for boundary validation. NOT concerned with storage. | I/O: (dict) -> Model
+│   │       └── routes.py  # Routes: Declares HTTP endpoints and request handlers. Responsible for I/O validation and dispatch. NOT concerned with computation (delegates to core). | I/O: (Request) -> Response
+│   ├── core/  # used by: [acme-api, acme-worker]
+│   │   └── acme_core/
+│   │       ├── __init__.py  # Package marker: Re-exports the core public API. | I/O: () -> module
+│   │       ├── engine.py  # Engine: Runs the core computation loop. Responsible for scheduling work units. NOT concerned with transport or persistence. | I/O: (Job) -> Result
+│   │       └── utils.py  # small helpers used across the engine
+│   └── worker/  # <- depends on [acme-core]
+│       └── acme_worker/
+│           └── tasks.py  # Tasks: Defines background jobs run off the queue. Responsible for retry and idempotency. NOT concerned with HTTP. | I/O: (Message) -> None
+├── services/
+│   ├── gateway/  # <- depends on [shared]
+│   │   └── src/
+│   │       ├── lib.rs  # Gateway core: Routes requests to backend services. Responsible for proxying and auth. NOT concerned with business rules. | I/O: (Request) -> Response
+│   │       └── main.rs  # Binary entrypoint: Boots the gateway server. Responsible for process lifecycle. NOT concerned with routing logic. | I/O: (env) -> exit_code
+│   └── shared/  # used by: [gateway]
+│       └── src/
+│           └── lib.rs  # Shared types: Wire structs used by every service. Responsible for serde contracts. NOT concerned with transport. | I/O: (bytes) -> Struct
+└── README.md  # Covers: What the sample tree demonstrates and how to read it. Not: Real product docs. Use when: Understanding the annotated-tree test fixture.

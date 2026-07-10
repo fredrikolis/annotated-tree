@@ -1,0 +1,35 @@
+{
+  "name": "annotated-tree",
+  "version": "0.1.0",
+  "description": "Enforceable, zero-LLM-cost repo self-documentation: an annotated directory tree with a cross-ecosystem dependency graph.",
+  "keywords": [
+    "cli",
+    "tree",
+    "codebase",
+    "documentation",
+    "agents"
+  ],
+  "homepage": "https://github.com/fredrikolis/annotated-tree",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fredrikolis/annotated-tree.git"
+  },
+  "license": "MIT",
+  "mcpName": "io.github.fredrikolis/annotated-tree",
+  "bin": {
+    "annotated-tree": "bin/annotated-tree.js"
+  },
+  "files": [
+    "bin/annotated-tree.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "annotated-tree-linux-x64-musl": "0.1.0",
+    "annotated-tree-linux-arm64-musl": "0.1.0",
+    "annotated-tree-darwin-x64": "0.1.0",
+    "annotated-tree-darwin-arm64": "0.1.0",
+    "annotated-tree-win32-x64": "0.1.0"
+  }
+}

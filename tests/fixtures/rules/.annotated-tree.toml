@@ -1,0 +1,4 @@
+# Rules fixture: a deliberately-violating architecture. `web` depends on `core`
+# via a Cargo path dependency, which the deny rule below forbids.
+[rules]
+deny = [["web", "core"]]
