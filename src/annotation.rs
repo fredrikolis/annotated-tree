@@ -149,8 +149,12 @@ mod tests {
         // A BOM ahead of the shebang must not make line 1 look non-shebang and get
         // mis-read as the annotation. decode_head strips it at the read boundary.
         let l = lang(Some("#"), None, &[]);
-        let head = decode_head("\u{feff}#!/usr/bin/env bash\n# Deploy: x | I/O: (a) -> b\n".as_bytes());
-        assert_eq!(extract_from(&head, &l).unwrap(), "Deploy: x | I/O: (a) -> b");
+        let head =
+            decode_head("\u{feff}#!/usr/bin/env bash\n# Deploy: x | I/O: (a) -> b\n".as_bytes());
+        assert_eq!(
+            extract_from(&head, &l).unwrap(),
+            "Deploy: x | I/O: (a) -> b"
+        );
     }
 
     #[test]
