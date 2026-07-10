@@ -28,6 +28,8 @@
 │   └── worker/  # <- depends on [acme-core]
 │       └── acme_worker/
 │           └── tasks.py  # Tasks: Defines background jobs run off the queue. Responsible for retry and idempotency. NOT concerned with HTTP. | I/O: (Message) -> None
+├── scripts/
+│   └── deploy.sh  # Deploy: ships the built artifact to the release host. Responsible for upload. NOT concerned with building. | I/O: (artifact) -> exit_code
 ├── services/
 │   ├── gateway/  # <- depends on [shared]
 │   │   └── src/

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Launcher shim: resolves the platform-specific prebuilt annotated-tree binary and forwards argv, stdio, and its exit code. NOT the tool itself — adds no behaviour. | I/O: (process.argv, host platform/arch/libc) -> spawned binary's stdout/stderr + exit code
 "use strict";
 

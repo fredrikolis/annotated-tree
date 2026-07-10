@@ -24,9 +24,18 @@ fn read_head(path: &Path) -> Option<String> {
     let mut buf = vec![0u8; HEAD_BYTES];
     let n = file.read(&mut buf).ok()?;
     buf.truncate(n);
-    // Lossy is fine: annotations are ASCII/UTF-8; a stray invalid byte in a
-    // binary file just yields no match.
-    Some(String::from_utf8_lossy(&buf).into_owned())
+    Some(decode_head(&buf))
+}
+
+/// Decode a raw head window to text. Normalizes at this single read boundary:
+/// lossy UTF-8 (a stray byte in a binary file just yields no match) and strips a
+/// leading UTF-8 BOM so a BOM+shebang file isn't mis-read as lacking a first-line
+/// shebang. Kept pure and separate so it is trivially testable.
+fn decode_head(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    text.strip_prefix('\u{feff}')
+        .unwrap_or(text.as_ref())
+        .to_string()
 }
 
 /// Pure extraction over already-read text. Separated so it is trivially testable.
@@ -113,6 +122,35 @@ mod tests {
             extract_from(text, &l).unwrap(),
             "Role: does X. | I/O: (a) -> b"
         );
+    }
+
+    #[test]
+    fn skips_bash_shebang_reads_line_two() {
+        let l = lang(Some("#"), None, &[]);
+        let text = "#!/usr/bin/env bash\n# Deploy: ships it. | I/O: (artifact) -> exit_code\n";
+        assert_eq!(
+            extract_from(text, &l).unwrap(),
+            "Deploy: ships it. | I/O: (artifact) -> exit_code"
+        );
+    }
+
+    #[test]
+    fn skips_node_shebang_reads_slash_comment() {
+        let l = lang(Some("//"), None, &[]);
+        let text = "#!/usr/bin/env node\n// CLI: runs it. | I/O: (argv) -> void\n";
+        assert_eq!(
+            extract_from(text, &l).unwrap(),
+            "CLI: runs it. | I/O: (argv) -> void"
+        );
+    }
+
+    #[test]
+    fn strips_leading_bom_before_shebang() {
+        // A BOM ahead of the shebang must not make line 1 look non-shebang and get
+        // mis-read as the annotation. decode_head strips it at the read boundary.
+        let l = lang(Some("#"), None, &[]);
+        let head = decode_head("\u{feff}#!/usr/bin/env bash\n# Deploy: x | I/O: (a) -> b\n".as_bytes());
+        assert_eq!(extract_from(&head, &l).unwrap(), "Deploy: x | I/O: (a) -> b");
     }
 
     #[test]

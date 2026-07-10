@@ -7,6 +7,21 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-10
+
+### Fixed
+- **`npx annotated-tree` / `npm install` failed** — the launcher shim
+  (`bin/annotated-tree.js`) opened with its annotation comment instead of a
+  `#!/usr/bin/env node` shebang, so the npm-linked executable could not run. The
+  shebang is restored and CI now asserts it on line 1.
+- Strip a leading UTF-8 BOM when reading a file's annotation head, so a
+  BOM-prefixed shebang file is no longer mis-read as lacking a first-line shebang.
+
+### Added
+- **Shell script support** — `.sh` / `.bash` files are now recognized by the
+  annotation engine (shebang skipped, annotation read from the first comment
+  below it).
+
 ## [0.1.0] - 2026-07-10
 
 Initial release.
@@ -44,5 +59,6 @@ Initial release.
   checksum-verifying `curl | sh` installer.
 - Golden-file and integration test suite; CI across Linux, macOS, and Windows.
 
-[Unreleased]: https://github.com/fredrikolis/annotated-tree/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/fredrikolis/annotated-tree/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/fredrikolis/annotated-tree/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/fredrikolis/annotated-tree/releases/tag/v0.1.0

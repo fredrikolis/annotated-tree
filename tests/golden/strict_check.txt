@@ -1,4 +1,4 @@
 frontend/ui/src/index.ts:1: annotation missing required '| I/O:'
 packages/core/acme_core/utils.py:1: annotation missing required '| I/O:'
 
-Found 2 error(s) in 19 files checked
+Found 2 error(s) in 20 files checked

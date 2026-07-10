@@ -62,6 +62,12 @@ comment = "//"
 extensions = [".vue", ".svelte"]
 block = ["<!--", "-->"]
 
+[languages.shell]
+# Shell scripts must keep a `#!` shebang on line 1; the engine skips it and reads
+# the annotation from the first comment below (typically line 2).
+extensions = [".sh", ".bash"]
+comment = "#"
+
 [languages.sql]
 extensions = [".sql"]
 comment = "--"

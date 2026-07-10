@@ -1,6 +1,6 @@
 {
   "name": "annotated-tree",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Enforceable, zero-LLM-cost repo self-documentation: an annotated directory tree with a cross-ecosystem dependency graph.",
   "keywords": [
     "cli",

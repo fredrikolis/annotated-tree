@@ -1,1 +1,4 @@
 /target
+# Extracted release binaries staged for `npm/scripts/build-npm.mjs` and other
+# packaging — injected from release artifacts, never committed.
+/dist

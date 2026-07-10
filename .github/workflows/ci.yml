@@ -122,6 +122,13 @@ jobs:
           node-version: 20
       - name: main package.json is valid
         run: node -e "require('./npm/package.json')"
+      - name: bin shim starts with a node shebang (npx/bin-link exec relies on it)
+        run: |
+          set -eux
+          # The `node <file>` steps below bypass the shebang; a real `npx`/bin-link
+          # invocation does not. Guard line 1 so the annotation can never again
+          # displace the shebang and silently break `npx annotated-tree`.
+          test "$(head -1 npm/bin/annotated-tree.js)" = '#!/usr/bin/env node'
       - name: npm pack (main + a platform package)
         run: |
           set -eux
