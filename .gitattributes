@@ -1,0 +1,4 @@
+# Normalize line endings to LF on every platform. The CLI emits LF and the golden
+# tests compare its output byte-for-byte, so a CRLF checkout (Windows autocrlf)
+# would spuriously fail. `text=auto` leaves detected binaries untouched.
+* text=auto eol=lf
