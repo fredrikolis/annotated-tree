@@ -1,6 +1,11 @@
 <!-- Covers: What annotated-tree is, when/why to use it, and how to adopt it in a project (CLAUDE.md, CI, config). Not: Exhaustive flag reference (see `annotated-tree --help`) or internals. Use when: Evaluating or adopting the tool. -->
 # annotated-tree
 
+[![CI](https://github.com/fredrikolis/annotated-tree/actions/workflows/ci.yml/badge.svg)](https://github.com/fredrikolis/annotated-tree/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/annotated-tree.svg)](https://crates.io/crates/annotated-tree)
+[![npm](https://img.shields.io/npm/v/annotated-tree.svg)](https://www.npmjs.com/package/annotated-tree)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Understand an unfamiliar codebase in one command — without reading a line of
 source.** `annotated-tree` renders a whole-repo *map*: the directory structure,
 each file's first-line **responsibility annotation**, and a **cross-ecosystem
