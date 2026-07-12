@@ -1,1 +1,1 @@
-// Core: shared engine primitives for the rules fixture. NOT concerned with web. | I/O: () -> ()
+// Concern: shared engine primitives for the rules fixture | Non-concern: web surface (the web crate owns it) | IO: none

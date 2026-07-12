@@ -1,4 +1,4 @@
-// Symbols engine: The single grammar-agnostic query runner — parses source, runs a per-grammar `.scm` query, and turns kind-tagged captures into `Symbol`s. NOT concerned with which node kinds a grammar uses (that lives in the per-language query). | I/O: (source, Language, query) -> [Symbol]
+// Concern: the single grammar-agnostic query runner — parses source, runs a per-grammar `.scm` query, and turns kind-tagged captures into `Symbol`s | Non-concern: which node kinds a grammar uses (that lives in the per-language query) | IO: (source, Language, query) -> [Symbol]
 
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Language, Parser, Query, QueryCursor};

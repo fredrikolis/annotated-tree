@@ -1,4 +1,4 @@
-// Symbols: The definition-outline seam — plain `Symbol` data (always compiled) plus a feature-gated tree-sitter extractor registry keyed by the config language name. NOT concerned with walking, reading files, or rendering. | I/O: (source text, language name) -> [Symbol]
+// Concern: the definition-outline seam — plain `Symbol` data (always compiled) plus a feature-gated tree-sitter extractor registry keyed by the config language name | Non-concern: walking, reading files, or rendering | IO: (source text, language name) -> [Symbol]
 
 use serde::Serialize;
 

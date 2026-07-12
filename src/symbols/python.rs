@@ -1,4 +1,4 @@
-// Python symbols: The Python grammar seam — binds tree-sitter-python to the shared engine via a vendored definition query. NOT concerned with query execution. | I/O: () -> (Language, query)
+// Concern: the Python grammar seam — binds tree-sitter-python to the shared engine via a vendored definition query | Non-concern: query execution | IO: () -> (Language, query)
 
 use tree_sitter::Language;
 

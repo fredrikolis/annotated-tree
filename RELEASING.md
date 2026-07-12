@@ -1,4 +1,4 @@
-<!-- Covers: How to cut a release and validate the pipeline locally first. Not: Tool usage (see README). Use when: Publishing a new version. -->
+<!-- Concern: how to cut a release and validate the pipeline locally first | Non-concern: tool usage (see README) | IO: none -->
 # Releasing
 
 `annotated-tree` ships a single static binary through several channels from one
@@ -16,7 +16,6 @@ viable batteries-included alternative (see the end of this doc).
 | GitHub Releases | download tarball + `.sha256` | `upload-assets` |
 | Shell installer | `curl … annotated-tree-installer.sh \| sh` | `create-release` (uploads `installer/install.sh`) |
 | npm | `npx annotated-tree` | `publish-npm` job (reuses `upload-assets` binaries) |
-| Homebrew | `brew install fredrikolis/tap/annotated-tree` | `homebrew` job |
 
 Target matrix: linux `{x86_64,aarch64} × {gnu,musl}`, macOS `{x86_64,aarch64}`,
 Windows `x86_64-msvc`. The linux cross targets build with `cargo-zigbuild`.
@@ -52,11 +51,6 @@ require pushing.
   ```
   `act` cannot exercise the macOS/Windows matrix legs or real asset upload/OIDC —
   validate those with the zig builds above and the binary smoke test.
-- **Homebrew formula** (once a tap exists):
-  ```sh
-  brew install --build-from-source ./Formula/annotated-tree.rb
-  brew audit --strict --new --formula ./Formula/annotated-tree.rb
-  ```
 - **Shell installer** (`installer/install.sh`) — validate the download → verify →
   install path against a local file server before trusting it in a release:
   ```sh
@@ -83,20 +77,21 @@ require pushing.
 2. `./scripts/local-release-check.sh` — must pass.
 3. Commit, then tag: `git tag vX.Y.Z && git push --tags`.
 4. The `release` workflow creates the GitHub Release, uploads binaries + checksums,
-   publishes to crates.io, and opens a Homebrew bump PR.
+   publishes to crates.io, and publishes the npm channel.
 
 ## Required repository secrets
 
 - `CARGO_REGISTRY_TOKEN` — crates.io API token (`publish-crate`).
-- `NPM_TOKEN` — npm automation token with publish rights on `annotated-tree` and
-  the `annotated-tree-*` platform packages (`publish-npm`). The job self-skips
-  when unset (forks), so the secret is only needed on the canonical repo.
-- `HOMEBREW_TAP_TOKEN` — PAT with `contents:write` on `fredrikolis/homebrew-tap`
-  (`homebrew`). Omit the job until the tap repo exists.
+
+The npm channel (`publish-npm`) uses **OIDC trusted publishing** — no stored token.
+Each of the 6 packages (`annotated-tree` + the five `annotated-tree-*` platform
+packages) needs a GitHub Actions trusted publisher configured once on npmjs.com
+(org `fredrikolis`, repo `annotated-tree`, workflow `release.yml`); see
+`scripts/bootstrap-npm.sh` for the one-time bootstrap.
 
 ## npm channel (`npx annotated-tree`)
 
-Packaging lives in [`npm/`](npm/README.md); the `publish-npm` job wires it into
+Packaging is documented in [`npm/PACKAGING.md`](npm/PACKAGING.md); the `publish-npm` job wires it into
 the release. The design is `optionalDependencies` + a thin JS shim (no
 `postinstall` downloader — works under `--ignore-scripts`): the main package
 `annotated-tree` depends on per-platform packages
@@ -118,7 +113,7 @@ no-op). This matters for agent sandboxes that have Node but not Rust.
 3. `npm publish` each platform package first, then the main package.
 
 **Validate locally** (Node ≥ 18; no publish needed) — see
-[`npm/README.md`](npm/README.md#local-check-no-publish): `npm pack --dry-run`
+[`npm/PACKAGING.md`](npm/PACKAGING.md#local-check-no-publish): `npm pack --dry-run`
 the packages, stage the built binary into a fake `node_modules` platform
 package, then drive the shim (`--version`, an exit-code-forwarding
 `--strict-check`, and the missing-binary error path). CI's `npm-shim-e2e` job
@@ -128,7 +123,7 @@ runs exactly this on every push.
 
 `cargo-dist` (invoked as `dist`, currently community-maintained under the
 `axodotdev` org) generates the whole matrix + shell/PowerShell installers +
-Homebrew tap + npm shim from one config, and its default artifact names are already
+npm shim from one config, and its default artifact names are already
 binstall-compatible. Trade-off: low bus-factor. To adopt: `cargo install
 cargo-dist --locked && dist init`, then validate with `dist plan` and `dist build`
 before tagging.

@@ -1,1 +1,1 @@
-"""Schemas: Pydantic request/response models. Responsible for boundary validation. NOT concerned with storage. | I/O: (dict) -> Model"""
+"""Concern: Pydantic request/response models for boundary validation | Non-concern: storage (db/schema.sql owns it) | IO: (dict) -> Model"""

@@ -1,7 +1,4 @@
-// Limits: End-to-end tests for the runaway-scope safety valve — a tree over the
-// cap aborts with exit 2 and EMPTY stdout (the JSON/agent-safety guarantee) while
-// naming the override, and --no-limit completes. Freezes the external abort
-// contract. | I/O: (temp tree) -> asserted (stdout, stderr, code)
+// Concern: end-to-end tests for the runaway-scope safety valve — a tree over the cap aborts with exit 3 (RUNAWAY_SCOPE) and EMPTY stdout (the JSON/agent-safety guarantee) while naming the override, and --no-limit completes, freezing the external abort contract | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, stderr, code)
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -20,7 +17,7 @@ fn temp_tree(tag: &str, n_files: usize) -> PathBuf {
     for i in 0..n_files {
         std::fs::write(
             src.join(format!("f{i}.py")),
-            "# F: does f. | I/O: () -> None\n",
+            "# Concern: does f for the limits fixture | Non-concern: real behavior (a test stub) | IO: none\n",
         )
         .unwrap();
     }
@@ -51,10 +48,13 @@ fn run_capture(dir: &Path, extra: &[&str]) -> (String, String, i32) {
 fn over_cap_aborts_empty_stdout_and_no_limit_completes() {
     let dir = temp_tree("over", 5);
 
-    // Over the cap: exit 2, EMPTY stdout (no partial tree / half-written JSON), and
-    // stderr must name the limit and BOTH override routes.
+    // Over the cap: exit 3 (RUNAWAY_SCOPE), EMPTY stdout (no partial tree / half-written
+    // JSON), and stderr must name the limit and BOTH override routes.
     let (out, err, code) = run_capture(&dir, &["--max-files", "3"]);
-    assert_eq!(code, 2, "over-cap run must exit 2:\nstderr={err}");
+    assert_eq!(
+        code, 3,
+        "over-cap run must exit 3 (RUNAWAY_SCOPE):\nstderr={err}"
+    );
     assert!(
         out.is_empty(),
         "stdout MUST be empty on abort (agent/JSON safety), got:\n{out}"
@@ -96,7 +96,7 @@ fn cap_trips_only_when_count_exceeds_limit() {
     assert_eq!(code_at, 0, "exactly at the cap must pass");
 
     let (out_over, _err, code_over) = run_capture(&dir, &["--max-files", "4"]);
-    assert_eq!(code_over, 2, "one past the cap must abort");
+    assert_eq!(code_over, 3, "one past the cap must abort (RUNAWAY_SCOPE)");
     assert!(out_over.is_empty(), "abort keeps stdout empty");
 
     let _ = std::fs::remove_dir_all(&dir);

@@ -1,4 +1,4 @@
-// Changed: Quarantines all git interaction — asks git which files changed since a ref and resolves them to absolute canonical paths. NOT concerned with filtering the tree or blast radius. | I/O: (root, ref) -> Result<set<abs file paths>>
+// Concern: quarantines all git interaction — asks git which files changed since a ref and resolves them to absolute canonical paths | Non-concern: filtering the tree or blast radius | IO: (root, ref) -> Result<set<abs file paths>>
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

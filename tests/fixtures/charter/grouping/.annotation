@@ -1,0 +1,1 @@
+Concern: groups the reusable widgets | Non-concern: implementing any widget (each module owns its own) | IO: none

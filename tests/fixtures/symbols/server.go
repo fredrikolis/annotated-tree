@@ -1,4 +1,4 @@
-// Server: demo package exercising the Go extractor. | I/O: (args) -> exit_code
+// Concern: demo package exercising the Go symbol extractor | Non-concern: real server behavior (a fixture stub) | IO: (args) -> exit_code
 package main
 
 type Handler struct {

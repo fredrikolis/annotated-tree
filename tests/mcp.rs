@@ -1,9 +1,4 @@
-// MCP wire-contract test: Drives the built `--mcp` server through one real stdio
-// JSON-RPC round-trip (initialize -> tools/list -> tools/call map). Freezes the
-// EXTERNAL contract agents consume — the JSON-RPC envelope + the map tool payload —
-// at one round-trip. NOT concerned with re-freezing the sync builders: `model`/
-// `graph`/`strict` are already frozen by the golden suite; the MCP tools are thin
-// adapters over them, so this test freezes only the wire boundary they add.
+// Concern: drives the built `--mcp` server through one real stdio JSON-RPC round-trip (initialize -> tools/list -> tools/call), freezing the EXTERNAL contract agents consume — the JSON-RPC envelope plus the map/strict tool payloads | Non-concern: re-freezing the sync builders (the golden suite owns model/graph/strict; the MCP tools are thin adapters) | IO: (fixture tree, JSON-RPC requests) -> asserted responses
 //
 // The round-trip is DETERMINISTIC by construction: it reads line-delimited JSON-RPC
 // responses on a drainer thread and waits for the specific ids it expects, bounded
@@ -150,9 +145,12 @@ fn map_tool_round_trip_returns_versioned_map() {
     std::fs::create_dir_all(&dir).expect("mk fixture");
     std::fs::write(
         dir.join("widget.py"),
-        "# Widget: a fixture module. | I/O: () -> ()\n",
+        "# Concern: a fixture module for the MCP map tool | Non-concern: real behavior (this is a test stub) | IO: none\n",
     )
     .expect("write fixture file");
+    // A second file with a comment that is not the three-field format, so `strict_check`
+    // has a real violation to surface in its structured payload.
+    std::fs::write(dir.join("gap.py"), "# just a note, no contract\n").expect("write gap file");
 
     let session = concat!(
         r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#,
@@ -163,12 +161,14 @@ fn map_tool_round_trip_returns_versioned_map() {
         "\n",
         r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"map","arguments":{"path":"__DIR__"}}}"#,
         "\n",
+        r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"strict_check","arguments":{"path":"__DIR__"}}}"#,
+        "\n",
     )
     .replace("__DIR__", &dir.to_string_lossy().replace('\\', "\\\\"));
 
-    // Await all three request ids (the map call, id 3, is the slowest — it runs a
-    // filesystem walk on the blocking pool), so the collection is order-independent.
-    let messages = round_trip(&dir, &session, &[1, 2, 3]);
+    // Await all four request ids (the tool calls run a filesystem walk on the blocking
+    // pool), so the collection is order-independent.
+    let messages = round_trip(&dir, &session, &[1, 2, 3, 4]);
 
     // initialize: server advertises the tools capability.
     let init = by_id(&messages, 1);
@@ -202,5 +202,57 @@ fn map_tool_round_trip_returns_versioned_map() {
     assert!(
         text.contains("widget.py"),
         "map payload names the fixture file, got: {text}"
+    );
+
+    // tools/call strict_check: the payload is the STRUCTURED verdict (the same shape the
+    // CLI's `--strict-check --format json` emits), not a flat text report — the wire
+    // contract for machine consumption. Our `gap.py` surfaces as a malformed_annotation.
+    let strict = by_id(&messages, 4);
+    assert_ne!(
+        strict["result"]["isError"],
+        json!(true),
+        "strict_check call is not an error"
+    );
+    let strict_text = strict["result"]["content"][0]["text"]
+        .as_str()
+        .expect("strict_check text content");
+    let verdict: Value =
+        serde_json::from_str(strict_text).expect("strict_check payload is structured JSON");
+    assert_eq!(
+        verdict["passed"],
+        json!(false),
+        "the gap file fails the lint"
+    );
+    assert_eq!(verdict["error_count"], json!(1), "one annotation gap");
+    let violations = verdict["violations"]
+        .as_array()
+        .expect("violations is an array");
+    let gap = violations
+        .iter()
+        .find(|v| v["path"] == json!("gap.py"))
+        .expect("gap.py surfaces as a structured violation");
+    assert_eq!(gap["category"], json!("malformed_annotation"));
+    assert_eq!(gap["language"], json!("python"));
+    assert!(
+        gap["example"]
+            .as_str()
+            .is_some_and(|e| e.contains("Concern:") && e.contains("IO:")),
+        "the violation carries a conformant example: {:?}",
+        gap["example"]
+    );
+    // The same structured guidance the CLI JSON path carries: a machine defect and a
+    // file-tailored suggestion whose placeholder slots keep it un-submittable unedited.
+    assert_eq!(
+        gap["defect"]["missing"],
+        json!(["concern", "non_concern", "io"]),
+        "defect names the missing fields (the comment carries none of the three keys)"
+    );
+    assert!(
+        gap["suggestion"]
+            .as_str()
+            .is_some_and(|s| s.contains("Non-concern: <concern owned elsewhere>")
+                && s.contains("(<inputs>) -> <outputs>")),
+        "the violation carries a scaffolded suggestion: {:?}",
+        gap["suggestion"]
     );
 }

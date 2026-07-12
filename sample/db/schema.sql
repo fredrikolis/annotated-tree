@@ -1,1 +1,1 @@
--- Schema: Defines the jobs and results tables. Responsible for storage shape. NOT concerned with queries. | I/O: (DDL) -> tables
+-- Concern: defines the jobs and results table storage shape | Non-concern: query logic (the api and core layers own that) | IO: (DDL) -> tables

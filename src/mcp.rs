@@ -1,4 +1,4 @@
-// MCP server: The one async surface — an rmcp stdio server exposing the sync map/graph/strict builders as MCP tools for agents and editors. NOT concerned with reimplementing any builder logic (thin adapters only). | I/O: (Cli) -> stdio JSON-RPC server -> exit code
+// Concern: the one async surface — an rmcp stdio server exposing the sync map/graph/strict builders as MCP tools for agents and editors | Non-concern: reimplementing any builder logic (thin adapters only) | IO: (Cli) -> stdio JSON-RPC server -> exit code
 //
 // This is the ONLY async module, gated behind the `mcp` cargo feature so the default
 // build links no tokio/rmcp and stays sync (see the `lib.rs` header).
@@ -55,19 +55,45 @@ mod imp {
 
     /// A tool failure, split by whose problem it is (rmcp draws the same line):
     /// `Tool` becomes an `isError` result the caller sees (bad path, runaway-scope
-    /// trip); `Internal` becomes a JSON-RPC protocol error (a bug on our side).
+    /// trip), now carrying a stable dispatch `code` (from [`crate::exit::code`]) rendered
+    /// as the SAME schema-1 error envelope the CLI's `--format json` emits — so an MCP
+    /// caller branches on `error.code`, not on prose. `Internal` becomes a JSON-RPC
+    /// protocol error (a bug on our side).
     enum ToolError {
-        Tool(String),
+        Tool {
+            code: &'static str,
+            message: String,
+            path: Option<String>,
+        },
         Internal(String),
     }
 
     impl ToolError {
+        /// A caller-actionable tool error with no associated path.
+        fn tool(code: &'static str, message: String) -> Self {
+            ToolError::Tool {
+                code,
+                message,
+                path: None,
+            }
+        }
+
         fn into_result(self) -> Result<CallToolResult, ErrorData> {
             match self {
                 // Tool-level error: the server ran the tool and it failed in a way
                 // the caller should see and act on. Crucially, a runaway-scope trip
                 // lands here (NOT a process exit) so the long-lived server survives.
-                ToolError::Tool(msg) => Ok(CallToolResult::error(vec![ContentBlock::text(msg)])),
+                // Rendered as the shared schema-1 error envelope so the payload is a
+                // parseable dispatch object, not prose.
+                ToolError::Tool {
+                    code,
+                    message,
+                    path,
+                } => {
+                    let payload =
+                        crate::render::json::render_error(code, &message, path.as_deref());
+                    Ok(CallToolResult::error(vec![ContentBlock::text(payload)]))
+                }
                 ToolError::Internal(msg) => Err(ErrorData::internal_error(msg, None)),
             }
         }
@@ -79,16 +105,21 @@ mod imp {
         Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
 
-    /// The runaway-scope trip, phrased for the server: it stays alive, so the fix is
+    /// The runaway-scope trip as a tool error (code [`crate::exit::code::SCOPE_EXCEEDED`],
+    /// the offending root as `path`), phrased for the server: it stays alive, so the fix is
     /// to relaunch with a higher cap (never a silent truncation — Fail-Fast).
-    fn limit_message(e: &walk::LimitExceeded) -> String {
-        format!(
-            "aborted: '{}' has more than {} code files (limit --max-files {}). \
-             Relaunch the MCP server with a higher --max-files <N> (or --no-limit).",
-            e.root.display(),
-            e.limit,
-            e.limit,
-        )
+    fn limit_error(e: &walk::LimitExceeded) -> ToolError {
+        ToolError::Tool {
+            code: crate::exit::code::SCOPE_EXCEEDED,
+            message: format!(
+                "aborted: '{}' has more than {} code files (limit --max-files {}). \
+                 Relaunch the MCP server with a higher --max-files <N> (or --no-limit).",
+                e.root.display(),
+                e.limit,
+                e.limit,
+            ),
+            path: Some(e.root.display().to_string()),
+        }
     }
 
     #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -173,7 +204,7 @@ mod imp {
 
         /// Run `--strict-check` over a directory and return its report.
         #[tool(
-            description = "Lint a directory for conforming file annotations (+ configured architectural rules); returns the report and pass/fail."
+            description = "Lint a directory for conforming file annotations (+ configured architectural rules); returns the report and pass/fail. A code file with no annotation is invisible to an agent reading the tree; this returns a per-file fix for each gap."
         )]
         async fn strict_check(
             &self,
@@ -185,7 +216,7 @@ mod imp {
                 .await
                 .map_err(join_error)?;
             match built {
-                Ok(value) => ok_json(&value),
+                Ok(payload) => Ok(CallToolResult::success(vec![ContentBlock::text(payload)])),
                 Err(e) => e.into_result(),
             }
         }
@@ -199,7 +230,9 @@ mod imp {
             info.instructions = Some(
                 "annotated-tree over MCP: `map` renders a directory's annotated dependency \
                  map as versioned JSON; `dependencies`/`dependents` query the package graph \
-                 by name; `strict_check` lints annotations. Paths are resolved on the server."
+                 by name; `strict_check` lints annotations. Paths are resolved on the server. \
+                 A code file with no annotation is invisible to an agent reading the tree; \
+                 `strict_check` returns a per-file fix for each gap."
                     .to_string(),
             );
             info
@@ -222,7 +255,11 @@ mod imp {
         if root.is_dir() {
             Ok(root)
         } else {
-            Err(ToolError::Tool(format!("'{path}' is not a directory")))
+            Err(ToolError::Tool {
+                code: crate::exit::code::NOT_A_DIRECTORY,
+                message: format!("'{path}' is not a directory"),
+                path: Some(path.to_string()),
+            })
         }
     }
 
@@ -235,7 +272,10 @@ mod imp {
         let root = require_dir(&args.path)?;
         // `build_codebase_map` loads the root's own `.annotated-tree.toml` from the
         // shared overrides (per-root config), so the map tool needs no separate load.
-        let (map, _warnings, _ascii) = crate::build_codebase_map(
+        // Manifest-parse warnings now ride inside `map`, so `JsonRenderer.render` below
+        // emits them in the envelope's `warnings` array — the MCP caller no longer gets a
+        // silently-incomplete graph (they were previously discarded here).
+        let (map, _ascii) = crate::build_codebase_map(
             std::slice::from_ref(&root),
             &state.overrides,
             &state.excludes,
@@ -243,10 +283,16 @@ mod imp {
             args.max_depth,
         )
         .map_err(|e| match e {
-            // The runaway-scope cap and a caller-supplied bad ref are both
-            // caller-actionable, so surface them as tool errors (not JSON-RPC faults).
-            crate::BuildError::Limit(le) => ToolError::Tool(limit_message(&le)),
-            crate::BuildError::Other(err) => ToolError::Tool(format!("{err:#}")),
+            // The runaway-scope cap, a caller-supplied bad `--since` ref, and any other
+            // precondition failure are all caller-actionable, so surface them as tool
+            // errors (not JSON-RPC faults), each with its own dispatch code.
+            crate::BuildError::Limit(le) => limit_error(&le),
+            crate::BuildError::Git(err) => {
+                ToolError::tool(crate::exit::code::GIT_ERROR, format!("{err:#}"))
+            }
+            crate::BuildError::Other(err) => {
+                ToolError::tool(crate::exit::code::PRECONDITION, format!("{err:#}"))
+            }
         })?;
         Ok(JsonRenderer.render(&map))
     }
@@ -300,24 +346,28 @@ mod imp {
             .ok_or_else(|| {
                 let mut known: Vec<&str> = graph.packages.iter().map(|p| p.name.as_str()).collect();
                 known.sort_unstable();
-                ToolError::Tool(format!(
-                    "no package named '{package}' in the scanned roots. Known packages: [{}]",
-                    known.join(", ")
-                ))
+                ToolError::tool(
+                    crate::exit::code::UNKNOWN_PACKAGE,
+                    format!(
+                        "no package named '{package}' in the scanned roots. Known packages: [{}]",
+                        known.join(", ")
+                    ),
+                )
             })
     }
 
-    fn strict_check(state: &ServerState, args: PathArgs) -> Result<serde_json::Value, ToolError> {
+    fn strict_check(state: &ServerState, args: PathArgs) -> Result<String, ToolError> {
         let root = require_dir(&args.path)?;
         let config = load_config(&root, &state.overrides)?;
         let files = walk::collect_code_files(&root, &config, &state.excludes)
-            .map_err(|e| ToolError::Tool(limit_message(&e)))?;
-        // Thin adapter over the ONE shared strict composition (`strict::check_with_rules`,
-        // also driven by the CLI's `--strict-check`): annotation linting plus any
-        // configured architectural `[rules]`, folded into one report + exit code — so the
-        // MCP verdict is byte-for-byte the CLI's for the same directory.
-        let (report, code) = strict::check_with_rules(&root, &files, &config, &state.excludes);
-        Ok(json!({ "passed": code == 0, "report": report }))
+            .map_err(|e| limit_error(&e))?;
+        // Thin adapter over the ONE shared strict producer (`strict::check_structured`,
+        // also driven by the CLI's `--strict-check --format json`): annotation linting
+        // plus any configured architectural `[rules]`, serialized to the SAME structured
+        // JSON document — so the MCP payload is byte-for-byte the CLI's `--format json`
+        // for the same directory (DRY, mirroring how `map` mirrors `--format json`).
+        let report = strict::check_structured(&root, &files, &config, &state.excludes);
+        Ok(report.to_json())
     }
 
     /// SYNC outer signature: create and own the tokio runtime, block on the async

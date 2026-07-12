@@ -1,4 +1,4 @@
-// Lib: demo crate exercising the Rust extractor. | I/O: (Config) -> Engine
+// Concern: demo crate exercising the Rust symbol extractor | Non-concern: real behavior (a fixture stub) | IO: (Config) -> Engine
 
 pub struct Engine {
     name: String,

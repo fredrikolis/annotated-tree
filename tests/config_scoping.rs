@@ -1,8 +1,4 @@
-// Config scoping (in-process): two user-facing guarantees about WHERE config comes
-// from — `--config <FILE>` replaces `.annotated-tree.toml` discovery, and a multi-root
-// run applies each root's OWN discovered config, never one root's to another. Runs over
-// throwaway temp trees under the system temp root so no ancestor config leaks in. NOT
-// concerned with rendering glyphs. | I/O: (temp trees, flags) -> asserted stdout
+// Concern: two user-facing guarantees about WHERE config comes from — `--config <FILE>` replaces `.annotated-tree.toml` discovery, and a multi-root run applies each root's OWN discovered config, never one root's to another; runs over throwaway temp trees under the system temp root so no ancestor config leaks in | Non-concern: rendering glyphs | IO: (temp trees, flags) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -47,12 +43,12 @@ fn explicit_config_flag_takes_effect_and_bypasses_discovery() {
     std::fs::create_dir_all(&src).unwrap();
     std::fs::write(
         src.join("thing.foo"),
-        "# Foo: a foo file. | I/O: () -> ()\n",
+        "# Concern: a foo file for the config-scoping fixture | Non-concern: real behavior (a test stub) | IO: none\n",
     )
     .unwrap();
     std::fs::write(
         src.join("other.bar"),
-        "# Bar: a bar file. | I/O: () -> ()\n",
+        "# Concern: a bar file for the config-scoping fixture | Non-concern: real behavior (a test stub) | IO: none\n",
     )
     .unwrap();
 
@@ -101,7 +97,7 @@ fn multi_root_run_scopes_config_per_root() {
         std::fs::create_dir_all(&tests).unwrap();
         std::fs::write(
             tests.join(marker),
-            "// Check: a test file. | I/O: () -> ()\n",
+            "// Concern: a test file for the multi-root config fixture | Non-concern: real behavior (a test stub) | IO: none\n",
         )
         .unwrap();
     }

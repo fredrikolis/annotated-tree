@@ -1,4 +1,4 @@
-// Publish preparer: stamps the release version across the main + platform packages and drops each release binary into its platform dir, ready for `npm publish`. NOT a network/publish step. | I/O: (version arg, extracted-binaries dir) -> in-place npm/ tree + printed publish order
+// Publish preparer: stamps the release version across the main + platform packages, drops each release binary into its platform dir, and refreshes the package README from the canonical repo-root README.md, ready for `npm publish`. NOT a network/publish step. | I/O: (version arg, extracted-binaries dir) -> in-place npm/ tree + printed publish order
 //
 // Usage:  node npm/scripts/build-npm.mjs <version> <binaries-dir>
 //
@@ -57,6 +57,17 @@ stampVersion(join(npmDir, "package.json"), (pkg) => {
     pkg.optionalDependencies[dep] = version;
   }
 });
+
+// Package README is the canonical repo-root README.md — one source of truth for
+// every channel (GitHub, crates.io, npmjs.com). Injected here, never committed
+// under npm/, so it can never drift from the root. npm auto-includes README.md
+// in the tarball regardless of the `files` allowlist.
+const rootReadme = join(dirname(npmDir), "README.md");
+if (!existsSync(rootReadme)) {
+  console.error(`missing canonical README: ${rootReadme}`);
+  process.exit(1);
+}
+copyFileSync(rootReadme, join(npmDir, "README.md"));
 
 console.log("prepared npm packages for version " + version);
 console.log("publish platform packages FIRST, then the main package:");

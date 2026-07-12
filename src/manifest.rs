@@ -1,4 +1,4 @@
-// Manifest: Parses one package manifest per ecosystem (Python/npm/Cargo/Go) into a name + dependency list. NOT concerned with cross-referencing or rendering. | I/O: (manifest path) -> Result<ParsedManifest>
+// Concern: parses one package manifest per ecosystem (Python/npm/Cargo/Go) into a name + dependency list | Non-concern: cross-referencing or rendering | IO: (manifest path) -> Result<ParsedManifest>
 
 use std::path::Path;
 

@@ -1,1 +1,1 @@
-// Gateway core: Routes requests to backend services. Responsible for proxying and auth. NOT concerned with business rules. | I/O: (Request) -> Response
+// Concern: routes and proxies requests to backend services with auth | Non-concern: business rules (the backend services own them) | IO: (Request) -> Response

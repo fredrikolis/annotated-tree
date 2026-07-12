@@ -1,7 +1,4 @@
-// Filters: End-to-end tests for the two file-visibility filters — `-I/--ignore`
-// exclusion globs and the tests/ hide/reveal toggle (`--include-tests`). Runs over a
-// throwaway temp tree so no ancestor config leaks in. NOT concerned with rendering
-// glyphs. | I/O: (temp tree, flags) -> asserted stdout
+// Concern: end-to-end tests for the two file-visibility filters — `-I/--ignore` exclusion globs and the tests/ hide/reveal toggle (`--include-tests`); runs over a throwaway temp tree so no ancestor config leaks in | Non-concern: rendering glyphs | IO: (temp tree, flags) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -20,11 +17,11 @@ fn temp_tree(tag: &str) -> PathBuf {
     let tests = dir.join("tests");
     std::fs::create_dir_all(&src).unwrap();
     std::fs::create_dir_all(&tests).unwrap();
-    std::fs::write(src.join("keep.rs"), "// Keep: stays. | I/O: () -> ()\n").unwrap();
-    std::fs::write(src.join("skip.rs"), "// Skip: excluded. | I/O: () -> ()\n").unwrap();
+    std::fs::write(src.join("keep.rs"), "// Concern: a file that stays for the filter fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
+    std::fs::write(src.join("skip.rs"), "// Concern: a file excluded by the filter fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
     std::fs::write(
         tests.join("checks.rs"),
-        "// Checks: test file. | I/O: () -> ()\n",
+        "// Concern: a test file for the tests-dir toggle fixture | Non-concern: real behavior (a test stub) | IO: none\n",
     )
     .unwrap();
     dir

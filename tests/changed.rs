@@ -1,7 +1,4 @@
-// Changed: End-to-end test for `--since` / `--changed` — editing a package surfaces
-// that file PLUS its blast radius (every package that transitively depends on it),
-// and a git failure (bad ref / non-repo) is an explicit error, not an empty view.
-// Freezes the feature's whole value: "editing core surfaces api+worker". | I/O: (temp git repo) -> asserted (stdout, code)
+// Concern: end-to-end test for `--since` / `--changed` — editing a package surfaces that file PLUS its blast radius (every package that transitively depends on it), and a git failure (bad ref / non-repo) is an explicit error, not an empty view, freezing the feature's whole value: "editing core surfaces api+worker" | Non-concern: unit-level logic | IO: (temp git repo) -> asserted (stdout, code)
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -28,7 +25,7 @@ fn temp_workspace(tag: &str) -> PathBuf {
         .unwrap();
         std::fs::write(
             base.join(module).join("code.py"),
-            format!("# {module}: does {module}. | I/O: () -> None\n"),
+            format!("# Concern: does {module} for the changed fixture | Non-concern: real behavior (a test stub) | IO: none\n"),
         )
         .unwrap();
     };
@@ -78,7 +75,7 @@ fn editing_core_surfaces_api_and_worker_as_blast_radius() {
     // Edit a file inside `core` only.
     std::fs::write(
         dir.join("packages/acme-core/acme_core/code.py"),
-        "# acme_core: edited. | I/O: () -> None\n",
+        "# Concern: the edited acme_core file for the changed fixture | Non-concern: real behavior (a test stub) | IO: none\n",
     )
     .unwrap();
 
@@ -119,7 +116,7 @@ fn untracked_file_under_subdir_root_is_surfaced() {
     let subroot = dir.join("packages").join("acme-core");
     std::fs::write(
         subroot.join("acme_core").join("brandnew.py"),
-        "# brandnew: a fresh untracked file. | I/O: () -> None\n",
+        "# Concern: a fresh untracked brandnew file for the changed fixture | Non-concern: real behavior (a test stub) | IO: none\n",
     )
     .unwrap();
 

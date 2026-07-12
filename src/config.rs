@@ -1,4 +1,4 @@
-// Config: Resolves layered configuration (built-in < user < repo < CLI) into a language table and display settings. NOT concerned with walking or rendering. | I/O: (paths, CLI overrides) -> Config
+// Concern: resolves layered configuration (built-in < user < repo < CLI) into a language table and display settings | Non-concern: walking or rendering | IO: (paths, CLI overrides) -> Config
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -16,7 +16,6 @@ const DEFAULT_CONFIG: &str = include_str!("../default_config.toml");
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
-    convention: Option<RawConvention>,
     display: Option<RawDisplay>,
     limits: Option<RawLimits>,
     rules: Option<RawRules>,
@@ -32,6 +31,7 @@ struct RawRules {
     deny: Option<Vec<[String; 2]>>,
     forbid_cycles: Option<bool>,
     forbid_orphans: Option<bool>,
+    require_package_charter: Option<bool>,
 }
 
 /// Walk-scope limits parsed from a `[limits]` table. Deliberately separate from
@@ -40,13 +40,6 @@ struct RawRules {
 #[serde(deny_unknown_fields)]
 struct RawLimits {
     max_files: Option<usize>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawConvention {
-    require: Option<String>,
-    hint: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -58,6 +51,7 @@ struct RawDisplay {
     ascii: Option<bool>,
     gitignore: Option<bool>,
     include_tests: Option<bool>,
+    max_per_node: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -68,8 +62,6 @@ struct RawLanguage {
     block: Option<[String; 2]>,
     docstring: Option<Vec<String>>,
     pattern: Option<String>,
-    require: Option<String>,
-    hint: Option<String>,
 }
 
 /// CLI-supplied overrides. `None` means "not specified; keep the merged value".
@@ -87,6 +79,10 @@ pub struct CliOverrides {
     /// `Some(None)` = `--no-limit`/`--force` (cap disabled);
     /// `Some(Some(n))` = `--max-files n`.
     pub max_files: Option<Option<usize>>,
+    /// Per-directory display cap override, same `Option<Option<usize>>` shape as
+    /// `max_files`: `None` = CLI silent (use config/default); `Some(None)` =
+    /// `--full` (cap disabled); `Some(Some(n))` = `--max-per-node n`.
+    pub max_per_node: Option<Option<usize>>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +93,12 @@ pub struct Display {
     pub ascii: bool,
     pub gitignore: bool,
     pub include_tests: bool,
+    /// Show at most this many subdirectories AND this many files per directory,
+    /// replacing the overflow with a `[+N folders and F files]` marker. `None`
+    /// means "no cap" (only via `--full`/`--max-per-node 0`). A display concern,
+    /// so it lives here, not in `Limits` — it truncates the rendered tree, it does
+    /// not bound the walk (every file is still visited).
+    pub max_per_node: Option<usize>,
 }
 
 /// Walk-scope limits. `max_files: None` means "no cap". Kept out of `Display`
@@ -106,7 +108,10 @@ pub struct Limits {
     pub max_files: Option<usize>,
 }
 
-/// How a single language's first-line annotation is located and validated.
+/// How a single language's first-line annotation is located. The annotation FORMAT is
+/// invariant (the three-field `Concern: … | Non-concern: … | IO: …` shape, validated in
+/// [`crate::annotation`]) — not configurable — so a language only configures HOW to find
+/// its first comment (markers / an escape-hatch `pattern`), never what shape to require.
 #[derive(Debug, Clone)]
 pub struct Language {
     pub name: String,
@@ -114,8 +119,34 @@ pub struct Language {
     pub block: Option<(String, String)>,
     pub docstring: Vec<String>,
     pub pattern: Option<Regex>,
-    pub require: Regex,
-    pub hint: String,
+}
+
+/// The canonical, marker-free annotation body — one concrete, self-conforming instance of
+/// the fixed three-field format. The FORMAT is invariant, so the per-language example is
+/// DERIVED from (this body + the language's comment marker), never stored/configured. Kept
+/// distinct from [`crate::strict::EXPECTED`]'s abstract `{placeholder}` template: this is a
+/// filled, valid line, that is the fill-in contract.
+const EXAMPLE_BODY: &str =
+    "Concern: runs the core loop | Non-concern: transport | IO: (Job) -> Result";
+
+impl Language {
+    /// A full, conformant annotation line for this language — [`EXAMPLE_BODY`] wrapped in the
+    /// language's comment marker (line token, else block open/close, else docstring delimiter)
+    /// — shown verbatim in `--help` and `--strict-check` diagnostics. Derived rather than
+    /// configured because the format is invariant; a tested invariant
+    /// ([`tests::builtin_examples_are_self_conforming`]) guarantees it round-trips through the
+    /// extractor+validator as `Outcome::Ok`.
+    pub fn example(&self) -> String {
+        if let Some(line) = &self.line {
+            format!("{line} {EXAMPLE_BODY}")
+        } else if let Some((open, close)) = &self.block {
+            format!("{open} {EXAMPLE_BODY} {close}")
+        } else if let Some(delim) = self.docstring.first() {
+            format!("{delim}{EXAMPLE_BODY}{delim}")
+        } else {
+            EXAMPLE_BODY.to_string()
+        }
+    }
 }
 
 /// Fully resolved configuration. Extensions are indexed for O(1) lookup.
@@ -188,15 +219,6 @@ fn read_layer(path: &Path) -> Result<RawConfig> {
 
 /// Overlay `src` onto `dst`: any field set in `src` wins; languages merge by key.
 fn merge(dst: &mut RawConfig, src: RawConfig) {
-    if let Some(sc) = src.convention {
-        let dc = dst.convention.get_or_insert_with(Default::default);
-        if sc.require.is_some() {
-            dc.require = sc.require;
-        }
-        if sc.hint.is_some() {
-            dc.hint = sc.hint;
-        }
-    }
     if let Some(sd) = src.display {
         let dd = dst.display.get_or_insert_with(Default::default);
         dd.show_age = sd.show_age.or(dd.show_age);
@@ -205,6 +227,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
         dd.ascii = sd.ascii.or(dd.ascii);
         dd.gitignore = sd.gitignore.or(dd.gitignore);
         dd.include_tests = sd.include_tests.or(dd.include_tests);
+        dd.max_per_node = sd.max_per_node.or(dd.max_per_node);
     }
     if let Some(sl) = src.limits {
         let dl = dst.limits.get_or_insert_with(Default::default);
@@ -217,6 +240,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
         dr.deny = sr.deny.or_else(|| dr.deny.take());
         dr.forbid_cycles = sr.forbid_cycles.or(dr.forbid_cycles);
         dr.forbid_orphans = sr.forbid_orphans.or(dr.forbid_orphans);
+        dr.require_package_charter = sr.require_package_charter.or(dr.require_package_charter);
     }
     for (name, lang) in src.languages {
         dst.languages.insert(name, lang);
@@ -224,14 +248,6 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
 }
 
 fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
-    let convention = raw.convention.unwrap_or_default();
-    let default_require_src = convention
-        .require
-        .context("resolved config is missing [convention].require")?;
-    let default_hint = convention
-        .hint
-        .unwrap_or_else(|| default_require_src.clone());
-
     let disp = raw.display.unwrap_or_default();
     let display = Display {
         show_age: cli.show_age.or(disp.show_age).unwrap_or(false),
@@ -240,6 +256,7 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
         ascii: cli.ascii.or(disp.ascii).unwrap_or(false),
         gitignore: cli.gitignore.or(disp.gitignore).unwrap_or(true),
         include_tests: cli.include_tests.or(disp.include_tests).unwrap_or(false),
+        max_per_node: resolve_max_per_node(cli, disp.max_per_node),
     };
 
     let limits = Limits {
@@ -255,10 +272,6 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
     for (name, lang) in entries {
-        let require_src = lang.require.as_deref().unwrap_or(&default_require_src);
-        let require = Regex::new(require_src)
-            .with_context(|| format!("language '{name}': invalid require regex `{require_src}`"))?;
-        let hint = lang.hint.clone().unwrap_or_else(|| default_hint.clone());
         let pattern =
             match &lang.pattern {
                 Some(p) => Some(Regex::new(p).with_context(|| {
@@ -279,8 +292,6 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
             block,
             docstring: lang.docstring.unwrap_or_default(),
             pattern,
-            require,
-            hint,
         });
     }
 
@@ -293,6 +304,15 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     })
 }
 
+/// A representative conformant annotation line for `--help`'s ANNOTATION FORMAT block: the
+/// canonical [`EXAMPLE_BODY`] with the default `//` line marker (the help text separately
+/// notes how the marker varies by language). Derived from the same body every language's
+/// [`Language::example`] wraps, so `--help` and `--strict-check` cannot advertise different
+/// exemplars.
+pub fn builtin_example() -> String {
+    format!("// {EXAMPLE_BODY}")
+}
+
 fn resolve_rules(raw: RawRules) -> Rules {
     Rules {
         deny: raw
@@ -303,6 +323,7 @@ fn resolve_rules(raw: RawRules) -> Rules {
             .collect(),
         forbid_cycles: raw.forbid_cycles.unwrap_or(false),
         forbid_orphans: raw.forbid_orphans.unwrap_or(false),
+        require_package_charter: raw.require_package_charter.unwrap_or(false),
     }
 }
 
@@ -323,6 +344,18 @@ fn resolve_max_files(cli: &CliOverrides, config_limits: RawLimits) -> Result<Opt
         return Ok(Some(n));
     }
     Ok(config_limits.max_files)
+}
+
+/// Resolve the per-directory display cap. Precedence: CLI, then config file, then
+/// built-in default. No env var (a display setting, unlike `max_files`). `0` is
+/// normalized to `None` (unlimited) so `--max-per-node 0` disables the cap the same
+/// way `--full` does; `None` otherwise only arises via `--full`.
+fn resolve_max_per_node(cli: &CliOverrides, config_value: Option<usize>) -> Option<usize> {
+    let resolved = match cli.max_per_node {
+        Some(cli_choice) => cli_choice,
+        None => config_value,
+    };
+    resolved.filter(|&n| n > 0)
 }
 
 fn user_config_path() -> Option<PathBuf> {
@@ -349,4 +382,44 @@ fn find_repo_config(start: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The advertised annotation format must provably pass the lint it advertises:
+    /// every built-in language's `example` (shown in `--help` and every strict-check
+    /// diagnostic) round-trips through the real extractor+validator as `Outcome::Ok`.
+    /// This is the DbC guarantee against advertise-vs-enforce drift.
+    #[test]
+    fn builtin_examples_are_self_conforming() {
+        let raw: RawConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");
+        let config = resolve(raw, &CliOverrides::default()).expect("default config resolves");
+        for lang in &config.languages {
+            let example = lang.example();
+            assert_eq!(
+                crate::annotation::analyze(&example, lang),
+                crate::annotation::Outcome::Ok,
+                "language '{}' example is not self-conforming: {:?}",
+                lang.name,
+                example,
+            );
+        }
+    }
+
+    #[test]
+    fn builtin_example_matches_rust_derived() {
+        // `--help` sources its exemplar from `builtin_example()`; it must equal the `//`
+        // (Rust/Go/TS) language's DERIVED example, so help and the per-file diagnostic
+        // advertise the same body from the one `EXAMPLE_BODY` source.
+        let raw: RawConfig = toml::from_str(DEFAULT_CONFIG).unwrap();
+        let config = resolve(raw, &CliOverrides::default()).unwrap();
+        let rust = config
+            .languages
+            .iter()
+            .find(|l| l.name == "rust")
+            .expect("rust language present");
+        assert_eq!(builtin_example(), rust.example());
+    }
 }

@@ -1,9 +1,4 @@
-// Rules: End-to-end tests freezing the architectural dep-rule contract in
-// --strict-check — a `deny` rule over a real forbidden edge and a `forbid_cycles` rule
-// over a real dependency cycle each surface as a report line with exit 1, and do not
-// disturb annotation linting. Runs over dedicated fixtures, never `sample/`. This is
-// the e2e proof the config `[rules]` flags reach the report, complementing the pure
-// algorithm tests in `src/rules.rs`. | I/O: (rules fixtures) -> asserted (stdout, code)
+// Concern: end-to-end tests freezing the architectural dep-rule contract in --strict-check — a `deny` rule over a real forbidden edge and a `forbid_cycles` rule over a real dependency cycle each surface as a report line with exit 1, and do not disturb annotation linting; runs over dedicated fixtures, never `sample/`, the e2e proof the config `[rules]` flags reach the report | Non-concern: the pure algorithm logic (tested in `src/rules.rs`) | IO: (rules fixtures) -> asserted (stdout, code)
 
 use std::path::PathBuf;
 

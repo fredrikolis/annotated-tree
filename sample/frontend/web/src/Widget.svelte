@@ -1,2 +1,2 @@
-<!-- Widget: Displays a live metric tile. Responsible for formatting. NOT concerned with fetching. | I/O: (value) -> markup -->
+<!-- Concern: formats and displays a live metric tile | Non-concern: fetching the metric (the parent owns it) | IO: (value) -> markup -->
 <div class="widget"></div>

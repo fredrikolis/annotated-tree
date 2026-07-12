@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# commit-msg gate: the commit message must carry a neutral-review scorecard.
+# This hook does NOT run a reviewer — the dev agent runs a neutral review ITSELF
+# (a reviewer distinct from the author), grades the change against EVERY category in
+# docs/repo-standards.md, and writes the result into the commit message. The hook only
+# verifies that report: a reviewer is named, every category is scored (or marked N/A
+# with a reason), and no MAJOR/MEDIUM blockers were raised.
+# Bypass a genuinely trivial, non-code commit: git commit --no-verify.
+# Enable per clone: git config core.hooksPath .githooks
+set -euo pipefail
+
+msg_file="$1"
+subject=$(sed -n '1p' "$msg_file")
+
+# Auto-generated messages carry no review and must not be blocked.
+case "$subject" in
+	Merge\ * | Revert\ * | fixup!\ * | squash!\ *) exit 0 ;;
+esac
+
+# Circular-standards guard: docs/repo-standards.md IS the rubric every other commit's
+# scorecard is graded against. Scoring a commit that CHANGES that rubric against itself is
+# circular — the very yardstick is in flux — so a standards change must land on its own,
+# unscored, via an explicit bypass. Fail loud and tell the author exactly how.
+if git diff --cached --name-only | grep -qxF 'docs/repo-standards.md'; then
+	echo "" >&2
+	echo "commit-msg: STANDARDS-DOC GATE FAILED" >&2
+	echo "  - this commit changes docs/repo-standards.md — the rubric every other commit is" >&2
+	echo "    scored against. Grading a change to the yardstick against itself is circular." >&2
+	echo "" >&2
+	echo "  Commit the standards change on its OWN, bypassing the neutral-review gate:" >&2
+	echo "      git commit --no-verify" >&2
+	echo "  Keep it in a SEPARATE commit from any code change (which still needs its scorecard)." >&2
+	echo "" >&2
+	exit 1
+fi
+
+fail() {
+	echo "" >&2
+	echo "commit-msg: NEUTRAL-REVIEW GATE FAILED" >&2
+	printf '  - %s\n' "$@" >&2
+	echo "" >&2
+	echo "  Run a neutral reviewer (a reviewer separate from the author), grade this" >&2
+	echo "  change against EVERY category in docs/repo-standards.md, and put the scorecard" >&2
+	echo "  in the commit message: a 'Reviewer:' line, one '- <Category>: <0-10>/10 —" >&2
+	echo "  justification' (or 'N/A — reason') per category, and 'MAJOR:'/'MEDIUM:'" >&2
+	echo "  counts that are both 0." >&2
+	exit 1
+}
+
+problems=()
+
+reviewer=$(grep -E '^Reviewer:' "$msg_file" | head -n1 | sed -E 's/^Reviewer:[[:space:]]*//' || true)
+[ -n "${reviewer// /}" ] || problems+=("no non-empty 'Reviewer:' line naming the neutral reviewer")
+
+# The grading rubric — the judgment-call subset of docs/repo-standards.md's principles.
+# Excluded: mechanical checks already gated deterministically (File Annotations ->
+# `--strict-check` in CI), plus principles that are meta or structurally N/A for a
+# synchronous Rust CLI. Add any back here if a change warrants it.
+categories=(
+	"KISS"
+	"YAGNI"
+	"SoC"
+	"DRY"
+	"DbC"
+	"Fail Fast"
+)
+
+for cat in "${categories[@]}"; do
+	prefix="- ${cat}: "
+	rest=""
+	found=0
+	while IFS= read -r line; do
+		if [ "${line#"$prefix"}" != "$line" ]; then
+			rest="${line#"$prefix"}"
+			found=1
+			break
+		fi
+	done < "$msg_file"
+
+	if [ "$found" -ne 1 ]; then
+		problems+=("missing category: '- ${cat}: <0-10>/10 — … | N/A — …'")
+		continue
+	fi
+
+	if printf '%s' "$rest" | grep -Eqi '^n\/?a([[:space:]]|$)'; then
+		reason=$(printf '%s' "$rest" | sed -E 's/^[Nn]\/?[Aa]//' | tr -d ' \t:-')
+		[ -n "$reason" ] || problems+=("${cat}: N/A needs a reason (why it does not apply)")
+	elif printf '%s' "$rest" | grep -Eq '^(10|[0-9])/10([[:space:]]|$)'; then
+		just=$(printf '%s' "$rest" | sed -E 's#^(10|[0-9])/10##' | tr -d ' \t:-')
+		[ -n "$just" ] || problems+=("${cat}: score needs a one-line justification")
+	else
+		problems+=("${cat}: expected '<0-10>/10 — justification' or 'N/A — reason' (got: ${rest})")
+	fi
+done
+
+major=$(grep -E '^MAJOR:[[:space:]]*[0-9]+' "$msg_file" | head -n1 | grep -Eo '[0-9]+' | head -n1 || true)
+medium=$(grep -E '^MEDIUM:[[:space:]]*[0-9]+' "$msg_file" | head -n1 | grep -Eo '[0-9]+' | head -n1 || true)
+[ -n "$major" ] || problems+=("missing 'MAJOR: <n>' blocker count")
+[ -n "$medium" ] || problems+=("missing 'MEDIUM: <n>' blocker count")
+
+if [ "${#problems[@]}" -gt 0 ]; then
+	fail "${problems[@]}"
+fi
+
+blockers=()
+if [ "$major" -gt 0 ]; then
+	blockers+=("reviewer raised $major MAJOR blocker(s) — resolve them before committing")
+fi
+if [ "$medium" -gt 0 ]; then
+	blockers+=("reviewer raised $medium MEDIUM blocker(s) — resolve them before committing")
+fi
+if [ "${#blockers[@]}" -gt 0 ]; then
+	fail "${blockers[@]}"
+fi
+
+echo "commit-msg: OK (neutral review complete, 0 major/medium blockers)"

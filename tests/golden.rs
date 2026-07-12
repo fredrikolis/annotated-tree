@@ -1,6 +1,4 @@
-// Golden: End-to-end tests that pin the tool's output over the `sample/` fixture.
-// The fixture + these expected files ARE the behavioral spec; a diff here means a
-// deliberate decision changed. NOT concerned with unit-level logic. | I/O: (sample tree) -> asserted output
+// Concern: end-to-end tests that pin the tool's output over the `sample/` fixture — the fixture + expected files ARE the behavioral spec, so a diff means a deliberate decision changed | Non-concern: unit-level logic | IO: (sample tree) -> asserted output
 
 use std::path::PathBuf;
 
@@ -99,9 +97,13 @@ fn tokens_estimate_per_file_and_package() {
     // A representative leaf: its column is ceil(bytes/4) of its own byte length.
     let engine = sample.join("packages/core/acme_core/engine.py");
     let engine_tok = std::fs::metadata(&engine).unwrap().len().div_ceil(4);
+    // Anchor on the tree connector so this selects the `engine.py` FILE row and not a
+    // sibling whose annotation text merely mentions `engine.py` (e.g. __init__.py naming
+    // it as the owner of a concern it leaves alone) — a fixture reword can never silently
+    // pick the wrong node.
     let engine_line = out
         .lines()
-        .find(|l| l.contains("engine.py"))
+        .find(|l| l.contains("── engine.py"))
         .expect("engine.py is listed");
     assert!(
         engine_line.contains(&format!("[~{engine_tok} tok]")),
@@ -130,7 +132,169 @@ fn tokens_estimate_per_file_and_package() {
 
 #[test]
 fn strict_check_reports_offenders() {
-    assert_golden("strict_check.txt", &["--strict-check"], 1);
+    // `--no-guide` keeps this golden pinned to the report itself; the guide that a bare
+    // failing `--strict-check` prints is covered by `strict_failure_prints_guide_on_stdout`.
+    assert_golden("strict_check.txt", &["--strict-check", "--no-guide"], 1);
+}
+
+/// `--strict-check` accepts a single FILE, not only a directory — the natural unit for an
+/// agent linting the one file it just wrote (and a pre-commit hook over changed files). A
+/// conforming file passes (exit 0, one file checked); a malformed one fails (exit 1); a file
+/// whose extension maps to no language fails fast as a precondition (never a silent pass).
+#[test]
+fn strict_check_accepts_a_single_file() {
+    let dir = std::env::temp_dir().join(format!("at-single-file-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+    let good = dir.join("good.rs");
+    let bad = dir.join("bad.rs");
+    let opaque = dir.join("data.bin");
+    std::fs::write(
+        &good,
+        "// Concern: sums a slice | Non-concern: parsing (caller owns it) | IO: (&[i32]) -> i32\nfn s() {}\n",
+    )
+    .expect("write good");
+    std::fs::write(&bad, "// just some helpers\nfn h() {}\n").expect("write bad");
+    std::fs::write(&opaque, "\x00\x01binary\n").expect("write opaque");
+
+    let check = |path: &std::path::Path| {
+        let cli = Cli::parse_from([
+            "annotated-tree",
+            "--strict-check",
+            "--no-guide",
+            &path.to_string_lossy(),
+        ]);
+        let mut buf: Vec<u8> = Vec::new();
+        let mut err: Vec<u8> = Vec::new();
+        let code = annotated_tree::run(&cli, &mut buf, &mut err).expect("run failed");
+        (String::from_utf8(buf).expect("utf8"), code)
+    };
+
+    let (out, code) = check(&good);
+    assert_eq!(code, 0, "a conforming single file passes: {out}");
+    assert!(
+        out.contains("All 1 files passed"),
+        "reports exactly one file checked: {out}"
+    );
+
+    let (_out, code) = check(&bad);
+    assert_eq!(code, 1, "a malformed single file fails strict-check");
+
+    // A file whose extension maps to no language is a precondition error: in text mode
+    // `run()` returns `Err` (the binary renders it as `error:` prose and exits PRECONDITION),
+    // never a silent pass or a lint failure.
+    let cli = Cli::parse_from([
+        "annotated-tree",
+        "--strict-check",
+        "--no-guide",
+        &opaque.to_string_lossy(),
+    ]);
+    let mut buf: Vec<u8> = Vec::new();
+    let mut err: Vec<u8> = Vec::new();
+    let result = annotated_tree::run(&cli, &mut buf, &mut err);
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(
+        result.is_err(),
+        "a non-lintable file fails fast as a precondition, not a pass or a lint failure"
+    );
+}
+
+/// `--strict-check --format json` is the machine-consumable counterpart to the TEXT
+/// report: the same verdict, structured. Freeze the shape (not the whole fixture) —
+/// `passed`/counts at the envelope, and each violation carrying the fields an agent
+/// acts on (category, real line, a conformant example). The exit code stays 1 on
+/// failure, matching the text path.
+#[test]
+fn strict_check_json_emits_structured_violations() {
+    let (got, code) = run(&["--strict-check", "--format", "json"]);
+    assert_eq!(
+        code, 1,
+        "strict-check json exit code on a fixture with gaps"
+    );
+    let doc: serde_json::Value = serde_json::from_str(&got).expect("strict json parses");
+    assert_eq!(doc["passed"], serde_json::json!(false), "gaps ⇒ not passed");
+    assert_eq!(
+        doc["error_count"],
+        serde_json::json!(1),
+        "one annotation gap (only the intentionally-malformed utils.py)"
+    );
+    assert_eq!(doc["files_checked"], serde_json::json!(20), "files checked");
+    // The convergence numerator: 19 of the 20 files carry a conforming annotation; only
+    // the one malformed file does not.
+    assert_eq!(
+        doc["annotated_count"],
+        serde_json::json!(19),
+        "annotated progress numerator"
+    );
+
+    let violations = doc["violations"].as_array().expect("violations array");
+    assert_eq!(violations.len(), 1, "one record per annotation gap");
+    // The Python util has a comment but not the three-field shape — a malformed_annotation
+    // at line 1, echoing the offending content and a conformant example to copy.
+    let py = violations
+        .iter()
+        .find(|v| v["path"] == serde_json::json!("packages/core/acme_core/utils.py"))
+        .expect("python util surfaces as a violation");
+    assert_eq!(py["category"], serde_json::json!("malformed_annotation"));
+    assert_eq!(py["line"], serde_json::json!(1));
+    assert_eq!(py["language"], serde_json::json!("python"));
+    assert_eq!(
+        py["found"],
+        serde_json::json!("small helpers used across the engine")
+    );
+    assert!(
+        py["example"]
+            .as_str()
+            .is_some_and(|e| e.contains("Concern:") && e.contains("IO:")),
+        "the example is a conformant annotation line: {:?}",
+        py["example"]
+    );
+    // The machine-coded delta an agent branches on: the comment carries NONE of the three
+    // keyed fields, so all are missing; `vacuous` is absent when empty.
+    assert_eq!(
+        py["defect"]["missing"],
+        serde_json::json!(["concern", "non_concern", "io"]),
+        "defect names the missing fields, not prose"
+    );
+    assert!(
+        py["defect"].get("vacuous").is_none(),
+        "empty defect lists are omitted (absent-key convention)"
+    );
+    // The contract to converge on: the fill-in template plus which fields are enforced.
+    assert!(
+        py["expected"]["template"]
+            .as_str()
+            .is_some_and(|t| t.contains("Concern:")
+                && t.contains("Non-concern:")
+                && t.contains("IO:")),
+        "expected.template carries the annotation shape: {:?}",
+        py["expected"]["template"]
+    );
+    assert_eq!(
+        py["expected"]["required"],
+        serde_json::json!(["concern", "non_concern", "io"]),
+        "all three fields are enforced"
+    );
+    assert!(
+        py["expected"]["recommended"]
+            .as_array()
+            .is_some_and(|r| r.is_empty()),
+        "no recommended-only fields (all three are required): {:?}",
+        py["expected"]["recommended"]
+    );
+    // The file-tailored scaffold: reuses the file's own text as the Concern seed, opens
+    // with the language marker, and leaves the judgment slots as `<…>` placeholders —
+    // which themselves FAIL `annotation_vacuous`, so the stub can't be submitted unedited.
+    let suggestion = py["suggestion"].as_str().expect("suggestion string");
+    assert!(
+        suggestion.starts_with("# Concern: small helpers used across the engine")
+            && suggestion.contains("Non-concern: <concern owned elsewhere>")
+            && suggestion.contains("(<inputs>) -> <outputs>"),
+        "suggestion is file-tailored with placeholder judgment slots: {suggestion:?}"
+    );
+    assert!(
+        doc["rule_violations"].is_array(),
+        "rule_violations is always present (empty here)"
+    );
 }
 
 /// Freeze the `--symbols` TEXT contract: how a file's top-level definitions are
@@ -171,8 +335,8 @@ fn json_surfaces_representative_node_annotation_and_nesting() {
         engine["annotation"]
             .as_str()
             .expect("engine.py annotation is a string"),
-        "Engine: Runs the core computation loop. Responsible for scheduling work units. \
-         NOT concerned with transport or persistence. | I/O: (Job) -> Result",
+        "Concern: runs the core computation loop, scheduling work units | \
+         Non-concern: transport or persistence (api and db own those) | IO: (Job) -> Result",
         "the file's first-line annotation survives the model build into JSON"
     );
 }
@@ -224,4 +388,76 @@ fn md_format_surfaces_package_headings() {
             "expected a markdown heading for package `{pkg}`"
         );
     }
+}
+
+/// A FAILING `--strict-check` prints the annotation guide inline on stdout by default (the
+/// teaching rides on the surface the agent already reads); `--no-guide` suppresses it; a
+/// PASSING run never shows it. Assert the guide's load-bearing invariants — the enforced
+/// template, the GOOD/FAILS contrast, and that a filler boundary is stated to FAIL — rather
+/// than byte-freezing instructional prose. Uses a throwaway fixture with one unannotated file.
+#[test]
+fn strict_failure_prints_guide_on_stdout() {
+    let dir = std::env::temp_dir().join(format!("at-guide-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+    std::fs::write(dir.join("bad.py"), "x = 1\n").expect("write fixture");
+
+    let run_strict = |args: &[&str]| {
+        let mut argv = vec!["annotated-tree", "--strict-check"];
+        argv.extend_from_slice(args);
+        let path = dir.to_string_lossy().into_owned();
+        argv.push(&path);
+        let cli = Cli::parse_from(&argv);
+        let mut buf: Vec<u8> = Vec::new();
+        let mut err: Vec<u8> = Vec::new();
+        let code = annotated_tree::run(&cli, &mut buf, &mut err).expect("run failed");
+        (
+            String::from_utf8(buf).expect("utf8"),
+            String::from_utf8(err).expect("utf8"),
+            code,
+        )
+    };
+
+    let (out, _err, code) = run_strict(&[]);
+    assert_eq!(code, 1, "an unannotated file fails strict-check");
+    assert!(
+        out.contains("ANNOTATION GUIDE"),
+        "the failing report carries the guide inline, got: {out}"
+    );
+    // The template is derived from `strict::EXPECTED`; pin that the guide surfaces it.
+    assert!(
+        out.contains(
+            "Concern: {what it does} | Non-concern: {what it isn't} | IO: (in) -> out  OR  none"
+        ),
+        "the guide renders the enforced template"
+    );
+    assert!(
+        out.contains("GOOD") && out.contains("FAILS") && out.contains("annotation_vacuous"),
+        "the guide shows the GOOD/FAILS contrast and names the vacuous failure category"
+    );
+    assert!(
+        out.contains("HOW TO FIND THE NON-CONCERN"),
+        "the full guide renders the post-`<!-- more -->` tail, not just the --help essence"
+    );
+
+    // `--no-guide` keeps the report clean for a caller that already knows the format.
+    let (out, _err, code) = run_strict(&["--no-guide"]);
+    assert_eq!(code, 1, "--no-guide does not change the verdict");
+    assert!(
+        !out.contains("ANNOTATION GUIDE"),
+        "--no-guide suppresses the guide, got: {out}"
+    );
+
+    // A PASSING run never shows the guide (nothing to fix).
+    std::fs::write(
+        dir.join("bad.py"),
+        "# Concern: exercises the strict gate | Non-concern: rendering (the golden suite owns that) | IO: (x) -> y\n",
+    )
+    .expect("rewrite fixture");
+    let (out, _err, code) = run_strict(&[]);
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(code, 0, "annotated fixture passes");
+    assert!(
+        !out.contains("ANNOTATION GUIDE"),
+        "a passing run never shows the guide, got: {out}"
+    );
 }

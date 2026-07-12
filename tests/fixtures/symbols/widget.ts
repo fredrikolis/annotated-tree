@@ -1,4 +1,4 @@
-// Widget: demo module exercising the TypeScript extractor. | I/O: (Props) -> string
+// Concern: demo module exercising the TypeScript symbol extractor | Non-concern: real behavior (a fixture stub) | IO: (Props) -> string
 
 export interface Props {
     id: string;

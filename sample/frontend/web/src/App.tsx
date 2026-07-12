@@ -1,1 +1,1 @@
-// App: Top-level component composing the page shell. Responsible for layout. NOT concerned with data fetching. | I/O: (Props) -> JSX
+// Concern: composes the top-level page-shell layout | Non-concern: data fetching (hooks and services own it) | IO: (Props) -> JSX

@@ -1,19 +1,19 @@
-|-- app.py  # App: demo module exercising the Python extractor. | I/O: (Settings) -> App
+|-- app.py  # Concern: demo module exercising the Python symbol extractor | Non-concern: real behavior (a fixture stub) | IO: (Settings) -> App
 |   - def build_app(settings)  :5
 |   - class Server  :9
 |   - def start(self)  :10
 |   - def stop(self)  :13
-|-- lib.rs  # Lib: demo crate exercising the Rust extractor. | I/O: (Config) -> Engine
+|-- lib.rs  # Concern: demo crate exercising the Rust symbol extractor | Non-concern: real behavior (a fixture stub) | IO: (Config) -> Engine
 |   - pub struct Engine  :3
 |   - pub enum State  :7
 |   - pub trait Runnable  :12
 |   - pub fn build(config: &str) -> Engine  :16
 |   - pub fn name(&self) -> &str  :23
-|-- server.go  # Server: demo package exercising the Go extractor. | I/O: (args) -> exit_code
+|-- server.go  # Concern: demo package exercising the Go symbol extractor | Non-concern: real server behavior (a fixture stub) | IO: (args) -> exit_code
 |   - type Handler struct  :4
 |   - func New(name string) *Handler  :8
 |   - func (h *Handler) Serve() error  :12
-`-- widget.ts  # Widget: demo module exercising the TypeScript extractor. | I/O: (Props) -> string
+`-- widget.ts  # Concern: demo module exercising the TypeScript symbol extractor | Non-concern: real behavior (a fixture stub) | IO: (Props) -> string
     - interface Props  :3
     - type Handler = (props: Props) => string  :7
     - function render(props: Props): string  :9

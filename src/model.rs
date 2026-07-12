@@ -1,4 +1,4 @@
-// Model: The single canonical in-memory codebase map — builds the sorted dir/file tree once and performs every filesystem read (annotations, mtime). NOT concerned with output formatting. | I/O: (root, files, graph, Config) -> CodebaseMap
+// Concern: the single canonical in-memory codebase map — builds the sorted dir/file tree once and performs every filesystem read (annotations, mtime) | Non-concern: output formatting | IO: (root, files, graph, Config) -> CodebaseMap
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -7,6 +7,7 @@ use std::time::SystemTime;
 use serde::Serialize;
 
 use crate::annotation;
+use crate::charter::{self, Charter};
 use crate::config::Config;
 use crate::graph::DirDeps;
 use crate::symbols::{self, Symbol};
@@ -16,11 +17,76 @@ use crate::tokens;
 #[derive(Serialize)]
 pub struct CodebaseMap {
     pub roots: Vec<DirNode>,
+    /// Non-fatal manifest-parse warnings from the graph walk. NOT part of the tree — the
+    /// model builder never sets it; the shared `build_codebase_map` pipeline attaches the
+    /// graph's warnings here so the JSON renderer (and the MCP `map` tool, which renders
+    /// the same map) can surface them in the envelope's `warnings` array. The text/md
+    /// renderers ignore it (they iterate `roots` only), so their output is unchanged.
+    pub warnings: Vec<crate::graph::Warning>,
+}
+
+/// Annotation coverage across every code file the tree lists: how many carry a first-line
+/// annotation (`annotated`) out of the `total`. This is the Layer-0 motivation signal — a
+/// code file with no annotation is invisible to an agent reading the tree — surfaced on the
+/// unconditional map surfaces (the text footer note and the JSON `coverage` object) so it
+/// reaches agents that never invoke `--strict-check`. Counted over the `FileNode`s actually
+/// in the tree (post `--max-per-node` truncation); `--strict-check` stays the authoritative,
+/// untruncated per-file lister. Coverage is a HAS-ANY-annotation measure (a non-conforming
+/// comment still renders in the tree, so the file is visible) — distinct from the strict
+/// report's `annotated_count`, which counts strict conformance.
+pub struct Coverage {
+    pub annotated: u32,
+    pub total: u32,
+}
+
+impl Coverage {
+    /// Incomplete iff at least one listed code file lacks an annotation. Drives the
+    /// silent-on-success contract: a fully-annotated tree (or one with no code files)
+    /// reports no note and no JSON `coverage` object, so that output stays byte-identical.
+    pub fn is_incomplete(&self) -> bool {
+        self.total > 0 && self.annotated < self.total
+    }
+}
+
+impl CodebaseMap {
+    /// Annotation coverage summed across every root's listed code files.
+    pub fn coverage(&self) -> Coverage {
+        let mut coverage = Coverage {
+            annotated: 0,
+            total: 0,
+        };
+        for root in &self.roots {
+            accumulate_coverage(root, &mut coverage);
+        }
+        coverage
+    }
+}
+
+/// Fold one directory subtree's files into the running coverage counts (recursing into
+/// subdirectories). Only the `FileNode`s present in the tree are counted — files elided by
+/// `--max-per-node` are gone by this point, consistent with counting what the tree shows.
+fn accumulate_coverage(dir: &DirNode, coverage: &mut Coverage) {
+    for file in &dir.files {
+        coverage.total += 1;
+        if file.annotation.is_some() {
+            coverage.annotated += 1;
+        }
+    }
+    for sub in &dir.dirs {
+        accumulate_coverage(sub, coverage);
+    }
 }
 
 #[derive(Serialize)]
 pub struct DirNode {
     pub name: String,
+    /// The directory's concern charter, resolved most-explicit-first (a `.annotation`
+    /// breadcrumb, else the promoted annotation of the code entry file). `None` — and omitted
+    /// from JSON — for a charter-less directory, so such a tree stays byte-for-byte unchanged
+    /// and the schema stays additive under `schema: 1`. Rendered on the directory row beside
+    /// the observed dep facts: authored intent cross-checked against the graph.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub charter: Option<Charter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deps: Option<DirDeps>,
     pub dirs: Vec<DirNode>,
@@ -29,6 +95,21 @@ pub struct DirNode {
     /// `show_tokens` and the subtree was expanded (a pruned depth cutoff is `None`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens: Option<u32>,
+    /// Subdirectories hidden by the per-node display cap (`--max-per-node`); the
+    /// aggregate `tokens` above is still summed over the FULL set, so a collapsed
+    /// directory still reports its true subtree size. `0` (omitted in JSON) unless
+    /// this directory's subdir count exceeds the cap.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub elided_dirs: u32,
+    /// Files hidden by the per-node display cap; `0` (omitted) unless the file
+    /// count exceeds the cap. Distinct from `elided_dirs` so JSON consumers see the
+    /// breakdown; the text/md renderers fold both into one marker row.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub elided_files: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 #[derive(Serialize)]
@@ -116,12 +197,18 @@ fn convert(
     // contents are not expanded — mirroring the original render's early return.
     let pruned = max_depth.is_some_and(|limit| depth >= limit) && depth > 0;
     if pruned {
+        // A depth-pruned directory still shows its own row, so a `.annotation` breadcrumb
+        // still resolves (a filesystem read needing no children); entry-file promotion cannot,
+        // as the subtree is unexpanded — so only the explicit override can surface here.
         return DirNode {
             name,
+            charter: charter::read_charter_file(abs_dir).and_then(|c| charter::from_line(&c)),
             deps,
             dirs: Vec::new(),
             files: Vec::new(),
             tokens: None,
+            elided_dirs: 0,
+            elided_files: 0,
         };
     }
 
@@ -156,14 +243,75 @@ fn convert(
         })
         .collect();
 
+    // Resolve the charter BEFORE truncation reads from the full child set — entry-file
+    // promotion reaches into the already-built children (a crate's `src/lib.rs`, a package's
+    // `__init__.py`), which a display cap could otherwise elide out from under it.
+    let charter = resolve_charter(abs_dir, &dirs, &files);
+
+    // Aggregate BEFORE truncating: the token total must reflect the full subtree
+    // even when the display collapses it, so a hidden corpus dir still reports its
+    // true size (the "skip this folder" signal). Truncation is a display concern
+    // applied last — the walk already visited every file.
     let tokens = subtree_tokens(&dirs, &files, config);
+    let cap = config.display.max_per_node;
+    let (dirs, elided_dirs) = truncate(dirs, cap);
+    let (files, elided_files) = truncate(files, cap);
 
     DirNode {
         name,
+        charter,
         deps,
         dirs,
         files,
         tokens,
+        elided_dirs,
+        elided_files,
+    }
+}
+
+/// Resolve a directory's charter from the already-built tree, most-explicit-first: a
+/// `.annotation` breadcrumb (its presence overrides, even if malformed — then `None` here and
+/// `--strict-check` flags it), else the promoted annotation of the code entry file. Promotion
+/// REUSES the already-extracted `FileNode.annotation` (no re-parse) — a crate's `src/lib.rs`
+/// (else `src/main.rs`), or a direct-child module/package/index/doc entry file. The one
+/// annotation grammar splits it (`charter::from_line`); the entry-file tables live in
+/// `charter`, so the model and the strict-check filesystem resolver share both.
+fn resolve_charter(abs_dir: &Path, dirs: &[DirNode], files: &[FileNode]) -> Option<Charter> {
+    if let Some(content) = charter::read_charter_file(abs_dir) {
+        return charter::from_line(&content);
+    }
+    if abs_dir.join("Cargo.toml").is_file() {
+        if let Some(src) = dirs.iter().find(|d| d.name == "src") {
+            if let Some(c) = promote_first(&src.files, charter::CRATE_ENTRY_FILES) {
+                return Some(c);
+            }
+        }
+    }
+    promote_first(files, charter::DIRECT_ENTRY_FILES)
+}
+
+/// The charter promoted from the first file in `files` whose name matches `names` (in order)
+/// and that carries an annotation — reusing the child's already-extracted `FileNode.annotation`.
+fn promote_first(files: &[FileNode], names: &[&str]) -> Option<Charter> {
+    names.iter().find_map(|name| {
+        files
+            .iter()
+            .find(|f| f.name == *name)
+            .and_then(|f| f.annotation.as_deref())
+            .and_then(charter::from_line)
+    })
+}
+
+/// Keep at most `cap` items for display, returning the kept items and the count
+/// dropped. `None` (no cap) or a list already within the cap is a no-op (0 elided).
+fn truncate<T>(mut items: Vec<T>, cap: Option<usize>) -> (Vec<T>, u32) {
+    match cap {
+        Some(n) if items.len() > n => {
+            let elided = (items.len() - n) as u32;
+            items.truncate(n);
+            (items, elided)
+        }
+        _ => (items, 0),
     }
 }
 

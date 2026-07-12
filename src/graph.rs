@@ -1,4 +1,4 @@
-// Graph: Cross-references every manifest into per-directory dependency edges (internal, external, reverse "used by"). NOT concerned with parsing manifest syntax or rendering. | I/O: (roots) -> map<dir, DirDeps>
+// Concern: cross-references every manifest into per-directory dependency edges (internal, external, reverse "used by") | Non-concern: parsing manifest syntax or rendering | IO: (roots) -> map<dir, DirDeps>
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -38,13 +38,26 @@ pub struct PackageEdges {
     pub dir: PathBuf,
 }
 
+/// A non-fatal issue found while building the graph: a manifest a parser could not
+/// read or parse. The map is still produced (just missing that package's edges), so the
+/// failure is surfaced as a located, dispatchable diagnostic — a stable `code`, the
+/// offending `path`, and a human `message` — mirroring [`crate::strict::AnnotationViolation`]
+/// so an agent branches on `code` instead of scraping prose. The CLI prints `message` to
+/// stderr; the `--format json` / MCP `map` envelope carries the whole struct in `warnings`.
+#[derive(Debug, Clone, Serialize)]
+pub struct Warning {
+    pub code: &'static str,
+    pub path: String,
+    pub message: String,
+}
+
 /// The resolved dependency graph: per-directory facts for rendering, plus the
 /// package edge list for policy checks, plus parse warnings. One struct so callers
 /// take exactly the view they need (Minimal API).
 pub struct Graph {
     pub dir_deps: HashMap<PathBuf, DirDeps>,
     pub packages: Vec<PackageEdges>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Warning>,
 }
 
 struct Package {
@@ -64,7 +77,7 @@ struct Package {
 pub fn build(roots: &[PathBuf], gitignore: bool, include_tests: bool, excludes: &GlobSet) -> Graph {
     let parsers = crate::manifest::parsers();
     let mut raw: Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)> = Vec::new();
-    let mut warnings: Vec<String> = Vec::new();
+    let mut warnings: Vec<Warning> = Vec::new();
 
     for root in roots {
         collect_manifests(
@@ -236,7 +249,7 @@ fn collect_manifests(
     excludes: &GlobSet,
     parsers: &[Box<dyn ManifestParser>],
     out: &mut Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Vec<Warning>,
 ) {
     // One traversal for every manifest kind: dispatch each entry to the parser
     // whose filename it matches. (Previously one full walk per parser.) Shares the
@@ -254,7 +267,14 @@ fn collect_manifests(
         let Some(dir) = path.parent() else { continue };
         match parser.parse(path) {
             Ok(parsed) => out.push((parser.ecosystem(), dir.to_path_buf(), parsed)),
-            Err(err) => warnings.push(format!("could not parse manifest: {err:#}")),
+            // The `message` embeds the path (via the parser's `with_context`) so stderr
+            // reads exactly as before; `path` is the same manifest as a structured field
+            // for the JSON/MCP `warnings` array to dispatch on.
+            Err(err) => warnings.push(Warning {
+                code: crate::exit::code::MANIFEST_PARSE_ERROR,
+                path: path.display().to_string(),
+                message: format!("could not parse manifest: {err:#}"),
+            }),
         }
     }
 }

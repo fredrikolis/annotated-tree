@@ -1,7 +1,4 @@
-// Age column (e2e): freezes that `--age` is actually wired into the render — every
-// file row carries a relative-age token — over a tempdir of real files. Asserts the
-// column's SHAPE (a `… ago)` suffix), never its nondeterministic value; the pure
-// seconds -> bucket logic is unit-tested in `src/util.rs`. | I/O: (temp tree, --age) -> asserted stdout
+// Concern: freezes that `--age` is actually wired into the render — every file row carries a relative-age token — over a tempdir of real files, asserting the column's SHAPE (a `… ago)` suffix) | Non-concern: the column's nondeterministic value or the pure seconds -> bucket logic (unit-tested in `src/util.rs`) | IO: (temp tree, --age) -> asserted stdout
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -23,8 +20,8 @@ fn temp_tree() -> PathBuf {
 #[test]
 fn age_flag_puts_a_relative_age_token_on_every_file_line() {
     let dir = temp_tree();
-    std::fs::write(dir.join("src/a.py"), "# A: does a. | I/O: () -> None\n").unwrap();
-    std::fs::write(dir.join("src/b.py"), "# B: does b. | I/O: () -> None\n").unwrap();
+    std::fs::write(dir.join("src/a.py"), "# Concern: does a for the age fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
+    std::fs::write(dir.join("src/b.py"), "# Concern: does b for the age fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
 
     let cli = Cli::parse_from(["annotated-tree", "--age", &dir.to_string_lossy()]);
     let mut out: Vec<u8> = Vec::new();

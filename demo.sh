@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Demo: Builds annotated-tree if needed, then shows its features against sample/.
+# Concern: builds annotated-tree if needed, then shows its features against sample/ | Non-concern: the tool's own logic | IO: none
 # Run: ./demo.sh
 set -euo pipefail
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Local release validation: runs every release gate that does not require pushing
+# Concern: runs every local release gate that does not require pushing (fmt, clippy, tests, build) | Non-concern: gates that require network/push (CI owns those) | IO: (working tree) -> pass/fail
 # anything. Mirrors the CI + release pipeline so a release can be validated on a
 # workstation before tagging. See RELEASING.md for the parts that need external
-# toolchains (macOS/Windows legs, Homebrew, npm).
+# toolchains (macOS/Windows legs, npm).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

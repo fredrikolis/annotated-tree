@@ -1,8 +1,4 @@
-// Config precedence (binary-level): the runaway-scope cap resolves CLI > env > repo
-// config, and a garbage env value fails fast. These paths only run for real through a
-// spawned process (the env var and `.annotated-tree.toml` discovery are process/CWD
-// state), so freeze them at the boundary scripts see. NOT concerned with rendering.
-// | I/O: (env, temp repo, argv) -> asserted (exit code, stderr)
+// Concern: the runaway-scope cap resolves CLI > env > repo config, and a garbage env value fails fast; these paths only run for real through a spawned process (the env var and `.annotated-tree.toml` discovery are process/CWD state), so freeze them at the boundary scripts see | Non-concern: rendering | IO: (env, temp repo, argv) -> asserted (exit code, stderr)
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -20,7 +16,7 @@ fn temp_tree(tag: &str, n_files: usize) -> PathBuf {
     for i in 0..n_files {
         std::fs::write(
             src.join(format!("f{i}.py")),
-            "# F: does f. | I/O: () -> None\n",
+            "# Concern: does f for the config-precedence fixture | Non-concern: real behavior (a test stub) | IO: none\n",
         )
         .unwrap();
     }
@@ -50,14 +46,14 @@ fn run(dir: &Path, set: &[(&str, &str)], clear: &[&str], args: &[&str]) -> (Stri
 }
 
 #[test]
-fn env_max_files_below_count_aborts_exit_2() {
+fn env_max_files_below_count_aborts_runaway_scope() {
     // 3 files under an env cap of 1: the env path (never exercised by the in-process
     // tests, which clear the var) trips the runaway-scope abort.
     let dir = temp_tree("env-low", 3);
     let (_stderr, code) = run(&dir, &[("ANNOTATED_TREE_MAX_FILES", "1")], &[], &[]);
     assert_eq!(
-        code, 2,
-        "env ANNOTATED_TREE_MAX_FILES below the count must abort (exit 2)"
+        code, 3,
+        "env ANNOTATED_TREE_MAX_FILES below the count must abort (exit 3, RUNAWAY_SCOPE)"
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -93,8 +89,8 @@ fn repo_config_limit_applies_and_cli_overrides_it() {
     // the file count (3): the config limit takes effect.
     let (_e1, code_cfg) = run(&dir, &[], &["ANNOTATED_TREE_MAX_FILES"], &[]);
     assert_eq!(
-        code_cfg, 2,
-        "a repo .annotated-tree.toml limit must take effect"
+        code_cfg, 3,
+        "a repo .annotated-tree.toml limit must take effect (exit 3, RUNAWAY_SCOPE)"
     );
 
     // `--max-files` outranks the config file (precedence: CLI > env > config).

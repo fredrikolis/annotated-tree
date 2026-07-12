@@ -1,4 +1,4 @@
-// Markdown renderer: Formats the canonical map as human-facing Markdown — a heading per directory (with its dependency summary) and a bullet per file with its annotation. NOT concerned with filesystem reads or machine contracts. | I/O: (CodebaseMap) -> String
+// Concern: formats the canonical map as human-facing Markdown — a heading per directory (with its dependency summary) and a bullet per file with its annotation | Non-concern: filesystem reads or machine contracts | IO: (CodebaseMap) -> String
 
 use crate::model::{CodebaseMap, DirNode};
 
@@ -31,7 +31,13 @@ fn render_children(node: &DirNode, depth: usize, out: &mut String) {
     for file in &node.files {
         out.push_str(&file_bullet(&file.name, file.annotation.as_deref()));
     }
-    if !node.files.is_empty() {
+    // One trailing bullet folds both elided counts, reusing the text renderer's
+    // phrasing (DRY) so the two views stay in sync.
+    let marker = super::elision_summary(node.elided_dirs, node.elided_files);
+    if let Some(summary) = &marker {
+        out.push_str(&format!("- _{summary}_\n"));
+    }
+    if !node.files.is_empty() || marker.is_some() {
         out.push('\n');
     }
 }
@@ -39,7 +45,18 @@ fn render_children(node: &DirNode, depth: usize, out: &mut String) {
 fn render_dir(dir: &DirNode, depth: usize, out: &mut String) {
     let level = (depth + 2).min(MAX_HEADING_LEVEL);
     out.push_str(&format!("{} {}/\n\n", "#".repeat(level), dir.name));
-    if let Some(text) = dir.deps.as_ref().and_then(|d| d.annotation()) {
+    // Charter (authored intent) first, dep facts (observed) folded in behind `·` — the same
+    // charter-then-deps order the text view uses. Absent both, the heading stands alone,
+    // byte-for-byte as before.
+    let charter = dir.charter.as_ref().map(|c| c.line());
+    let deps = dir.deps.as_ref().and_then(|d| d.annotation());
+    let summary = match (charter, deps) {
+        (Some(charter), Some(deps)) => Some(format!("{charter}  ·  {deps}")),
+        (Some(charter), None) => Some(charter),
+        (None, Some(deps)) => Some(deps),
+        (None, None) => None,
+    };
+    if let Some(text) = summary {
         out.push_str(&format!("_{text}_\n\n"));
     }
     render_children(dir, depth + 1, out);

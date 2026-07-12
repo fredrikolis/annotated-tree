@@ -1,4 +1,4 @@
-frontend/ui/src/index.ts:1: annotation missing required '| I/O:'
-packages/core/acme_core/utils.py:1: annotation missing required '| I/O:'
+packages/core/acme_core/utils.py:1: annotation is malformed [python] — expected 'Concern: {what it does} | Non-concern: {what it isn't} | IO: (in) -> out  OR  none'. found: 'small helpers used across the engine'. suggestion: # Concern: small helpers used across the engine | Non-concern: <concern owned elsewhere> | IO: (<inputs>) -> <outputs>
 
-Found 2 error(s) in 20 files checked
+Found 1 error(s) in 20 files checked
+19 of 20 files annotated

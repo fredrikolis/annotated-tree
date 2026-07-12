@@ -1,1 +1,1 @@
-// Shared types: Wire structs used by every service. Responsible for serde contracts. NOT concerned with transport. | I/O: (bytes) -> Struct
+// Concern: defines the wire structs and serde contracts shared by every service | Non-concern: transport (the gateway owns it) | IO: (bytes) -> Struct

@@ -1,4 +1,4 @@
-// Text renderer: Formats the canonical map as a `tree`-style view with glyph connectors, per-file `# annotation`/age suffixes, and per-directory dependency edges. NOT concerned with filesystem reads. | I/O: (CodebaseMap) -> String
+// Concern: formats the canonical map as a `tree`-style view with glyph connectors, per-file `# annotation`/age suffixes, and per-directory dependency edges | Non-concern: filesystem reads | IO: (CodebaseMap) -> String
 
 use crate::model::{CodebaseMap, DirNode};
 use crate::util::format_relative_time;
@@ -60,7 +60,8 @@ fn render_root(root: &DirNode, glyphs: &Glyphs) -> String {
 }
 
 fn render_node(node: &DirNode, prefix: &str, glyphs: &Glyphs, out: &mut String) {
-    let child_count = node.dirs.len() + node.files.len();
+    let marker = super::elision_summary(node.elided_dirs, node.elided_files);
+    let child_count = node.dirs.len() + node.files.len() + marker.is_some() as usize;
     let mut index = 0;
 
     for child in &node.dirs {
@@ -104,13 +105,29 @@ fn render_node(node: &DirNode, prefix: &str, glyphs: &Glyphs, out: &mut String) 
             }
         }
     }
+
+    // The per-node overflow marker is always the directory's final child (it was
+    // counted into `child_count`), so it takes the elbow connector and folds both
+    // elided-dir and elided-file counts into one row.
+    if let Some(summary) = marker {
+        out.push_str(&format!("{prefix}{}[{summary}]\n", glyphs.elbow));
+    }
 }
 
+/// The directory row's trailing `# …`: the authored charter first (when resolved), then the
+/// observed dep facts folded in behind a `·` separator — authored intent cross-checked against
+/// the graph. A charter-less directory is byte-for-byte unchanged (bare deps, or nothing). The
+/// separator is glyph-neutral (not ascii-swapped) so `--ascii` stays a pure box-glyph swap.
 fn dir_annotation(dir: &DirNode) -> String {
-    match dir.deps.as_ref().and_then(|d| d.annotation()) {
-        Some(text) => format!("  # {text}"),
-        None => String::new(),
-    }
+    let charter = dir.charter.as_ref().map(|c| c.line());
+    let deps = dir.deps.as_ref().and_then(|d| d.annotation());
+    let text = match (charter, deps) {
+        (Some(charter), Some(deps)) => format!("{charter}  ·  {deps}"),
+        (Some(charter), None) => charter,
+        (None, Some(deps)) => deps,
+        (None, None) => return String::new(),
+    };
+    format!("  # {text}")
 }
 
 fn file_annotation(annotation: Option<&str>) -> String {

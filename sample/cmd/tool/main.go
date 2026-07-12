@@ -1,2 +1,2 @@
-// CLI entrypoint: Parses flags and dispatches subcommands. Responsible for arg handling. NOT concerned with business logic. | I/O: (args) -> exit_code
+// Concern: parses CLI flags and dispatches subcommands | Non-concern: business logic (delegates to internal packages) | IO: (args) -> exit_code
 package main

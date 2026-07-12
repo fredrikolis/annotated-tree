@@ -1,1 +1,1 @@
-# Routes: Declares HTTP endpoints and request handlers. Responsible for I/O validation and dispatch. NOT concerned with computation (delegates to core). | I/O: (Request) -> Response
+# Concern: declares HTTP endpoints and dispatches request handlers | Non-concern: computation (delegates to acme_core) | IO: (Request) -> Response

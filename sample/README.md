@@ -1,4 +1,4 @@
-<!-- Covers: What the sample tree demonstrates and how to read it. Not: Real product docs. Use when: Understanding the annotated-tree test fixture. -->
+<!-- Concern: documents what the sample tree demonstrates and how to read it | Non-concern: real product docs (this is a test fixture) | IO: none -->
 # Sample monorepo (test fixture)
 
 A deliberately mixed-ecosystem tree used to exercise every `annotated-tree`

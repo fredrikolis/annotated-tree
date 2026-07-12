@@ -1,4 +1,4 @@
-// Walk: Yields the set of annotatable code files under a root, applying gitignore, test/vendor pruning, and exclude globs. NOT concerned with annotations or graph. | I/O: (root, Config, excludes) -> [file paths]
+// Concern: yields the set of annotatable code files under a root, applying gitignore, test/vendor pruning, and exclude globs | Non-concern: annotations or graph | IO: (root, Config, excludes) -> [file paths]
 
 use std::path::{Path, PathBuf};
 
@@ -6,6 +6,15 @@ use globset::GlobSet;
 use ignore::{DirEntry, WalkBuilder};
 
 use crate::config::Config;
+
+/// The metadata filename a directory carries its concern charter in — a bare three-field
+/// annotation line whose only subject is the enclosing directory. Recognized as METADATA,
+/// not content: it is dot-hidden (so the walk below, which sets `.hidden(true)`, never emits
+/// it as a tree node) and extension-less (so `collect_code_files` never treats it as a code
+/// file). It is instead read directly by charter resolution (`crate::charter`), the one read
+/// the display filters must not hide. Named here, at the walk that defines what the tree shows,
+/// so "the file the tree omits" and "the file charter resolution reads" reference one constant.
+pub(crate) const CHARTER_FILE: &str = ".annotation";
 
 /// The walk was aborted because a root exceeded its `max_files` cap. A typed
 /// boundary error (Fail-Fast): the walk stops before any model/graph/render work,

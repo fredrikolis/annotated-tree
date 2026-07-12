@@ -1,5 +1,7 @@
-# Injected at publish time from release artifacts — never committed.
+# Injected at publish time — never committed.
 node_modules/
 *.tgz
 platforms/*/annotated-tree
 platforms/*/annotated-tree.exe
+# Copied from the canonical repo-root README.md by scripts/build-npm.mjs.
+README.md

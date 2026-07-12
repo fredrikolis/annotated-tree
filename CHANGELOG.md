@@ -1,4 +1,4 @@
-<!-- Covers: Version history and notable changes. Not: Usage or roadmap. Use when: Checking what changed between releases. -->
+<!-- Concern: version history and notable changes | Non-concern: usage or roadmap (see README) | IO: none -->
 # Changelog
 
 All notable changes to this project are documented here. The format follows
@@ -6,6 +6,58 @@ All notable changes to this project are documented here. The format follows
 to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-07-12
+
+### Added
+- **Annotation guide on `--help` and failing `--strict-check`** — the format, a
+  GOOD/FAILS contrast, and how to find the Non-concern, shown inline where you fix an
+  annotation. Opt out with `--no-guide`.
+- **Single-file `--strict-check`** — lint one file, not just a directory (pre-commit
+  hook, or the file you just wrote).
+- **Directory charters** — a directory carries its own `Concern | Non-concern | IO`
+  line (a `.annotation` breadcrumb, else its entry file), promoted onto its tree row.
+- **Actionable `--strict-check` diagnostics** — each violation now names the file's
+  language, the exact comment marker to use, the *real* line number (past any
+  shebang/blank lines — no more hardcoded `:1` that led fixes to clobber a shebang),
+  the offending content, and a copy-pasteable conformant example. Missing vs.
+  non-conforming annotations get distinct wording, and a wrong-marker line is echoed
+  as `found: '…'`. The machine-parseable `path:LINE:` prefix is preserved. MCP
+  `strict_check` inherits the richer messages.
+- **Machine-readable `--strict-check --format json`** — the strict check now emits a
+  structured document (`{passed, error_count, files_checked, violations,
+  rule_violations}`) when `--format json` is passed, one record per violation with
+  `path`/`line`/`language`/`category`/`marker`/`hint`/`example`/`found`. The default
+  TEXT report is unchanged. MCP `strict_check` returns this same structured object
+  (byte-for-byte the CLI's `--format json`) instead of a flat text report.
+- **`ANNOTATION FORMAT` in `--help`** — `--help` now shows what a conforming
+  annotation looks like, with a verbatim example sourced from the built-in
+  `[convention].example` so help and enforcement can never disagree.
+- **`[convention].example` config field** — a full, conformant annotation line
+  (per-language overridable, like `require`/`hint`) that feeds both `--help` and the
+  strict-check diagnostics. A test proves every built-in language's example passes
+  the lint it advertises.
+- **Per-directory display cap** — `--max-per-node <N>` (default 50) shows at most
+  N subdirectories and N files per directory, folding the overflow into a single
+  `[+N folders and F files, use --full to expand]` marker. Keeps signal-dense
+  source trees fully visible while collapsing massive test/corpus folders to one
+  line — the overview an agent wants without the token noise. Aggregate `--tokens`
+  totals still reflect the full (untruncated) subtree, so a collapsed folder still
+  reports its true size. Expand everything with `--full` (or `--max-per-node 0`).
+  Display-only: the walk still visits every file, so `--max-files` is unaffected.
+  JSON/MCP carry the breakdown as `elided_dirs` / `elided_files` (omitted when
+  zero — no schema bump).
+
+### Changed
+- **One invariant annotation format** — the three-field `Concern | Non-concern | IO`
+  grammar is now fixed (not configurable); the only per-language knob is the comment
+  marker.
+- **Stricter vacuity enforcement** — a filler `Concern` (`utils`/`helpers`/…) and an
+  inward `Non-concern` (`this file's own …`) now fail, matching what the guide teaches.
+
+### Removed
+- **`--explain`** — superseded by the annotation guide, now shown inline on a failing
+  `--strict-check` and in `--help`.
 
 ## [0.1.1] - 2026-07-10
 
@@ -55,7 +107,7 @@ Initial release.
   validation convention per language.
 - Non-fatal stderr warnings for unparseable manifests (silence with
   `--ignore-parsing-errors`); a corrupt manifest never aborts the run.
-- **Distribution** — crates.io, cargo-binstall, Homebrew, npm/npx, and a
+- **Distribution** — crates.io, cargo-binstall, npm/npx, and a
   checksum-verifying `curl | sh` installer.
 - Golden-file and integration test suite; CI across Linux, macOS, and Windows.
 

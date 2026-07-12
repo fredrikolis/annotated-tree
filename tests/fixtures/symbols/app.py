@@ -1,4 +1,4 @@
-# App: demo module exercising the Python extractor. | I/O: (Settings) -> App
+# Concern: demo module exercising the Python symbol extractor | Non-concern: real behavior (a fixture stub) | IO: (Settings) -> App
 import os
 
 

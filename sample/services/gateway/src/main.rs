@@ -1,1 +1,1 @@
-// Binary entrypoint: Boots the gateway server. Responsible for process lifecycle. NOT concerned with routing logic. | I/O: (env) -> exit_code
+// Concern: boots the gateway server and owns process lifecycle | Non-concern: routing logic (lib.rs owns it) | IO: (env) -> exit_code

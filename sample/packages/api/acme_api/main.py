@@ -1,2 +1,2 @@
 #!/usr/bin/env python3
-# App factory: Builds and configures the ASGI application. Responsible for wiring routes and middleware. NOT concerned with business logic. | I/O: (Settings) -> ASGIApp
+# Concern: builds and configures the ASGI application, wiring routes and middleware | Non-concern: business logic (the core package owns it) | IO: (Settings) -> ASGIApp

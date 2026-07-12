@@ -1,1 +1,1 @@
-# Tasks: Defines background jobs run off the queue. Responsible for retry and idempotency. NOT concerned with HTTP. | I/O: (Message) -> None
+# Concern: defines background jobs run off the queue with retry and idempotency | Non-concern: HTTP transport (the api package owns it) | IO: (Message) -> void

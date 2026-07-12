@@ -1,6 +1,4 @@
-// Warnings: End-to-end tests for manifest parse-error reporting — a corrupt
-// manifest warns to stderr and continues, `--ignore-parsing-errors` silences it,
-// and a valid manifest without a package is not an error. | I/O: (temp tree) -> asserted (stdout, stderr, code)
+// Concern: end-to-end tests for manifest parse-error reporting — a corrupt manifest warns to stderr and continues, --ignore-parsing-errors silences it, and a valid manifest without a package is not an error | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, stderr, code)
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -37,7 +35,7 @@ fn run_capture(dir: &Path, extra: &[&str]) -> (String, String, i32) {
 fn corrupt_manifest_warns_and_continues() {
     let dir = temp_dir("corrupt");
     std::fs::write(dir.join("pyproject.toml"), "[project\nname = \"oops\n").unwrap();
-    std::fs::write(dir.join("src/x.py"), "# X: does x. | I/O: () -> None\n").unwrap();
+    std::fs::write(dir.join("src/x.py"), "# Concern: does x for the warnings fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
 
     let (out, err, code) = run_capture(&dir, &[]);
     assert_eq!(code, 0, "a corrupt manifest must not abort the run");
@@ -65,7 +63,7 @@ fn valid_manifest_without_package_is_silent() {
         "[tool.black]\nline-length = 88\n",
     )
     .unwrap();
-    std::fs::write(dir.join("src/y.py"), "# Y: does y. | I/O: () -> None\n").unwrap();
+    std::fs::write(dir.join("src/y.py"), "# Concern: does y for the warnings fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
 
     let (_out, err, code) = run_capture(&dir, &[]);
     assert_eq!(code, 0);

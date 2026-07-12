@@ -1,13 +1,16 @@
 # Built-in default configuration for annotated-tree.
 # Precedence (low -> high): these defaults < ~/.config/annotated-tree/config.toml
 # < ./.annotated-tree.toml (nearest ancestor) < command-line flags.
-
-[convention]
-# Regex a code annotation must match to pass --strict-check. The default enforces
-# the "| I/O:" contract section. Rust's regex engine is linear-time, so this
-# pattern is safe to override with untrusted repo config.
-require = '\|\s*I/O:'
-hint = "| I/O:"
+#
+# The annotation format is INVARIANT — not configurable — so a cross-repo agent can
+# trust the map's shape without reading each repo's config first. Every file's first
+# eligible comment line carries three ` | `-delimited (space-pipe-space) keyed fields:
+#   <comment> Concern: <what it does> | Non-concern: <what it deliberately isn't> | IO: <(in) -> out  OR  none>
+# `Concern:` and `Non-concern:` are required and reject filler (none/n/a/nothing/…);
+# `IO:` is required but `none` is a first-class blessed value (config, data, and docs
+# use `IO: none`). This is enforced in code, not by a regex here — so the only per-language
+# knob is the comment MARKER (below). The advertised `example` shown in `--help` and
+# `--strict-check` is DERIVED from that marker plus the fixed format, never configured.
 
 [limits]
 # Runaway-scope safety valve. Aborts (exit 2, nothing written) once a root exceeds
@@ -24,6 +27,7 @@ max_files = 10000
 deny = []              # e.g. [["web", "core"]] forbids package `web` depending on `core`
 forbid_cycles = false  # flag any dependency cycle among internal packages
 forbid_orphans = false # flag internal packages with no dependency edge in or out
+require_package_charter = false # fail a manifest-bearing package that has annotated files but resolves no concern charter (a .annotation breadcrumb, else its entry file's annotation)
 
 [display]
 show_age = false        # append file mtimes (non-deterministic); opt in with --age
@@ -32,14 +36,15 @@ show_symbols = false    # outline top-level definitions per file (needs a `symbo
 ascii = false           # Unicode box-drawing by default; --ascii for restricted terminals
 gitignore = true        # respect .gitignore by default; --no-gitignore to disable
 include_tests = false   # "tests" directories are hidden unless --include-tests
+max_per_node = 50       # cap entries shown per directory (subdirs and files each); overflow collapses to a "[+N folders and F files]" marker. Display-only (the walk still visits every file). Expand with --full or --max-per-node 0
 
 # --- Languages -------------------------------------------------------------
 # Each entry maps file extensions to how the first-line annotation is found.
 # The extraction engine always: skips a shebang, skips blank lines, then reads
 # the first comment using the tokens below. Set `pattern` to bypass the engine
 # with a capture-group regex: the annotation is taken from the capture group named
-# `annotation` if present, else capture group 1. Set `require`/`hint` to override
-# the convention for that language.
+# `annotation` if present, else capture group 1. The advertised exemplar is derived
+# from each language's marker (the annotation FORMAT itself is fixed, not per-language).
 
 [languages.python]
 extensions = [".py"]
@@ -73,7 +78,7 @@ extensions = [".sql"]
 comment = "--"
 
 [languages.markdown]
+# One grammar for code AND prose: Markdown uses the SAME three fields, with `IO: none`
+# where a doc has no callable contract (no per-language dialect / carve-out).
 extensions = [".md"]
 block = ["<!--", "-->"]
-require = '\S'           # markdown only needs *an* annotation, not the I/O contract
-hint = "an HTML comment"

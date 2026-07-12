@@ -1,12 +1,14 @@
-// Cross-build CLI contracts (e2e): a lean binary keeps an identical CLI surface —
-// `--symbols` without the `symbols` feature still renders the tree AND notes the missing
-// support on stderr; `--mcp` without the `mcp` feature exits nonzero with a rebuild
-// message. Spawns the binary cargo built for THIS run, so each assertion is gated to the
-// build that actually lacks the feature. | I/O: (argv) -> asserted (stdout, stderr, code)
+// Concern: a lean binary keeps an identical CLI surface — `--symbols` without the `symbols` feature still renders the tree AND notes the missing support on stderr; `--mcp` without the `mcp` feature exits nonzero with a rebuild message; spawns the binary cargo built for THIS run, so each assertion is gated to the build that actually lacks the feature | Non-concern: unit-level logic | IO: (argv) -> asserted (stdout, stderr, code)
 
+// Both e2e cases below are compiled out under a full-feature build (each is gated on
+// the ABSENCE of a feature), so the shared helpers are dead code when BOTH features
+// are on — gate them to match, keeping `--features symbols,mcp -D warnings` clean.
+#[cfg(any(not(feature = "symbols"), not(feature = "mcp")))]
 use std::path::PathBuf;
+#[cfg(any(not(feature = "symbols"), not(feature = "mcp")))]
 use std::process::Command;
 
+#[cfg(any(not(feature = "symbols"), not(feature = "mcp")))]
 fn sample() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sample")
 }

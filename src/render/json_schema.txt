@@ -1,0 +1,85 @@
+Map document — `--format json` (schema version 1)
+
+{
+  "schema": 1,                     // integer; bumped only on a breaking change
+  "roots":    [ DirNode, … ],      // one entry per analyzed root directory
+  "coverage": Coverage,            // OMITTED at full coverage (every listed file annotated)
+  "warnings": [ Warning, … ]       // OMITTED when empty (no manifest failed to parse)
+}
+
+Warning  = {
+  "code":    string,               // stable kind, currently only "manifest_parse_error"
+  "path":    string,               // the manifest that could not be read/parsed
+  "message": string                // human detail (may change; do not parse)
+}
+
+Coverage = {
+  "code":      string,             // stable dispatch key, currently only "annotations_incomplete"
+  "annotated": integer,            // listed code files that carry a first-line annotation
+  "total":     integer             // listed code files in the tree (post --max-per-node)
+}
+
+DirNode  = {
+  "name":         string,
+  "charter":      Charter,         // OMITTED unless the dir resolves a concern charter
+  "dirs":         [ DirNode, … ],  // always present (possibly empty)
+  "files":        [ FileNode, … ], // always present (possibly empty)
+  "deps":         DirDeps,         // OMITTED unless the dir holds a manifest
+  "tokens":       integer,         // OMITTED unless --tokens (subtree estimate)
+  "elided_dirs":  integer,         // OMITTED unless subdirs exceed --max-per-node
+  "elided_files": integer          // OMITTED unless files exceed --max-per-node
+}
+
+Charter  = {                       // a directory's concern charter (dir-scale annotation)
+  "concern":     string,           // what the directory owns
+  "non_concern": string,           // what it deliberately does NOT own
+  "io":          string            // its IO contract, or the blessed literal "none"
+}
+
+FileNode = {
+  "name":       string,
+  "annotation": string,            // OMITTED when the file has no annotation
+  "age_secs":   integer,           // OMITTED unless --age
+  "tokens":     integer,           // OMITTED unless --tokens
+  "symbols":    [ Symbol, … ]      // OMITTED unless --symbols (empty ⇒ omitted)
+}
+
+Symbol   = {
+  "kind":      string,             // function|method|class|struct|enum|trait|interface|type
+  "name":      string,
+  "signature": string,             // compact one-line signature
+  "line":      integer             // 1-based start line
+}
+
+DirDeps  = {
+  "used_by":  [ string, … ],       // packages that depend on this one
+  "internal": [ { "name": string, "resolved": bool }, … ],
+  "external": [ string, … ]
+}
+
+Absent data is omitted rather than emitted as `null`, so the default-flags output is
+deterministic (no timestamp/token noise) and consumers branch on key-presence. The
+`warnings` array follows the same rule — omitted entirely when empty — so its mere
+presence signals the dependency graph is incomplete. Warnings are non-fatal (exit 0).
+
+`charter` follows the same absent-key rule: present ONLY when the directory resolves one
+(a `.annotation` breadcrumb, else its code entry file's promoted annotation), omitted
+otherwise — so a charter-less tree is byte-identical and the schema stays additive.
+
+`coverage` follows the same absent-key rule: it is present ONLY when some listed code file
+has no annotation (a file with no annotation is invisible to an agent reading the tree), and
+omitted entirely at full coverage — so a fully-annotated repo's document is byte-identical.
+It is the structured, unconditional counterpart of the text map's coverage note, and is
+non-fatal (exit 0); `--strict-check` remains the authoritative, untruncated per-file lister.
+
+Error envelope — replaces `roots` on ANY failure under `--format json` (so stdout is
+never empty + prose-only stderr; an agent parsing stdout always gets a dispatch key):
+
+{
+  "schema": 1,
+  "error": {
+    "code":    string,             // a stable dispatch code (see EXIT CODES / exit::code)
+    "message": string,             // human-readable detail (may change; do not parse)
+    "path":    string              // OMITTED unless an offending path is known
+  }
+}

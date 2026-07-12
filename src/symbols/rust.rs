@@ -1,4 +1,4 @@
-// Rust symbols: The Rust grammar seam — binds tree-sitter-rust to the shared engine via a vendored definition query. NOT concerned with query execution. | I/O: () -> (Language, query)
+// Concern: the Rust grammar seam — binds tree-sitter-rust to the shared engine via a vendored definition query | Non-concern: query execution | IO: () -> (Language, query)
 
 use tree_sitter::Language;
 

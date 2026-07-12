@@ -1,6 +1,9 @@
-// Rules: Evaluates architectural dependency policy (denied edges, forbidden cycles/orphans) over the package edge list from `graph`. NOT concerned with computing edges or formatting the report. | I/O: (packages, Rules) -> Vec<Violation>
+// Concern: evaluates architectural dependency policy (denied edges, forbidden cycles/orphans) over the package edge list from `graph` | Non-concern: computing edges or formatting the report | IO: (packages, Rules) -> Vec<Violation>
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+
+use serde::Serialize;
 
 use crate::graph::PackageEdges;
 use crate::manifest::Ecosystem;
@@ -12,21 +15,60 @@ pub struct Rules {
     pub deny: Vec<(String, String)>,
     pub forbid_cycles: bool,
     pub forbid_orphans: bool,
+    /// Opt-in: a manifest-bearing package that carries annotated files but resolves no
+    /// concern charter FAILS the check. Off by default (a package may honestly omit a
+    /// charter); enabling it turns the always-available charter census into a gate.
+    pub require_package_charter: bool,
 }
 
 impl Rules {
     /// Whether any rule is configured. When false the strict path skips the whole
     /// graph build — no rules, no cost, no behaviour change.
     pub fn is_active(&self) -> bool {
-        !self.deny.is_empty() || self.forbid_cycles || self.forbid_orphans
+        !self.deny.is_empty()
+            || self.forbid_cycles
+            || self.forbid_orphans
+            || self.require_package_charter
     }
 }
 
-/// A single rule finding, rendered by the reporting layer (`strict`). Kept
-/// renderer-agnostic: just the human-readable reason.
+/// Which architectural rule a [`Violation`] breaches. Serialized as the snake_case
+/// tag consumers branch on — the dispatch key mirror of `strict::Category`, so an
+/// agent branches on `code` instead of regexing the `message` prose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleCode {
+    /// A `from -> to` edge the `deny` policy forbids exists in the tree.
+    DeniedDependency,
+    /// A dependency cycle among internal packages (`forbid_cycles`).
+    DependencyCycle,
+    /// A package with no internal edge in or out (`forbid_orphans`).
+    OrphanPackage,
+    /// A `deny` rule names a package absent from the scanned tree.
+    UnknownDenyPackage,
+    /// A manifest-bearing package with annotated files resolves no concern charter
+    /// (`require_package_charter`). Evaluated in `strict` (it needs a filesystem charter
+    /// resolve, not just edges), so it is not produced by [`evaluate`] below.
+    MissingPackageCharter,
+}
+
+/// A single rule finding. Carries a stable dispatch [`code`](RuleCode) and the located
+/// facts (participating packages, offending directory) alongside the human-readable
+/// `message` — the same located-diagnostic shape as `strict::AnnotationViolation`, so
+/// callers act on structure and only humans read the prose.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Violation {
+    /// Stable dispatch code (the mirror of `AnnotationViolation`'s `category`).
+    pub code: RuleCode,
+    /// The finding as a human-readable line — the dual-render kept next to the code
+    /// (the `strict` report emits exactly this as its `rule: …` line).
     pub message: String,
+    /// The participating package name(s): `[from, to]` for a denied dependency, the
+    /// ordered node path for a cycle, the single package for an orphan / unknown deny.
+    pub packages: Vec<String>,
+    /// The canonical directory of the offending package, when one exists in the tree
+    /// (`None` for a cycle spanning many packages, or an absent deny package).
+    pub dir: Option<PathBuf>,
 }
 
 /// Evaluate every configured rule against the package edge list. Output is sorted
@@ -61,9 +103,12 @@ fn unknown_deny_packages(
         for name in [from, to] {
             if !known.contains(name.as_str()) {
                 out.push(Violation {
+                    code: RuleCode::UnknownDenyPackage,
                     message: format!(
                         "deny rule names unknown package '{name}': matches no package in the scanned tree"
                     ),
+                    packages: vec![name.clone()],
+                    dir: None,
                 });
             }
         }
@@ -76,7 +121,11 @@ fn deny_violations(packages: &[PackageEdges], deny: &[(String, String)], out: &m
             for (from, to) in deny {
                 if &pkg.name == from && &dep.name == to {
                     out.push(Violation {
+                        code: RuleCode::DeniedDependency,
                         message: format!("denied dependency: {from} must not depend on {to}"),
+                        packages: vec![from.clone(), to.clone()],
+                        // The offending edge originates in `pkg` (the `from` package).
+                        dir: Some(pkg.dir.clone()),
                     });
                 }
             }
@@ -84,27 +133,40 @@ fn deny_violations(packages: &[PackageEdges], deny: &[(String, String)], out: &m
     }
 }
 
-fn orphan_violations(packages: &[PackageEdges], out: &mut Vec<Violation>) {
-    // A package is depended upon if it is the resolved target of some edge. Keyed by
-    // (ecosystem, name): deps are per-ecosystem, so a name shared across ecosystems
-    // is not the same node.
+/// Every package with no resolved internal edge in OR out — depended on by nothing and
+/// depending on nothing within the scanned tree. This is the ONE orphan definition, shared
+/// by the `forbid_orphans` rule below and the non-fatal `annotation_on_orphan` advisory in
+/// `strict`, so the two surfaces can never disagree on what "orphaned" means. Membership is
+/// keyed by `(ecosystem, name)`: deps are per-ecosystem, so a name shared across ecosystems
+/// is not the same node.
+pub fn orphan_packages(packages: &[PackageEdges]) -> Vec<&PackageEdges> {
     let mut depended_on: HashSet<(Ecosystem, &str)> = HashSet::new();
     for pkg in packages {
         for dep in pkg.internal.iter().filter(|d| d.resolved) {
             depended_on.insert((pkg.ecosystem, dep.name.as_str()));
         }
     }
-    for pkg in packages {
-        let has_out = pkg.internal.iter().any(|d| d.resolved);
-        let has_in = depended_on.contains(&(pkg.ecosystem, pkg.name.as_str()));
-        if !has_out && !has_in {
-            out.push(Violation {
-                message: format!(
-                    "orphan package: {} has no internal dependencies in or out",
-                    pkg.name
-                ),
-            });
-        }
+    packages
+        .iter()
+        .filter(|pkg| {
+            let has_out = pkg.internal.iter().any(|d| d.resolved);
+            let has_in = depended_on.contains(&(pkg.ecosystem, pkg.name.as_str()));
+            !has_out && !has_in
+        })
+        .collect()
+}
+
+fn orphan_violations(packages: &[PackageEdges], out: &mut Vec<Violation>) {
+    for pkg in orphan_packages(packages) {
+        out.push(Violation {
+            code: RuleCode::OrphanPackage,
+            message: format!(
+                "orphan package: {} has no internal dependencies in or out",
+                pkg.name
+            ),
+            packages: vec![pkg.name.clone()],
+            dir: Some(pkg.dir.clone()),
+        });
     }
 }
 
@@ -128,9 +190,15 @@ fn cycle_violations(packages: &[PackageEdges], out: &mut Vec<Violation>) {
 
     for cycle in find_cycles(&adjacency) {
         let mut names: Vec<&str> = cycle.iter().map(|&i| packages[i].name.as_str()).collect();
-        names.push(names[0]); // close the loop for a readable A -> B -> C -> A path
+        // The ordered node path (members in cycle order, loop NOT closed) — the
+        // structured counterpart of the ` -> `-joined message.
+        let path: Vec<String> = names.iter().map(|s| s.to_string()).collect();
+        names.push(names[0]); // close the loop for a readable A -> B -> C -> A message
         out.push(Violation {
+            code: RuleCode::DependencyCycle,
             message: format!("dependency cycle: {}", names.join(" -> ")),
+            packages: path,
+            dir: None,
         });
     }
 }
@@ -326,6 +394,23 @@ mod tests {
             msgs[0].contains("ghost"),
             "the finding names the unknown package: {}",
             msgs[0]
+        );
+    }
+
+    #[test]
+    fn orphan_packages_is_the_shared_definition() {
+        // The reusable definition the `forbid_orphans` rule AND the `annotation_on_orphan`
+        // advisory both build on: exactly the package with no edge in or out is returned,
+        // and the connected pair (web -> core) is not.
+        let packages = [pkg("web", &["core"]), pkg("core", &[]), pkg("lonely", &[])];
+        let orphans: Vec<&str> = orphan_packages(&packages)
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        assert_eq!(
+            orphans,
+            vec!["lonely"],
+            "only the disconnected package is an orphan"
         );
     }
 

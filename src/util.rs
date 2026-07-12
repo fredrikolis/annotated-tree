@@ -1,4 +1,4 @@
-// Util: Small pure helpers — exclude-glob compilation and relative-time formatting. NOT concerned with domain logic. | I/O: (values) -> values
+// Concern: small pure helpers — exclude-glob compilation and relative-time formatting | Non-concern: domain logic | IO: (values) -> values
 
 use std::path::Path;
 

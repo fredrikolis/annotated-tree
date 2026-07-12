@@ -1,4 +1,4 @@
-// Tokens: Deterministic rough token-count heuristic (~1 token per 4 bytes) for display budgeting — a "map, not exact" estimate, NOT a real BPE tokenizer and with no vocabulary or dependencies. NOT concerned with model-accurate counts. | I/O: (byte length) -> estimated token count
+// Concern: deterministic rough token-count heuristic (~1 token per 4 bytes) for display budgeting — a "map, not exact" estimate, not a real BPE tokenizer | Non-concern: model-accurate counts | IO: (byte length) -> estimated token count
 
 /// Estimate the token count of a file from its byte length with a deterministic
 /// heuristic: roughly one token per four bytes (`ceil(len_bytes / 4)`). This is a

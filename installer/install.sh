@@ -1,5 +1,5 @@
 #!/bin/sh
-# install.sh — one-shot installer for the `annotated-tree` CLI.
+# Concern: one-shot installer that downloads the right prebuilt annotated-tree binary for the host | Non-concern: building from source | IO: (host os/arch, version) -> installed binary
 #
 # Role:  Detect the host OS/arch, download the matching prebuilt release
 #        tarball plus its `.sha256`, verify the checksum (aborting on any

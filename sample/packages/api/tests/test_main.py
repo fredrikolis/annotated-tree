@@ -1,1 +1,1 @@
-# Test: Smoke-tests the app factory. | I/O: () -> None
+# Concern: smoke-tests that the app factory builds | Non-concern: business-logic coverage (unit tests own that) | IO: none
