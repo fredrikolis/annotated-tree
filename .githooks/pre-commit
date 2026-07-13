@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# pre-commit gate 1 of 2 (mechanical): every code file must carry a conforming
+# first-line annotation. This is the deterministic presence/form check only; the
+# QUALITY + staleness review is gate 2, attested in the commit message (commit-msg).
+# Gate 1 runs first because gate 2's semantic review is wasted on a file that has no
+# annotation at all.
+# Bypass a genuinely trivial, non-code commit: git commit --no-verify.
+# Enable per clone: git config core.hooksPath .githooks
+set -euo pipefail
+
+# Scope: the whole repo EXCEPT sample/, a golden test fixture whose deliberately-loose
+# annotations are pinned by tests/golden.rs. Excluded via the CLI `--ignore` glob rather
+# than a repo .annotated-tree.toml, because config discovery walks up from the scanned
+# path: a repo-root .toml would be found by the golden tests (which scan sample/) and
+# could break them.
+# Prefer a built binary; fall back to cargo so the hook still works on a fresh clone.
+if [ -x target/release/annotated-tree ]; then
+	run=(target/release/annotated-tree)
+elif [ -x target/debug/annotated-tree ]; then
+	run=(target/debug/annotated-tree)
+else
+	run=(cargo run --quiet --)
+fi
+
+if ! "${run[@]}" --strict-check . --ignore sample; then
+	echo "" >&2
+	echo "pre-commit: ANNOTATION GATE FAILED" >&2
+	echo "  - one or more code files lack a conforming first-line annotation (see above)." >&2
+	echo "  Fix them, then re-commit. Bypass a trivial, non-code commit: git commit --no-verify" >&2
+	exit 1
+fi

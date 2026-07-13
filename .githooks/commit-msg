@@ -47,15 +47,32 @@ fail() {
 	exit 1
 }
 
+fail_ann() {
+	echo "" >&2
+	echo "commit-msg: ANNOTATION-REVIEW GATE FAILED" >&2
+	printf '  - %s\n' "$@" >&2
+	echo "" >&2
+	echo "  Once the standards review above passes (content is FINAL), run a neutral" >&2
+	echo "  reviewer over EVERY file in this diff. For each, confirm it carries an" >&2
+	echo "  appropriate first-line annotation per docs/annotation-guide.md AND that this" >&2
+	echo "  diff did not make that annotation stale. Then attest in the commit message:" >&2
+	echo "      Annotation-Reviewer: <name of the neutral reviewer>" >&2
+	echo "      Annotation-Issues: 0" >&2
+	echo "  (Presence/form is already gated by pre-commit; this is the semantic quality +" >&2
+	echo "  staleness check, and it does not re-run the standards review.)" >&2
+	exit 1
+}
+
 problems=()
 
 reviewer=$(grep -E '^Reviewer:' "$msg_file" | head -n1 | sed -E 's/^Reviewer:[[:space:]]*//' || true)
 [ -n "${reviewer// /}" ] || problems+=("no non-empty 'Reviewer:' line naming the neutral reviewer")
 
 # The grading rubric — the judgment-call subset of docs/repo-standards.md's principles.
-# Excluded: mechanical checks already gated deterministically (File Annotations ->
-# `--strict-check` in CI), plus principles that are meta or structurally N/A for a
-# synchronous Rust CLI. Add any back here if a change warrants it.
+# Excluded: first-line annotations, which are owned entirely by their own two gates
+# (pre-commit `--strict-check` for presence/form, and the annotation-review attestation
+# below for quality + staleness), plus principles that are meta or structurally N/A for
+# a synchronous Rust CLI. Add any back here if a change warrants it.
 categories=(
 	"KISS"
 	"YAGNI"
@@ -113,4 +130,21 @@ if [ "${#blockers[@]}" -gt 0 ]; then
 	fail "${blockers[@]}"
 fi
 
-echo "commit-msg: OK (neutral review complete, 0 major/medium blockers)"
+# --- Gate 2: first-line annotation review (semantic: quality + staleness) -----
+# Conceptually runs AFTER the standards scorecard above, so the reviewer judges each
+# annotation against FINAL content. The dev agent runs the neutral review over every
+# file in the diff and attests; this hook only verifies the attestation.
+ann_reviewer=$(grep -E '^Annotation-Reviewer:' "$msg_file" | head -n1 | sed -E 's/^Annotation-Reviewer:[[:space:]]*//' || true)
+ann_issues=$(grep -E '^Annotation-Issues:[[:space:]]*[0-9]+' "$msg_file" | head -n1 | grep -Eo '[0-9]+' | head -n1 || true)
+
+ann_problems=()
+[ -n "${ann_reviewer// /}" ] || ann_problems+=("no non-empty 'Annotation-Reviewer:' line")
+[ -n "$ann_issues" ] || ann_problems+=("missing 'Annotation-Issues: <n>' count")
+if [ "${#ann_problems[@]}" -gt 0 ]; then
+	fail_ann "${ann_problems[@]}"
+fi
+if [ "$ann_issues" -gt 0 ]; then
+	fail_ann "reviewer flagged $ann_issues annotation issue(s) — every file in the diff needs an appropriate, current first-line annotation"
+fi
+
+echo "commit-msg: OK (standards + annotation review complete, 0 blockers)"
