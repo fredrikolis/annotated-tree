@@ -94,7 +94,14 @@ main() {
     target="$(detect_target)"
     archive="${BIN}-${target}.tar.gz"
     archive_url="${BASE_URL}/${archive}"
-    checksum_url="${archive_url}.sha256"
+    # The checksum asset is named after the archive stem, NOT the full archive
+    # filename: `annotated-tree-<target>.sha256` (no `.tar.gz`). This is the
+    # taiki-e/upload-rust-binary-action + cargo-binstall convention (see the
+    # `archive: $bin-$target` + `checksum: sha256` config in release.yml). Its
+    # internal content still records the `.tar.gz` filename, which is fine — we
+    # only read the hash below.
+    checksum="${BIN}-${target}.sha256"
+    checksum_url="${BASE_URL}/${checksum}"
 
     info "installing ${BIN} for ${target}"
 
@@ -103,11 +110,11 @@ main() {
     trap 'rm -rf "$tmp"' EXIT INT TERM
 
     download "$archive_url" "$tmp/$archive"
-    download "$checksum_url" "$tmp/$archive.sha256"
+    download "$checksum_url" "$tmp/$checksum"
 
     # The published .sha256 is `<hex>  <filename>`; take the first field only so
     # a bare-hash file also works.
-    expected="$(cut -d ' ' -f 1 "$tmp/$archive.sha256")"
+    expected="$(cut -d ' ' -f 1 "$tmp/$checksum")"
     [ -n "$expected" ] || err "checksum file $checksum_url was empty"
     actual="$(sha256_of "$tmp/$archive")"
 
