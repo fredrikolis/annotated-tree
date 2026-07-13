@@ -63,6 +63,33 @@ fail_ann() {
 	exit 1
 }
 
+# A reminder, not hard enforcement: nudge the dev agent to actually spawn a fresh-context
+# reviewer for human-facing prose. Prints the exact prompt to hand that reviewer.
+fail_style() {
+	echo "" >&2
+	echo "commit-msg: COMMUNICATION-STYLE REVIEW REMINDER" >&2
+	printf '  - %s\n' "$@" >&2
+	echo "" >&2
+	echo "  This commit changes a human-facing doc. Run a NEUTRAL REVIEW IN A FRESH" >&2
+	echo "  CONTEXT (a reviewer that did NOT write the change, so it can't just narrate" >&2
+	echo "  its own prose), then attest:" >&2
+	echo "      Style-Reviewer: <name of the fresh-context reviewer>" >&2
+	echo "      Style-Issues: 0" >&2
+	echo "" >&2
+	echo "  Give the fresh-context reviewer this prompt:" >&2
+	echo "  ----------------------------------------------------------------------" >&2
+	echo "  You are a neutral reviewer in a FRESH context; you did not write this." >&2
+	echo "  Read docs/communication-style.md. Then review the staged changes to the" >&2
+	echo "  human-facing docs (run: git diff --cached README.md README_APPENDIX.md)" >&2
+	echo "  against EVERY rule in it: matter-of-fact, don't-announce-the-point," >&2
+	echo "  scannable, argue-from-the-cause, tight, no em-dashes, plain-not-hyped," >&2
+	echo "  reader-first. Judge only the changed lines. Report each violation as" >&2
+	echo "  'file:line - rule - fix', then a final 'Style-Issues: <n>' count. Do not" >&2
+	echo "  rewrite; identify." >&2
+	echo "  ----------------------------------------------------------------------" >&2
+	exit 1
+}
+
 problems=()
 
 reviewer=$(grep -E '^Reviewer:' "$msg_file" | head -n1 | sed -E 's/^Reviewer:[[:space:]]*//' || true)
@@ -145,6 +172,25 @@ if [ "${#ann_problems[@]}" -gt 0 ]; then
 fi
 if [ "$ann_issues" -gt 0 ]; then
 	fail_ann "reviewer flagged $ann_issues annotation issue(s) — every file in the diff needs an appropriate, current first-line annotation"
+fi
+
+# --- Gate 3 (conditional): communication-style review of human-facing prose ----
+# Fires only when a human-facing doc is in the diff. A reminder to run a neutral,
+# fresh-context review against docs/communication-style.md and attest; the hook cannot
+# stop a determined agent from rubber-stamping, so this is a nudge, not a guarantee.
+if git diff --cached --name-only | grep -qE '^(README\.md|README_APPENDIX\.md)$'; then
+	style_reviewer=$(grep -E '^Style-Reviewer:' "$msg_file" | head -n1 | sed -E 's/^Style-Reviewer:[[:space:]]*//' || true)
+	style_issues=$(grep -E '^Style-Issues:[[:space:]]*[0-9]+' "$msg_file" | head -n1 | grep -Eo '[0-9]+' | head -n1 || true)
+
+	style_problems=()
+	[ -n "${style_reviewer// /}" ] || style_problems+=("no non-empty 'Style-Reviewer:' line")
+	[ -n "$style_issues" ] || style_problems+=("missing 'Style-Issues: <n>' count")
+	if [ "${#style_problems[@]}" -gt 0 ]; then
+		fail_style "${style_problems[@]}"
+	fi
+	if [ "$style_issues" -gt 0 ]; then
+		fail_style "reviewer flagged $style_issues style issue(s) against docs/communication-style.md"
+	fi
 fi
 
 echo "commit-msg: OK (standards + annotation review complete, 0 blockers)"
