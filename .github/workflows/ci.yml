@@ -72,9 +72,14 @@ jobs:
           # name for that platform, so publish the built binary under that name.
           target="x86_64-unknown-linux-musl"
           archive="annotated-tree-${target}.tar.gz"
+          # The real release (taiki-e/upload-rust-binary-action + cargo-binstall
+          # convention) names the checksum after the archive STEM, not the full
+          # filename: `annotated-tree-<target>.sha256` (no `.tar.gz`). Mirror that
+          # here so this E2E test exercises the actual published naming.
+          checksum="annotated-tree-${target}.sha256"
           mkdir -p srv
           tar czf "srv/${archive}" -C target/release annotated-tree
-          ( cd srv && sha256sum "${archive}" > "${archive}.sha256" )
+          ( cd srv && sha256sum "${archive}" > "${checksum}" )
       - name: Serve assets
         run: |
           ( cd srv && python3 -m http.server 8137 >/dev/null 2>&1 & )
@@ -95,7 +100,8 @@ jobs:
           set -eux
           target="x86_64-unknown-linux-musl"
           archive="annotated-tree-${target}.tar.gz"
-          printf 'deadbeef  %s\n' "$archive" > "srv/${archive}.sha256"
+          checksum="annotated-tree-${target}.sha256"
+          printf 'deadbeef  %s\n' "$archive" > "srv/${checksum}"
           INSTALL_DIR="$(mktemp -d)"
           if ANNOTATED_TREE_BASE_URL="http://localhost:8137" INSTALL_DIR="$INSTALL_DIR" \
               sh installer/install.sh; then

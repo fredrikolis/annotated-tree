@@ -56,12 +56,14 @@ require pushing.
   ```sh
   shellcheck installer/install.sh          # or: sh -n installer/install.sh
   cargo build --release
-  # Package under the exact release asset name the installer requests for this
-  # host (linux x86_64 → the musl name) and generate its .sha256:
+  # Package under the exact release asset names the installer requests for this
+  # host (linux x86_64 → the musl name). Note the checksum is named after the
+  # archive STEM — annotated-tree-$target.sha256, no .tar.gz — matching the real
+  # taiki-e/cargo-binstall release naming:
   target=x86_64-unknown-linux-musl
   mkdir -p srv
   tar czf srv/annotated-tree-$target.tar.gz -C target/release annotated-tree
-  ( cd srv && sha256sum annotated-tree-$target.tar.gz > annotated-tree-$target.tar.gz.sha256 )
+  ( cd srv && sha256sum annotated-tree-$target.tar.gz > annotated-tree-$target.sha256 )
   ( cd srv && python3 -m http.server 8137 & )
   INSTALL_DIR=$(mktemp -d) ANNOTATED_TREE_BASE_URL=http://localhost:8137 \
     sh installer/install.sh
