@@ -7,6 +7,26 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-13
+
+Docs-only release: no change to the binary. Cut to refresh the README shipped
+to crates.io and npmjs.
+
+### Changed
+- **README.md rewritten around adoption** — what the tool is, intended usage
+  (annotate, enforce via a local git hook, read the map every session), a TL;DR
+  for humans, the rationale for agents, and install/wire/enforce/configure
+  steps. Roughly half its former length.
+- **README_APPENDIX.md** (new) — the extended argument (the infinite-context
+  objection, related work, what is still unproven) and the full bibliography
+  for every inline citation, cross-linked from the README.
+- **Annotation guide** — the Non-concern owner may now be an external system or
+  out of the repo's scope, not only a named sibling; "true of every file" is
+  called out as a truism, not a boundary.
+- The repo now carries its own root `.annotation` charter, a
+  `docs/communication-style.md` review rubric, and a fixed executable bit on
+  `.githooks/pre-commit` (the strict-check gate was being silently skipped).
+
 ## [0.2.0] - 2026-07-12
 
 ### Added
