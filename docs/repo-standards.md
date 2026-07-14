@@ -1,4 +1,4 @@
-<!-- Concern: universal programming principles - KISS, YAGNI, DRY, dependency inversion (SOLID mapped to first principles), DbC, canonical representation at boundaries, fail-fast, SoC, agent UX, file size, file annotations | Non-concern: language- and interface-specific patterns and standards (concrete timestamp/timezone forms, idiomatic types, per-language testing, CLI grammar such as envelope shapes and exit-code tables) | IO: none -->
+<!-- Concern: universal programming principles - KISS, YAGNI, DRY, dependency inversion (SOLID mapped to first principles), DbC, canonical representation at boundaries, fail-fast, SoC, agent UX, file size | Non-concern: first-line annotations (the git hooks and docs/annotation-guide.md own them) plus language- and interface-specific patterns and standards (concrete timestamp/timezone forms, idiomatic types, per-language testing, CLI grammar such as envelope shapes and exit-code tables) | IO: none -->
 # Repo Standards
 
 Universal principles. All languages. All paradigms.
@@ -13,6 +13,7 @@ Universal principles. All languages. All paradigms.
 - **Failing tests**: All tests pass before commit
 - **Hardcoded secrets**: API keys, passwords, tokens in code → Environment variables
 - **Force push to main/master**: Never on protected branches
+- **Against the repo charter**: functionality outside the root `.annotation` concerns/non-concerns → update the charter (the repo's SoC) first, or don't build it
 
 ---
 
@@ -431,58 +432,6 @@ Need to document?
 
 ---
 
-### File-Level Annotations (Codebase Discoverability)
-
-**Every file's first line describes its responsibility.**
-
-**The Goal**: Running Bash(annotated-tree) should describe the entire codebase's functionality. Between file names, folder structure, and first-line annotations, the app's purpose and organization should be clear _without reading any code_.
-
-**Format** (first non-shebang, non-empty line) — one invariant shape, every file, every language: three ` | `-delimited (space-pipe-space) keyed fields.
-
-```
-<comment> Concern: <what it does> | Non-concern: <what it deliberately isn't> | IO: <(in) -> out  OR  none>
-```
-
-Or as a docstring:
-
-```python
-"""Concern: <what it does> | Non-concern: <what it deliberately isn't> | IO: (in) -> out"""
-```
-
-`Concern:` and `Non-concern:` are required and reject filler (`none`/`n/a`/`nothing`/…);
-`IO:` is required but `none` is a first-class blessed value (config, data, and docs use
-`IO: none`). The deliberate asymmetry — `none` is filler in Concern/Non-concern but blessed
-in IO — is the point: a file must state what it does and does not own, but may legitimately
-have no callable contract. The format is INVARIANT (not configurable), so a cross-repo agent
-can trust the map's shape without reading each repo's config.
-
-**Why it matters**:
-
-- **Quick orientation**: Understand codebase without reading implementation
-- **Clear boundaries**: The `Non-concern:` field prevents scope confusion (name the sibling that owns what this file leaves alone)
-- **IO contracts**: See how pieces connect without tracing imports
-- **Tool support**: Bash(annotated-tree) extracts these for instant codebase snapshot; `--strict-check` enforces the shape and prints the annotation guide on failure to teach it (`--no-guide` opts out)
-
-**Folder charters (directory-scale SoC).** A directory owns one concern too — the coarsest
-routing decision an agent makes ("does this change go in here?"). A directory carries its charter
-in the SAME three-field grammar, promoted onto its render row, resolved most-explicit-first:
-
-1. A `.annotation` breadcrumb in the directory — a bare, marker-less `Concern: … | Non-concern: … | IO: …`
-   line whose whole subject is the directory. Overrides everything; always optional, but
-   `--strict-check` enforces its shape when present (a malformed one FAILS — opting in means doing it right).
-2. Else the directory's code entry file's annotation, promoted (a crate's `src/lib.rs`/`src/main.rs`,
-   a module's `mod.rs`, a package's `__init__.py`, a JS/TS `index.*`, a Go `doc.go`) — so a code
-   folder gets a charter for free.
-3. Else nothing — a charter-less directory renders exactly as before.
-
-The authored charter renders beside the observed dep facts (`# Concern: … · used by: […]`): claim
-cross-checked against reality. The charter is a deterministic lookup, never synthesized from a
-folder's children (render, don't reason). The opt-in `[rules] require_package_charter` gate can
-require a manifest-bearing package to resolve one; it is off by default (a grouping folder may
-honestly have no single concern).
-
----
-
 ## Summary
 
 | Principle                     | Essence                             | Violation Signal                          |
@@ -501,7 +450,6 @@ honestly have no single concern).
 | **Fail Fast**                 | Errors at source                    | Silent fallbacks masking problems         |
 | **DRY**                       | Single source of truth              | Duplicated business logic                 |
 | **Documentation**             | Self-documenting code               | Docstrings for internal functions         |
-| **File Annotations**          | First line describes responsibility | Files without purpose description         |
 
 ---
 
