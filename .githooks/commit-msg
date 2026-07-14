@@ -81,11 +81,9 @@ fail_style() {
 	echo "  You are a neutral reviewer in a FRESH context; you did not write this." >&2
 	echo "  Read docs/communication-style.md. Then review the staged changes to the" >&2
 	echo "  human-facing docs (run: git diff --cached README.md README_APPENDIX.md)" >&2
-	echo "  against EVERY rule in it: matter-of-fact, don't-announce-the-point," >&2
-	echo "  scannable, argue-from-the-cause, tight, no em-dashes, plain-not-hyped," >&2
-	echo "  reader-first. Judge only the changed lines. Report each violation as" >&2
-	echo "  'file:line - rule - fix', then a final 'Style-Issues: <n>' count. Do not" >&2
-	echo "  rewrite; identify." >&2
+	echo "  against EVERY rule in it, judging only the changed lines. Report each" >&2
+	echo "  violation as 'file:line - rule - fix', then a final 'Style-Issues: <n>'" >&2
+	echo "  count. Do not rewrite; identify." >&2
 	echo "  ----------------------------------------------------------------------" >&2
 	exit 1
 }
