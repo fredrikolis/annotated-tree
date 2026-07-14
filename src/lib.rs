@@ -12,6 +12,7 @@ pub(crate) mod charter;
 pub(crate) mod cli;
 pub(crate) mod config;
 pub mod exit;
+pub(crate) mod githook;
 pub(crate) mod graph;
 pub(crate) mod guide;
 pub(crate) mod manifest;
@@ -134,6 +135,14 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
     // output schema without a repo to walk or a human to read source.
     if cli.schema {
         return print_schema(out);
+    }
+
+    // `--githook-guide` is likewise a self-correcting-help info flag: print the canonical
+    // guide for reproducing the repo's local enforcement hooks and exit clean, before any
+    // traversal, so an agent can set enforcement up from the tool itself without a human.
+    if cli.githook_guide {
+        write!(out, "{}", githook::text())?;
+        return Ok(exit::SUCCESS);
     }
 
     // MCP server mode is the one async surface. It owns the whole process (a

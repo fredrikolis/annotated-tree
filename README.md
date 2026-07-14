@@ -336,23 +336,30 @@ The mechanics are still shifting; we default to the system prompt.
 
 ### Enforce it
 
-Run `--strict-check` in a local git hook, not CI. The hook blocks the bad commit while
-the agent is still in context to fix it; CI only flags it after the session is gone.
+Enforce at commit in a **local git hook, not CI**: the hook blocks the bad commit while
+the agent can still fix it. `annotated-tree --githook-guide` prints the full setup guide.
+Three gates under `.githooks/` (enable with `git config core.hooksPath .githooks`):
 
-- **Pre-commit:** `annotated-tree --strict-check .` in `.githooks/pre-commit` (enable
-  with `git config core.hooksPath .githooks`). Rejects a missing or malformed annotation.
-- **Commit-msg:** the lint checks the annotation exists, not that it is still true after
-  the change. Have a neutral agent reviewer check each changed file over the diff and
-  block the commit. (We run both; still iterating on the shape.)
+1. **Lint enforcement (pre-commit).** `annotated-tree --strict-check .` rejects a missing
+   or malformed annotation. Presence and form, no judgment.
 
-Add architectural **dependency rules** to the same lint with a repo `.annotated-tree.toml`:
+2. **Reviewer enforcement (commit-msg).** The lint cannot tell whether a line is still
+   *true*. Gate the commit on a neutral reviewer (not the author) who checks, per changed
+   file, that the annotation still holds after the diff: `Concern` names what the file now
+   does, `Non-concern` still excludes a real sibling boundary (not a truism), `IO` still
+   matches. Block unless the message reports zero issues.
+   [`.githooks/commit-msg`](.githooks/commit-msg) is a working example.
 
-```toml
-[rules]
-deny = [["web", "core"]]  # forbid `web` depending on `core`
-forbid_cycles = true      # fail on any dependency cycle
-forbid_orphans = true     # fail on internal packages with no edge in or out
-```
+3. **Standards enforcement (optional, recommended, workspace-dependent).** Layer your
+   repo's architectural and anti-litter rules on top. Lint-checkable ones go in a repo
+   `.annotated-tree.toml`; the rest ride the same neutral review as (2).
+
+   ```toml
+   [rules]
+   deny = [["web", "core"]]  # forbid `web` depending on `core`
+   forbid_cycles = true      # fail on any dependency cycle
+   forbid_orphans = true     # fail on internal packages with no edge in or out
+   ```
 
 ### Configure it
 

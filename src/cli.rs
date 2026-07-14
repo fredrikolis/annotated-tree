@@ -120,6 +120,12 @@ pub struct Cli {
     /// programmatically without a human.
     #[arg(long)]
     pub schema: bool,
+
+    /// Print the guide for reproducing the repo's local enforcement git hooks (the
+    /// pre-commit --strict-check gate and the commit-msg neutral-review attestation) to
+    /// stdout and exit, so an agent can set enforcement up without a human.
+    #[arg(long)]
+    pub githook_guide: bool,
 }
 
 const EXAMPLES: &str = "\
