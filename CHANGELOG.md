@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-20
+
 ### Added
 - **`--include <GLOB>`** — a positive glob selector, the counterpart to `-I/--ignore`:
   it adds files of any type to the tree even when their extension maps to no known
@@ -147,6 +149,7 @@ Initial release.
   checksum-verifying `curl | sh` installer.
 - Golden-file and integration test suite; CI across Linux, macOS, and Windows.
 
-[Unreleased]: https://github.com/fredrikolis/annotated-tree/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/fredrikolis/annotated-tree/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.2.1...v0.3.0
 [0.1.1]: https://github.com/fredrikolis/annotated-tree/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/fredrikolis/annotated-tree/releases/tag/v0.1.0
