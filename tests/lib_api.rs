@@ -1,10 +1,12 @@
-// Concern: locks the low-level public library surface — that a consumer can compose config + the walk + marker-based and marker-agnostic annotation extraction without the whole-tool run() | Non-concern: CLI/render behavior (other suites cover that) | IO: (temp tree, public API) -> asserted values
+// Concern: locks the public library surface — that a consumer can compose config + the walk + marker-based and marker-agnostic annotation extraction, AND assemble a CodebaseMap by hand and render it, without the whole-tool run() | Non-concern: the render glyph details (other suites cover that) | IO: (temp tree / hand-built map, public API) -> asserted values
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use annotated_tree::config::{CliOverrides, Config};
-use annotated_tree::{annotation, build_globset, walk};
+use annotated_tree::{
+    annotation, build_globset, for_format, walk, CodebaseMap, DirNode, FileNode, Format,
+};
 use globset::GlobSet;
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -86,4 +88,42 @@ fn configured_walk_is_directly_usable() {
         "the raw walker yields every file, recognized or not: {names:?}",
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_hand_built_map_renders_through_the_exposed_renderer() {
+    // The #11 custom-tree path: assemble a CodebaseMap directly (own node payloads — here just a
+    // set annotation), leaving the optional/collection fields at None / Vec::new(), then render it
+    // via the exposed for_format + Renderer. Proves the map and render surface is usable WITHOUT
+    // the internal build pipeline.
+    let map = CodebaseMap {
+        roots: vec![DirNode {
+            name: "root".into(),
+            charter: None,
+            deps: None,
+            dirs: Vec::new(),
+            files: vec![FileNode {
+                name: "cell.q".into(),
+                annotation: Some(
+                    "Concern: a hand-built node | Non-concern: the walk | IO: none".into(),
+                ),
+                age_secs: None,
+                tokens: None,
+                symbols: Vec::new(),
+            }],
+            tokens: None,
+            elided_dirs: 0,
+            elided_files: 0,
+        }],
+        warnings: Vec::new(),
+    };
+    let out = for_format(Format::Text, false).render(&map);
+    assert!(
+        out.contains("cell.q"),
+        "renders the hand-built file node:\n{out}"
+    );
+    assert!(
+        out.contains("Concern: a hand-built node"),
+        "renders the consumer-set annotation:\n{out}"
+    );
 }
