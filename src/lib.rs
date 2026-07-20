@@ -1,4 +1,4 @@
-// Concern: wires config -> walk -> (tree | strict) and exposes run() plus the low-level walk/annotation/config primitives as a library | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code
+// Concern: wires config -> walk -> (tree | strict) and exposes run() plus the low-level walk/annotation/config primitives and the map/render surface as a library | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code
 //
 // This tool is a one-shot batch traversal of the local filesystem, so it is
 // deliberately synchronous: the `ignore` crate parallelizes the walk across a thread
@@ -19,6 +19,11 @@
 //!   [`config::Language`]), and the glob-compile helper [`build_globset`]. Compose them freely; a
 //!   consumer that wants its own model/renderer never touches the internal tree/graph/strict
 //!   machinery.
+//! - **Map + render** (access-only): assemble a [`CodebaseMap`] by hand from [`DirNode`] /
+//!   [`FileNode`] (the `charter`/`deps`/`symbols`/`warnings` fields may be `None`/`Vec::new()`)
+//!   and render it via [`for_format`] + the [`Renderer`] trait — the tool's own text/json/md
+//!   output over a tree you built yourself. The node field types ([`DirDeps`], [`Charter`],
+//!   [`Symbol`], …) are re-exported so every field is nameable.
 //!
 //! ```no_run
 //! use annotated_tree::config::{CliOverrides, Config};
@@ -40,9 +45,11 @@
 //! }
 //! ```
 
-// Library surface: the whole-tool `Cli` + `run` (re-exported below), plus the low-level
-// `walk`/`annotation`/`config`/`util` primitives a downstream consumer composes. Everything
-// else (tree model, graph, renderers, strict-check, MCP) stays crate-internal.
+// Library surface: the whole-tool `Cli` + `run` (re-exported below), the low-level
+// `walk`/`annotation`/`config`/`util` primitives a downstream consumer composes, and the map +
+// render DATA surface (`CodebaseMap`/`DirNode`/`FileNode` + the `Renderer`) re-exported below so a
+// consumer can assemble and render its own tree. Every module stays `pub(crate)` — only the
+// curated re-exports are public, so the graph/symbols/strict/MCP BUILDER machinery stays internal.
 pub mod annotation;
 pub(crate) mod changed;
 pub(crate) mod charter;
@@ -75,7 +82,20 @@ pub use cli::{parse as parse_cli, Cli};
 // the rest of `util` (internal path/time helpers) stays off the public surface.
 pub use util::build_globset;
 
-use cli::Format;
+// The map + render surface (issue #11), access-only. A consumer assembles a `CodebaseMap` from
+// `DirNode`/`FileNode` (the optional/collection fields — `charter`, `deps`, `symbols`, `warnings`
+// — may be `None`/`Vec::new()`) and renders it via the exposed `Renderer`/`for_format`, driving
+// its own tree without the internal `build` pipeline. The node field types (`DirDeps`,
+// `InternalDep`, `Charter`, `Warning`, `Symbol`, `SymbolKind`) are re-exported too so every field
+// is nameable — but the graph/symbols BUILDER functions stay crate-internal.
+pub use charter::Charter;
+pub use graph::{DirDeps, InternalDep, Warning};
+pub use model::{CodebaseMap, Coverage, DirNode, FileNode};
+pub use render::{for_format, Renderer};
+pub use symbols::{Symbol, SymbolKind};
+// `Format` is both re-exported (a consumer picks the renderer via `for_format(Format, ascii)`)
+// and used internally below, so this one `pub use` serves both.
+pub use cli::Format;
 use config::{CliOverrides, Config};
 use walk::LimitExceeded;
 
