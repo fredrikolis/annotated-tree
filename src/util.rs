@@ -1,4 +1,4 @@
-// Concern: small pure helpers — exclude-glob compilation and relative-time formatting | Non-concern: domain logic | IO: (values) -> values
+// Concern: small pure helpers — glob-pattern compilation and relative-time formatting | Non-concern: domain logic | IO: (values) -> values
 
 use std::path::Path;
 
@@ -14,8 +14,9 @@ pub fn to_unix_path(rel: &Path) -> String {
         .join("/")
 }
 
-/// Compile `-I` patterns into a matcher. Each pattern may bundle several globs
-/// with `|`, tree-style: `-I 'node_modules|dist|*.pyc'`.
+/// Compile pipe-bundled glob patterns into a matcher — the shared compiler for BOTH `-I`
+/// exclusion globs and `--include` selection globs. Each pattern may bundle several globs
+/// with `|`, tree-style: `-I 'node_modules|dist|*.pyc'` / `--include '*.sh|Dockerfile'`.
 pub fn build_globset(patterns: &[String]) -> Result<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     for pattern in patterns {
@@ -24,10 +25,10 @@ pub fn build_globset(patterns: &[String]) -> Result<GlobSet> {
             if part.is_empty() {
                 continue;
             }
-            builder.add(Glob::new(part).with_context(|| format!("invalid exclude glob `{part}`"))?);
+            builder.add(Glob::new(part).with_context(|| format!("invalid glob `{part}`"))?);
         }
     }
-    builder.build().context("building exclude matcher")
+    builder.build().context("building glob matcher")
 }
 
 /// Format a file age as a compact relative string: `5m ago`, `2h ago`, `3d ago`.

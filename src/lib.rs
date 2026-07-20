@@ -1,16 +1,53 @@
-// Concern: wires config -> walk -> (tree | strict) and exposes run() for the binary and golden tests | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code
+// Concern: wires config -> walk -> (tree | strict) and exposes run() plus the low-level walk/annotation/config primitives as a library | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code
 //
 // This tool is a one-shot batch traversal of the local filesystem, so it is
 // deliberately synchronous: the `ignore` crate parallelizes the walk across a thread
 // pool (throughput-bound disk work), with no concurrent I/O wait to overlap.
 
-// Minimal API surface: only `Cli` + `run` (below) are public — everything the
-// binary and the integration tests need. Every other module is crate-internal.
-pub(crate) mod annotation;
+//! # `annotated-tree` as a library
+//!
+//! The crate powers the `annotated-tree` binary but also exposes its core building blocks so
+//! another program can reuse the efficient tree walk and the annotation grammar over files of
+//! ANY shape — extensionless files, symlinks, files whose whole content (not just a first-line
+//! comment) is the annotation — and drive its OWN rendering. The two entry styles are:
+//!
+//! - **Whole-tool**: [`parse_cli`] + [`run`] — parse argv and execute exactly as the binary does.
+//! - **Primitives** (this is the library surface): the [`walk`] module (the `ignore`-based
+//!   [`walk::configured_walk`] and [`walk::collect_code_files`]), the [`annotation`] module
+//!   (marker-based [`annotation::extract`] and marker-agnostic [`annotation::extract_any`], plus
+//!   the [`annotation::analyze`] grader), the [`config`] module ([`config::Config`] /
+//!   [`config::Language`]), and the glob-compile helper [`build_globset`]. Compose them freely; a
+//!   consumer that wants its own model/renderer never touches the internal tree/graph/strict
+//!   machinery.
+//!
+//! ```no_run
+//! use annotated_tree::config::{CliOverrides, Config};
+//! use annotated_tree::{annotation, walk};
+//! use globset::GlobSet;
+//! use std::path::Path;
+//!
+//! let root = Path::new(".");
+//! let config = Config::load(root, &CliOverrides::default()).expect("resolve config");
+//! // Empty exclude + include sets: recognized-language files only, no `--include` widening.
+//! let empty = GlobSet::empty();
+//! let files = walk::collect_code_files(root, &config, &empty, &empty).expect("walk");
+//! for path in &files {
+//!     if let Some(lang) = config.language_for_path(path) {
+//!         if let Some(note) = annotation::extract(path, lang) {
+//!             println!("{}: {note}", path.display());
+//!         }
+//!     }
+//! }
+//! ```
+
+// Library surface: the whole-tool `Cli` + `run` (re-exported below), plus the low-level
+// `walk`/`annotation`/`config`/`util` primitives a downstream consumer composes. Everything
+// else (tree model, graph, renderers, strict-check, MCP) stays crate-internal.
+pub mod annotation;
 pub(crate) mod changed;
 pub(crate) mod charter;
 pub(crate) mod cli;
-pub(crate) mod config;
+pub mod config;
 pub mod exit;
 pub(crate) mod githook;
 pub(crate) mod graph;
@@ -24,7 +61,7 @@ pub(crate) mod strict;
 pub(crate) mod symbols;
 pub(crate) mod tokens;
 pub(crate) mod util;
-pub(crate) mod walk;
+pub mod walk;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -33,6 +70,10 @@ use anyhow::{anyhow, bail, Result};
 use globset::GlobSet;
 
 pub use cli::{parse as parse_cli, Cli};
+// The one `util` helper a downstream walk-composer needs: compile `--include`/`-I` glob
+// patterns into the `GlobSet` `walk::collect_code_files` takes. Re-exported at the crate root so
+// the rest of `util` (internal path/time helpers) stays off the public surface.
+pub use util::build_globset;
 
 use cli::Format;
 use config::{CliOverrides, Config};
@@ -230,10 +271,14 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
                         return Failure::precondition(format!("{e:#}")).dispatch(out, cli.format)
                     }
                 };
-                let files = match walk::collect_code_files(target, &config, &excludes) {
-                    Ok(files) => files,
-                    Err(e) => return report_limit_exceeded(out, err, cli.format, &e),
-                };
+                // Strict-check stays recognized-languages-only (an empty include set): a file
+                // whose comment grammar is unknown cannot be linted, so `--include` never widens
+                // what the gate validates — it governs the tree view alone.
+                let files =
+                    match walk::collect_code_files(target, &config, &excludes, &GlobSet::empty()) {
+                        Ok(files) => files,
+                        Err(e) => return report_limit_exceeded(out, err, cli.format, &e),
+                    };
                 let report = strict::check_structured(target, &files, &config, &excludes);
                 (report, config.display.max_per_node)
             };
@@ -360,7 +405,11 @@ pub(crate) fn build_codebase_map(
     let mut root_files = Vec::new();
     for root in roots {
         let config = Config::load(root, overrides).map_err(BuildError::Other)?;
-        match walk::collect_code_files(root, &config, excludes) {
+        // The `--include`/`[display] include` selectors are per-root (each root uses its own
+        // resolved config), compiled here next to the shared `-I` excludes. A bad pattern fails
+        // fast as a precondition error, exactly like a bad `-I` glob.
+        let include = util::build_globset(&config.display.include).map_err(BuildError::Other)?;
+        match walk::collect_code_files(root, &config, excludes, &include) {
             Ok(files) => root_files.push((root, config, files)),
             Err(e) => return Err(BuildError::Limit(e)),
         }

@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the two file-visibility filters — `-I/--ignore` exclusion globs and the tests/ hide/reveal toggle (`--include-tests`); runs over a throwaway temp tree so no ancestor config leaks in | Non-concern: rendering glyphs | IO: (temp tree, flags) -> asserted stdout
+// Concern: end-to-end tests for the file-visibility filters — `-I/--ignore` exclusion globs, the tests/ hide/reveal toggle (`--include-tests`), and the `--include` positive glob selector; runs over a throwaway temp tree so no ancestor config leaks in | Non-concern: rendering glyphs | IO: (temp tree, flags) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -28,6 +28,14 @@ fn temp_tree(tag: &str) -> PathBuf {
 }
 
 fn run(dir: &Path, extra: &[&str]) -> String {
+    let (code, out) = run_raw(dir, extra);
+    assert_eq!(code, 0, "run must succeed");
+    out
+}
+
+/// Like [`run`] but returns the exit code alongside stdout, for cases (a passing
+/// `--strict-check`) where the code itself is under test.
+fn run_raw(dir: &Path, extra: &[&str]) -> (i32, String) {
     let mut argv = vec!["annotated-tree".to_string()];
     argv.extend(extra.iter().map(|s| s.to_string()));
     argv.push(dir.to_string_lossy().into_owned());
@@ -35,8 +43,29 @@ fn run(dir: &Path, extra: &[&str]) -> String {
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
     let code = annotated_tree::run(&cli, &mut out, &mut err).expect("run failed");
-    assert_eq!(code, 0, "run must succeed");
-    String::from_utf8(out).unwrap()
+    (code, String::from_utf8(out).unwrap())
+}
+
+/// A temp tree with a recognized `src/main.rs`, an UNrecognized-extension file that carries a
+/// marker-agnostic annotation (`deploy.zsh`, a `#`-comment shell script the config has no `.zsh`
+/// language for), and a bare un-annotated `data.bin`. The three exercise `--include` selection.
+fn temp_tree_mixed(tag: &str) -> PathBuf {
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("at-include-{}-{tag}-{n}", std::process::id()));
+    let src = dir.join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("main.rs"),
+        "// Concern: the entry point fixture | Non-concern: real behavior (a test stub) | IO: none\nfn main() {}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("deploy.zsh"),
+        "#!/bin/zsh\n# Concern: an unrecognized-extension file the selector opts in | Non-concern: real behavior (a test stub) | IO: (artifact) -> none\necho hi\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("data.bin"), "raw bytes, no annotation\n").unwrap();
+    dir
 }
 
 #[test]
@@ -78,5 +107,60 @@ fn tests_dir_hidden_by_default_and_revealed_by_flag() {
         "--include-tests reveals tests/checks.rs:\n{shown}"
     );
 
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn include_glob_adds_unrecognized_files_with_marker_agnostic_annotation() {
+    let dir = temp_tree_mixed("glob");
+
+    // Baseline: only the recognized `.rs` file shows; the `.zsh`/`.bin` are invisible.
+    let base = run(&dir, &[]);
+    assert!(base.contains("main.rs"), "baseline lists main.rs:\n{base}");
+    assert!(
+        !base.contains("deploy.zsh"),
+        "an unrecognized extension is hidden by default:\n{base}"
+    );
+
+    // `--include '*.zsh'` ADDS the shell script (recognized files stay), and its annotation is
+    // read marker-agnostically even though the config has no `.zsh` language.
+    let included = run(&dir, &["--include", "*.zsh"]);
+    assert!(
+        included.contains("main.rs"),
+        "--include is additive — recognized files remain:\n{included}"
+    );
+    assert!(
+        included.contains("deploy.zsh"),
+        "--include '*.zsh' surfaces the unrecognized file:\n{included}"
+    );
+    assert!(
+        included.contains("Concern: an unrecognized-extension file the selector opts in"),
+        "the marker-agnostic annotation is shown:\n{included}"
+    );
+    // A file NOT matched by the selector stays hidden.
+    assert!(
+        !included.contains("data.bin"),
+        "--include '*.zsh' must not pull in the unmatched data.bin:\n{included}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn strict_check_stays_recognized_only_under_include() {
+    let dir = temp_tree_mixed("strict");
+    // `--include` governs the TREE view alone: `--strict-check` still lints recognized languages
+    // only, so it examines just `main.rs` and never the opted-in `.zsh`/`.bin` (whose comment
+    // grammar it could not validate). The tree's one `.rs` is annotated, so the gate passes.
+    let (code, out) = run_raw(&dir, &["--strict-check", "--include", "*"]);
+    assert_eq!(code, 0, "the one recognized file is annotated:\n{out}");
+    assert!(
+        out.contains("All 1 files passed"),
+        "strict-check examined only the recognized file, not the opted-in ones:\n{out}"
+    );
+    assert!(
+        !out.contains("deploy.zsh") && !out.contains("data.bin"),
+        "strict-check must not reach --include files:\n{out}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

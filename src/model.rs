@@ -341,7 +341,10 @@ fn dir_deps(abs_dir: &Path, graph: &HashMap<PathBuf, DirDeps>) -> Option<DirDeps
 /// (graceful, like `annotation: None`).
 fn annotation_and_symbols(abs: &Path, config: &Config) -> (Option<String>, Vec<Symbol>) {
     let Some(lang) = config.language_for_path(abs) else {
-        return (None, Vec::new());
+        // No known language: the file is in the tree only because a `--include` selector opted
+        // it in (the default walk yields recognized languages only). Read its annotation
+        // marker-agnostically; with no grammar there is no symbol outline.
+        return (annotation::extract_any(abs), Vec::new());
     };
 
     if config.display.show_symbols {
