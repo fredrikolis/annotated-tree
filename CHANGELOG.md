@@ -7,6 +7,18 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-20
+
+### Added
+- **Map + render library surface** — the crate now re-exports the tree model and renderer at
+  the crate root, so a downstream consumer can assemble a `CodebaseMap` from `DirNode` /
+  `FileNode` by hand (the `charter` / `deps` / `symbols` / `warnings` fields may be `None` /
+  `Vec::new()`) and render it via `for_format(Format, ascii)` + the `Renderer` trait, driving
+  its own tree without the internal `build` pipeline. Access-only: no behavior or schema change.
+  The node field types (`Charter`, `DirDeps`, `InternalDep`, `Warning`, `Symbol`, `SymbolKind`)
+  are re-exported too so every field is nameable; the graph/symbols/strict builder machinery
+  stays crate-internal.
+
 ## [0.3.0] - 2026-07-20
 
 ### Added
@@ -149,7 +161,8 @@ Initial release.
   checksum-verifying `curl | sh` installer.
 - Golden-file and integration test suite; CI across Linux, macOS, and Windows.
 
-[Unreleased]: https://github.com/fredrikolis/annotated-tree/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/fredrikolis/annotated-tree/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.2.1...v0.3.0
 [0.1.1]: https://github.com/fredrikolis/annotated-tree/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/fredrikolis/annotated-tree/releases/tag/v0.1.0
