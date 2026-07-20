@@ -75,6 +75,12 @@ pub struct Cli {
     #[arg(short = 'I', long = "ignore", value_name = "GLOB")]
     pub ignore: Vec<String>,
 
+    /// Also show files matching GLOB even when their extension maps to no known language
+    /// (repeatable; pipe-separated allowed). The positive counterpart of --ignore: an included
+    /// file's annotation is read marker-agnostically. `--include '*'` shows every file.
+    #[arg(long = "include", value_name = "GLOB")]
+    pub include: Vec<String>,
+
     /// Do not warn about manifests that fail to parse.
     #[arg(long)]
     pub ignore_parsing_errors: bool,
@@ -198,6 +204,7 @@ impl Cli {
             ascii: self.ascii.then_some(true),
             gitignore: self.no_gitignore.then_some(false),
             include_tests: self.include_tests.then_some(true),
+            include: self.include.clone(),
             config_file: self.config.clone(),
             // `--no-limit`/`--force` wins over `--max-files`; either present means
             // the CLI spoke (outer Some), so env/config are not consulted.

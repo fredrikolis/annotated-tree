@@ -1,4 +1,4 @@
-// Concern: extracts a file's first-line annotation and validates it against the three-field Concern/Non-concern/IO format | Non-concern: which files to visit | IO: (file head, Language) -> Option<String>
+// Concern: extracts a file's first-line annotation (per a Language, or marker-agnostically) and validates it against the three-field Concern/Non-concern/IO format | Non-concern: which files to visit | IO: (file head, Language?) -> Option<String>
 
 use std::path::Path;
 
@@ -16,6 +16,63 @@ const HEAD_BYTES: usize = 64 * 1024;
 pub fn extract(path: &Path, lang: &Language) -> Option<String> {
     let head = read_head(path)?;
     extract_from(&head, lang)
+}
+
+/// Read a first-line annotation from `path` WITHOUT knowing its comment marker — the escape
+/// hatch for a file [`Config`](crate::config::Config) maps to no language (extensionless, or
+/// an unrecognized extension), used when the caller has opted such files in. Returns the
+/// trimmed annotation, or `None` if the first meaningful line does not carry the format.
+pub fn extract_any(path: &Path) -> Option<String> {
+    let head = read_head(path)?;
+    extract_any_from(&head)
+}
+
+/// Marker-agnostic extraction over already-read text: locate the first meaningful line (past a
+/// `#!` shebang and blank lines) and, if it carries the invariant `Concern:` opener anywhere,
+/// return the annotation from that opener onward — with any leading comment marker dropped (we
+/// slice from `Concern:`) and a trailing block-comment closer (`-->`, `*/`, `"""`, …) stripped.
+/// Keys on the format's fixed opener rather than a language delimiter, so it reads the SAME
+/// three-field line the marker-based path does, from a file whose grammar is unknown.
+pub fn extract_any_from(text: &str) -> Option<String> {
+    let (_, line) = first_meaningful_line(text)?;
+    let start = line.find(CONCERN_KEY)?;
+    let mut annotation = line[start..].trim_end();
+    // Strip a single trailing block-comment closer so a `<!-- … -->` / `""" … """` wrapper on an
+    // unrecognized file yields the same bare body a marker-based read would (the leading marker is
+    // already gone — we sliced from `Concern:`).
+    for closer in BLOCK_CLOSERS {
+        if let Some(stripped) = annotation.strip_suffix(closer) {
+            annotation = stripped.trim_end();
+            break;
+        }
+    }
+    non_empty(annotation.trim())
+}
+
+/// Trailing block-comment closers stripped by [`extract_any_from`] when reading a marker-unknown
+/// file — the closing halves of the block/docstring delimiters the built-in languages use, plus
+/// a few common ones from languages the tool does not configure. Only a trailing match is
+/// removed, so a closer appearing inside the annotation's own prose is untouched.
+const BLOCK_CLOSERS: &[&str] = &["-->", "*/", "\"\"\"", "'''", "*)", "#}", "-}", "}}"];
+
+/// The first line that carries real content, with its 1-based line number: line 1, else the line
+/// past a `#!` shebang (+1), else the first non-blank line after leading blanks (+1 each). `None`
+/// when the head holds no such line. The ONE place the shebang/blank skip lives — both [`locate`]
+/// (which needs the line number for diagnostics) and the marker-agnostic [`extract_any_from`]
+/// (which ignores it) build on it, so they cannot drift on where a file's annotation may begin.
+fn first_meaningful_line(text: &str) -> Option<(usize, &str)> {
+    let mut lines = text.lines();
+    let mut line_no = 1usize;
+    let mut current = lines.next()?;
+    if current.starts_with("#!") {
+        current = lines.next()?;
+        line_no += 1;
+    }
+    while current.trim().is_empty() {
+        current = lines.next()?;
+        line_no += 1;
+    }
+    Some((line_no, current))
 }
 
 fn read_head(path: &Path) -> Option<String> {
@@ -76,25 +133,9 @@ fn locate(text: &str, lang: &Language) -> Located {
         };
     }
 
-    let mut lines = text.lines();
-    let mut line_no = 1usize;
-    let Some(mut current) = lines.next() else {
+    let Some((line_no, current)) = first_meaningful_line(text) else {
         return Located::Empty;
     };
-    if current.starts_with("#!") {
-        let Some(next) = lines.next() else {
-            return Located::Empty;
-        };
-        current = next;
-        line_no += 1;
-    }
-    while current.trim().is_empty() {
-        let Some(next) = lines.next() else {
-            return Located::Empty;
-        };
-        current = next;
-        line_no += 1;
-    }
 
     let first = current.trim_start();
 
@@ -609,6 +650,32 @@ mod tests {
             extract_from("ignored\n@doc hello world\n", &l).unwrap(),
             "hello world"
         );
+    }
+
+    #[test]
+    fn extract_any_reads_the_format_regardless_of_marker() {
+        // Marker-AGNOSTIC: the annotation is found by its fixed `Concern:` opener, so a file
+        // whose comment grammar the tool does not configure still yields the same bare body —
+        // any leading marker is dropped (we slice from `Concern:`) and a trailing block closer
+        // is stripped. Covers a hash line, an HTML/Vue block, a docstring, a shebang skip, and
+        // a marker the tool has no language for at all (a Lisp `;;`). A line with no `Concern:`
+        // opener carries nothing — an ordinary code/data line stays un-annotated, no false hit.
+        let want = "Concern: a | Non-concern: b | IO: none";
+        for text in [
+            "# Concern: a | Non-concern: b | IO: none\n",
+            "<!-- Concern: a | Non-concern: b | IO: none -->\n",
+            "\"\"\"Concern: a | Non-concern: b | IO: none\"\"\"\n",
+            "#!/usr/bin/env bash\n# Concern: a | Non-concern: b | IO: none\n",
+            "\n\n;; Concern: a | Non-concern: b | IO: none\n",
+        ] {
+            assert_eq!(
+                extract_any_from(text).as_deref(),
+                Some(want),
+                "marker-agnostic extraction failed for: {text:?}"
+            );
+        }
+        assert!(extract_any_from("x = 1\n").is_none());
+        assert!(extract_any_from("").is_none());
     }
 
     #[test]

@@ -52,6 +52,7 @@ struct RawDisplay {
     gitignore: Option<bool>,
     include_tests: Option<bool>,
     max_per_node: Option<usize>,
+    include: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -73,6 +74,10 @@ pub struct CliOverrides {
     pub ascii: Option<bool>,
     pub gitignore: Option<bool>,
     pub include_tests: Option<bool>,
+    /// Additional `--include` glob selectors from the CLI (each may pipe-bundle several,
+    /// tree-style). ADDITIVE to any config `[display] include`: the resolved selector set is
+    /// the config list followed by these. Empty means the CLI added no selectors.
+    pub include: Vec<String>,
     pub config_file: Option<PathBuf>,
     /// Runaway-scope cap override, modelled as an `Option<Option<usize>>`:
     /// `None` = the CLI said nothing (fall through to env/config/default);
@@ -99,6 +104,14 @@ pub struct Display {
     /// so it lives here, not in `Limits` — it truncates the rendered tree, it does
     /// not bound the walk (every file is still visited).
     pub max_per_node: Option<usize>,
+    /// Glob selectors that ADD files of any type to the walk beyond the recognized-language
+    /// set (the `--include`/`[display] include` positive filter). A file is listed when its
+    /// extension maps to a known language OR it matches one of these; an unrecognized match
+    /// shows its annotation via marker-agnostic extraction. Empty means the default behaviour
+    /// (recognized languages only). Compiled to a `GlobSet` at the walk call site (via
+    /// [`crate::util::build_globset`]); kept as patterns here so config resolution stays
+    /// glob-free and a bad pattern surfaces at the walk, next to `-I`'s.
+    pub include: Vec<String>,
 }
 
 /// Walk-scope limits. `max_files: None` means "no cap". Kept out of `Display`
@@ -154,7 +167,10 @@ impl Language {
 pub struct Config {
     pub display: Display,
     pub limits: Limits,
-    pub rules: Rules,
+    // Architectural `[rules]` are a strict-check concern the internal crate consumes; kept
+    // crate-private so making `Config` a public type does not leak the internal `Rules` shape
+    // into the library API (the low-level walk/annotation consumer never needs it).
+    pub(crate) rules: Rules,
     languages: Vec<Language>,
     ext_to_lang: HashMap<String, usize>,
 }
@@ -228,6 +244,10 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
         dd.gitignore = sd.gitignore.or(dd.gitignore);
         dd.include_tests = sd.include_tests.or(dd.include_tests);
         dd.max_per_node = sd.max_per_node.or(dd.max_per_node);
+        // `include` is a whole list, so a layer that sets it REPLACES (not appends) — the same
+        // precedence `[rules] deny` uses, so a repo file can fully re-state the selectors rather
+        // than inherit a user file's. CLI selectors are folded in additively later, in `resolve`.
+        dd.include = sd.include.or_else(|| dd.include.take());
     }
     if let Some(sl) = src.limits {
         let dl = dst.limits.get_or_insert_with(Default::default);
@@ -249,6 +269,11 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
 
 fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     let disp = raw.display.unwrap_or_default();
+    // Selectors are config-first, then CLI: a config `[display] include` sets a baseline and
+    // each `--include` on the command line ADDS to it, so a run can widen the tree beyond what
+    // the repo file already opts in without having to re-state it.
+    let mut include = disp.include.clone().unwrap_or_default();
+    include.extend(cli.include.iter().cloned());
     let display = Display {
         show_age: cli.show_age.or(disp.show_age).unwrap_or(false),
         show_tokens: cli.show_tokens.or(disp.show_tokens).unwrap_or(false),
@@ -257,6 +282,7 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
         gitignore: cli.gitignore.or(disp.gitignore).unwrap_or(true),
         include_tests: cli.include_tests.or(disp.include_tests).unwrap_or(false),
         max_per_node: resolve_max_per_node(cli, disp.max_per_node),
+        include,
     };
 
     let limits = Limits {

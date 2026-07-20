@@ -7,6 +7,22 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`--include <GLOB>`** — a positive glob selector, the counterpart to `-I/--ignore`:
+  it adds files of any type to the tree even when their extension maps to no known
+  language (repeatable, pipe-separated; `--include '*'` shows every file). An included
+  file's annotation is read *marker-agnostically* (keyed on the invariant `Concern:`
+  opener), so extensionless and unrecognized files still surface their one-line
+  annotation. Config-enablable via `[display] include = ["*.sh", "Dockerfile"]`.
+  `--strict-check` is unaffected — it stays recognized-languages-only (an unknown comment
+  grammar cannot be validated).
+- **Library API** — the crate now exposes its low-level primitives so another program can
+  reuse the `ignore`-based walk (`walk::configured_walk`, `walk::collect_code_files`) and
+  the annotation grammar (`annotation::extract`, the marker-agnostic `annotation::extract_any`,
+  `annotation::analyze`) over files of any shape, driving its own rendering. The `config`,
+  `walk`, and `annotation` modules are public, plus the `build_globset` glob-compile helper;
+  the tree model, graph, renderers, and strict-check stay crate-internal.
+
 ## [0.2.1] - 2026-07-13
 
 Docs-only release: no change to the binary. Cut to refresh the README shipped

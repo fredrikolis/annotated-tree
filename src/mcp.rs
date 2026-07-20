@@ -359,8 +359,11 @@ mod imp {
     fn strict_check(state: &ServerState, args: PathArgs) -> Result<String, ToolError> {
         let root = require_dir(&args.path)?;
         let config = load_config(&root, &state.overrides)?;
-        let files = walk::collect_code_files(&root, &config, &state.excludes)
-            .map_err(|e| limit_error(&e))?;
+        // Recognized-languages-only (empty include set), matching the CLI's `--strict-check`:
+        // an unknown-grammar file cannot be linted, so `--include` never widens the gate.
+        let files =
+            walk::collect_code_files(&root, &config, &state.excludes, &globset::GlobSet::empty())
+                .map_err(|e| limit_error(&e))?;
         // Thin adapter over the ONE shared strict producer (`strict::check_structured`,
         // also driven by the CLI's `--strict-check --format json`): annotation linting
         // plus any configured architectural `[rules]`, serialized to the SAME structured
