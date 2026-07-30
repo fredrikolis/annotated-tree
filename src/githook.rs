@@ -1,4 +1,4 @@
-// Concern: embeds the canonical git-hook guide and renders it for --githook-guide | Non-concern: running any hook (the shipped .githooks/ scripts do that) or the annotation format (guide.rs owns that) | IO: none
+// Concern: embeds the canonical git-hook guide and renders it for --githook-guide | Non-concern: running any hook (.githooks/ owns that) or the annotation format | IO: none
 
 /// The one canonical git-hook guide, authored in [`docs/githook-guide.md`] and embedded at
 /// build time (like the annotation guide in [`crate::guide`] and `default_config.toml`).

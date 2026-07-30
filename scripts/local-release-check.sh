@@ -9,6 +9,16 @@ cd "$(dirname "$0")/.."
 
 say() { printf '\n\033[1;36m== %s ==\033[0m\n' "$1"; }
 
+say "CHANGELOG has a section for the Cargo.toml version"
+# .github/workflows/release.yml hands CHANGELOG.md to create-gh-release-action, which looks the
+# tag's version up by heading and fails when it finds none — AFTER the tag is pushed, taking
+# upload-assets, publish-crate and publish-npm down with it. Catch it here, before the tag.
+version=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+  echo "CHANGELOG.md has no '## [$version]' heading — the release would abort after tagging" >&2
+  exit 1
+fi
+
 say "format"
 cargo fmt --check
 
@@ -19,7 +29,12 @@ say "tests"
 cargo test --all
 
 say "self-check (dogfood the convention)"
-cargo run --release --quiet -- --strict-check src
+# Whole repo except sample/ (its loose annotations are pinned by tests/golden.rs), matching
+# .githooks/pre-commit and CI. Two invocations: `walk::keep_entry` prunes any directory named
+# `tests` unless `--include-tests` (default off), so the first cannot see tests/ at all.
+# tests/fixtures stays excluded — charter_malformed is deliberately malformed.
+cargo run --release --quiet -- --strict-check . --ignore sample --max-length 200
+cargo run --release --quiet -- --strict-check . --ignore sample --include-tests -I 'tests/fixtures' --max-length 200
 
 say "crate is publishable"
 cargo package --list --allow-dirty >/dev/null

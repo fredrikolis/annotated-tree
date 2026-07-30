@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the file-visibility filters — `-I/--ignore` exclusion globs, the tests/ hide/reveal toggle (`--include-tests`), and the `--include` positive glob selector; runs over a throwaway temp tree so no ancestor config leaks in | Non-concern: rendering glyphs | IO: (temp tree, flags) -> asserted stdout
+// Concern: end-to-end tests for the file-visibility filters — the -I/--ignore globs, --include-tests, and the --include selector | Non-concern: rendering glyphs | IO: (temp tree, flags) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

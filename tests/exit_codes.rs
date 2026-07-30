@@ -1,4 +1,4 @@
-// Concern: freezes `main.rs`'s error -> exit-4 (PRECONDITION) + `error:`-to-stderr translation at the PROCESS boundary — an external contract scripts branch on, which the in-process `run()` tests (which get a `Result`, not an exit code) cannot pin | Non-concern: which errors occur, only that any error maps to exit 4 | IO: (argv) -> asserted (exit code, stderr)
+// Concern: end-to-end test that any error out of main.rs becomes exit 4 (PRECONDITION) with an `error:` line on stderr | Non-concern: which errors occur | IO: (argv) -> asserted (exit code, stderr)
 
 use std::process::Command;
 

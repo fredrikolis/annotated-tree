@@ -25,14 +25,10 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-      - name: Clippy (symbols feature)
-        run: cargo clippy --all-targets --features symbols -- -D warnings
       - name: Clippy (mcp feature)
         run: cargo clippy --all-targets --features mcp -- -D warnings
       - name: Test
         run: cargo test --all
-      - name: Test (symbols feature)
-        run: cargo test --all --features symbols
       - name: Test (mcp feature)
         run: cargo test --all --features mcp
 
@@ -45,7 +41,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Gate the whole repo (README, docs, code) except sample/, the golden fixture
       # whose deliberately-loose annotations are pinned by tests/golden.rs.
-      - run: cargo run --release -- --strict-check . --ignore sample
+      # Two invocations: `walk::keep_entry` prunes any directory named `tests` unless
+      # `--include-tests` (default off), so the first cannot see tests/ at all and most of
+      # the repo's annotations would go unenforced. tests/fixtures stays excluded —
+      # charter_malformed is deliberately malformed.
+      - run: cargo run --release -- --strict-check . --ignore sample --max-length 200
+      - run: cargo run --release -- --strict-check . --ignore sample --include-tests -I 'tests/fixtures' --max-length 200
 
   # Lint the POSIX installer script.
   shellcheck:

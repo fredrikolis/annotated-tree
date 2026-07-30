@@ -1,4 +1,4 @@
-<!-- Concern: what annotated-tree is, when/why to use it, and how to adopt it in a project (CLAUDE.md, local git hooks, config) | Non-concern: exhaustive flag reference (see `annotated-tree --help`) or the extended argument (see README_APPENDIX.md) | IO: none -->
+<!-- Concern: what annotated-tree is, when and why to use it, and how to adopt it in a project (CLAUDE.md, git hooks, config) | Non-concern: the exhaustive flag reference (annotated-tree --help owns it) or the extended argument | IO: none -->
 # annotated-tree [![CI](https://github.com/fredrikolis/annotated-tree/actions/workflows/ci.yml/badge.svg)](https://github.com/fredrikolis/annotated-tree/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/annotated-tree.svg)](https://crates.io/crates/annotated-tree) [![npm](https://img.shields.io/npm/v/annotated-tree.svg)](https://www.npmjs.com/package/annotated-tree) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 `annotated-tree` extends Unix `tree`. Alongside the directory structure it renders each
@@ -153,10 +153,23 @@ reader we optimize for. An agent reads the whole line in one pass and moves on.
 One line, three ` | `-delimited fields, behind the file's comment marker:
 
 ```
-[marker] Concern: the file's one job | Non-concern: a neighbouring concern a named sibling owns | IO: (in) -> out, or none [close]
+[marker] Concern: the file's one job | Non-concern: a concern it deliberately does not own | IO: (in) -> out, or none [close]
 ```
 
-`[marker]`/`[close]` are the language's comment delimiters: `#`, `//`, and `--` need only the opener; Markdown and HTML need both, e.g. `<!-- Concern: ... | Non-concern: ... | IO: ... -->`. `Concern` and `Non-concern` reject filler; the `Non-concern` names something an agent would expect here but this file does not own, and where it lives instead (a sibling, an external system, or out of scope). `IO` is `none` for docs, config, and data.
+`[marker]`/`[close]` are the language's comment delimiters: `#`, `//`, and `--` need
+only the opener; Markdown and HTML need both, e.g.
+`<!-- Concern: ... | Non-concern: ... | IO: ... -->`.
+
+- **Form.** All three fields must be present and non-empty. `--strict-check`
+  enforces that, plus a per-field length bound of 200 characters by default, and
+  it **never checks what a field says**.
+- **Content.** Every field states WHAT, never why, how, or when. No mechanism,
+  no rationale, no conditions. That one is a writing rule, not a check.
+- **`Non-concern`.** Names something an agent would expect here but this file
+  does not own. Naming where it lives instead (a sibling, an external system, or
+  out of scope) is optional: include it only when the owner is not already
+  obvious from the tree.
+- **`IO`.** Reads `none` for docs, config, and data.
 
 #### Good vs bad annotations
 
@@ -201,9 +214,9 @@ boundaries, as much as the concerns, that make it work.
 There is a sloppy way to write a `Non-concern` and a rich one. `Non-concern:
 everything not X` is always true and useless. A good one excludes something
 *plausible*, the unexpected subset of the concern, or the neighbor an agent would
-assume comes with it, and points to where it actually lives. `notifications.py` sends
-the order emails but does not decide when they fire: exactly what you would have
-guessed wrong, which is exactly why it is written down.
+assume comes with it. `notifications.py` sends the order emails but does not decide
+when they fire: exactly what you would have guessed wrong, which is exactly why it
+is written down.
 
 #### It is not just code
 
@@ -213,11 +226,11 @@ no callable contract, but the org chart still reads at a glance:
 
 ```
 research/
-├── NOTES.md          # Concern: running worklog (decisions and open questions, newest first) | Non-concern: the spec (see proposal.md) | IO: none
+├── NOTES.md          # Concern: running worklog (decisions and open questions, newest first) | Non-concern: the spec | IO: none
 ├── proposal.md       # Concern: the pitch (problem, approach, success criteria) | Non-concern: implementation detail | IO: none
 ├── sources/
 │   ├── prior-art.md  # Concern: annotated bibliography of related work | Non-concern: our own design | IO: none
-│   └── trials.csv    # Concern: raw measurements from the runs | Non-concern: interpretation (see findings.md) | IO: none
+│   └── trials.csv    # Concern: raw measurements from the runs | Non-concern: interpretation | IO: none
 ├── findings.md       # Concern: what the trials mean, and the recommendation | Non-concern: the raw numbers | IO: none
 └── experiments/
     └── spike-01/     # Concern: throwaway spike testing approach A, kept for the record | Non-concern: production readiness | IO: none
@@ -255,9 +268,12 @@ concerns, not identifiers.
 
 ```
 core/
-├── scheduler.py   # Concern: run queued jobs to completion with retries | Non-concern: which backend runs a job (see planner.py) | IO: (Job) -> Result
+├── scheduler.py   # Concern: run queued jobs to completion with retries | Non-concern: which backend runs a job | IO: (Job) -> Result
 └── planner.py     # Concern: pick the cheapest backend for each job (cost-based optimizer over the provider menu) | Non-concern: which providers exist (see registry.py) | IO: (Job) -> Backend
 ```
+
+`planner.py` is on the next line, so naming it would be bloat; `registry.py` is not in
+this view, so that pointer earns its place.
 
 Asked to "add a new compute provider," you would have grepped `provider`, wired it in
 beside the others, and shipped, never learning that `planner.py` already routes every
@@ -310,10 +326,9 @@ Same prebuilt binary on every channel.
 | Annotated tree + dependency graph | *(default)* |
 | Structured output for tooling and agents | `--format json` (versioned schema), `md` |
 | Only what changed, plus blast radius | `--changed`, `--since <ref>` |
-| Top-level definitions per file (tree-sitter) | `--symbols` *(build with `--features symbols`)* |
 | Serve to agents and editors as MCP tools | `--mcp` *(build with `--features mcp`)* |
 | Lint annotations + architectural rules (git hook or CI) | `--strict-check` |
-| Rough per-file and per-dir token estimate | `--tokens` |
+| Bound each annotation field's length *(200 by default)* | `--max-length <N>`, `0` to disable |
 | Cap entries shown per directory (big corpora) | `--max-per-node <N>`, `--full` |
 | Runaway-scope guard | `--max-files <N>` |
 
@@ -346,8 +361,8 @@ Three gates under `.githooks/` (enable with `git config core.hooksPath .githooks
 2. **Reviewer enforcement (commit-msg).** The lint cannot tell whether a line is still
    *true*. Gate the commit on a neutral reviewer (not the author) who checks, per changed
    file, that the annotation still holds after the diff: `Concern` names what the file now
-   does, `Non-concern` still excludes a real sibling boundary (not a truism), `IO` still
-   matches. Block unless the message reports zero issues.
+   does, `Non-concern` still excludes a real boundary the file does not own (not a truism),
+   `IO` still matches. Block unless the message reports zero issues.
    [`.githooks/commit-msg`](.githooks/commit-msg) is a working example.
 
 3. **Standards enforcement (optional, recommended, workspace-dependent).** Layer your
@@ -380,8 +395,8 @@ annotations make it legible to the agent working it:
 sales/                   # Concern: work the current lead list | Non-concern: where the leads come from | IO: none
 ├── customer-list.csv
 └── skills/              # Concern: how the sales agent works a lead | Non-concern: the lead data | IO: none
-    ├── outreach.md      # Concern: how we contact a lead | Non-concern: which leads are worth it (see lead-scoring.md) | IO: none
-    └── lead-scoring.md  # Concern: how we rank leads | Non-concern: how we reach out (see outreach.md) | IO: none
+    ├── outreach.md      # Concern: how we contact a lead | Non-concern: which leads are worth it | IO: none
+    └── lead-scoring.md  # Concern: how we rank leads | Non-concern: how we reach out | IO: none
 ```
 
 The skills carry their concern and boundary the way code does, and the split between

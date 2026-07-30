@@ -1,4 +1,4 @@
-// Concern: yields the set of files to annotate under a root — recognized-language files plus any `--include` glob matches — applying gitignore, test/vendor pruning, and exclude globs | Non-concern: annotations or graph | IO: (root, Config, excludes, include) -> [file paths]
+// Concern: the in-scope file set under a root — recognized-language files plus --include glob matches, less gitignored, hidden, vendor, test, and excluded paths | Non-concern: annotations or graph | IO: (root, Config, excludes, include) -> [file paths]
 
 use std::path::{Path, PathBuf};
 

@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for manifest parse-error reporting — a corrupt manifest warns to stderr and continues, --ignore-parsing-errors silences it, and a valid manifest without a package is not an error | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, stderr, code)
+// Concern: end-to-end tests for manifest parse-error reporting — the stderr warning, --ignore-parsing-errors, and a package-less manifest | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, stderr, code)
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

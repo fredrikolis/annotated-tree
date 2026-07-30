@@ -1,4 +1,4 @@
-// Concern: resolves layered configuration (built-in < user < repo < CLI) into a language table and display settings | Non-concern: walking or rendering | IO: (paths, CLI overrides) -> Config
+// Concern: resolves the layered configuration into a language table, display settings, and lint rules | Non-concern: walking or rendering | IO: (paths, CLI overrides) -> Config
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -23,8 +23,9 @@ struct RawConfig {
     languages: HashMap<String, RawLanguage>,
 }
 
-/// Architectural dependency rules parsed from a `[rules]` table. Declarative and
-/// regex-free: `deny` names package pairs, the flags toggle structural checks.
+/// Lint rules parsed from a `[rules]` table. Declarative and regex-free: `deny` names package
+/// pairs, the flags toggle structural checks, `max_annotation_length` bounds each annotation
+/// part.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawRules {
@@ -32,6 +33,7 @@ struct RawRules {
     forbid_cycles: Option<bool>,
     forbid_orphans: Option<bool>,
     require_package_charter: Option<bool>,
+    max_annotation_length: Option<usize>,
 }
 
 /// Walk-scope limits parsed from a `[limits]` table. Deliberately separate from
@@ -46,8 +48,6 @@ struct RawLimits {
 #[serde(deny_unknown_fields)]
 struct RawDisplay {
     show_age: Option<bool>,
-    show_tokens: Option<bool>,
-    show_symbols: Option<bool>,
     ascii: Option<bool>,
     gitignore: Option<bool>,
     include_tests: Option<bool>,
@@ -69,8 +69,6 @@ struct RawLanguage {
 #[derive(Debug, Default)]
 pub struct CliOverrides {
     pub show_age: Option<bool>,
-    pub show_tokens: Option<bool>,
-    pub show_symbols: Option<bool>,
     pub ascii: Option<bool>,
     pub gitignore: Option<bool>,
     pub include_tests: Option<bool>,
@@ -88,13 +86,16 @@ pub struct CliOverrides {
     /// `max_files`: `None` = CLI silent (use config/default); `Some(None)` =
     /// `--full` (cap disabled); `Some(Some(n))` = `--max-per-node n`.
     pub max_per_node: Option<Option<usize>>,
+    /// `--max-length <N>`: the per-part annotation length bound. A plain `Option<usize>` —
+    /// `None` is "the CLI said nothing; fall through to the config layers". There is no
+    /// `--full`-style sentinel; `--max-length 0` is how you turn the shipped bound off,
+    /// since 0 normalizes to "no bound" (the same normalization `--max-per-node 0` uses).
+    pub max_annotation_length: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Display {
     pub show_age: bool,
-    pub show_tokens: bool,
-    pub show_symbols: bool,
     pub ascii: bool,
     pub gitignore: bool,
     pub include_tests: bool,
@@ -238,8 +239,6 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
     if let Some(sd) = src.display {
         let dd = dst.display.get_or_insert_with(Default::default);
         dd.show_age = sd.show_age.or(dd.show_age);
-        dd.show_tokens = sd.show_tokens.or(dd.show_tokens);
-        dd.show_symbols = sd.show_symbols.or(dd.show_symbols);
         dd.ascii = sd.ascii.or(dd.ascii);
         dd.gitignore = sd.gitignore.or(dd.gitignore);
         dd.include_tests = sd.include_tests.or(dd.include_tests);
@@ -261,6 +260,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
         dr.forbid_cycles = sr.forbid_cycles.or(dr.forbid_cycles);
         dr.forbid_orphans = sr.forbid_orphans.or(dr.forbid_orphans);
         dr.require_package_charter = sr.require_package_charter.or(dr.require_package_charter);
+        dr.max_annotation_length = sr.max_annotation_length.or(dr.max_annotation_length);
     }
     for (name, lang) in src.languages {
         dst.languages.insert(name, lang);
@@ -276,8 +276,6 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     include.extend(cli.include.iter().cloned());
     let display = Display {
         show_age: cli.show_age.or(disp.show_age).unwrap_or(false),
-        show_tokens: cli.show_tokens.or(disp.show_tokens).unwrap_or(false),
-        show_symbols: cli.show_symbols.or(disp.show_symbols).unwrap_or(false),
         ascii: cli.ascii.or(disp.ascii).unwrap_or(false),
         gitignore: cli.gitignore.or(disp.gitignore).unwrap_or(true),
         include_tests: cli.include_tests.or(disp.include_tests).unwrap_or(false),
@@ -289,7 +287,7 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
         max_files: resolve_max_files(cli, raw.limits.unwrap_or_default())?,
     };
 
-    let rules = resolve_rules(raw.rules.unwrap_or_default());
+    let rules = resolve_rules(raw.rules.unwrap_or_default(), cli);
 
     let mut languages = Vec::new();
     let mut ext_to_lang = HashMap::new();
@@ -339,7 +337,14 @@ pub fn builtin_example() -> String {
     format!("// {EXAMPLE_BODY}")
 }
 
-fn resolve_rules(raw: RawRules) -> Rules {
+/// Resolve the `[rules]` table. Takes the CLI overrides because `max_annotation_length` has a
+/// `--max-length` flag, which must win over the merged config layers like every other CLI
+/// value (built-in < user < repo < CLI). A resolved bound of `0` normalizes to `None` (no
+/// bound) exactly as [`resolve_max_per_node`] does for its own numeric knob: an empty field is
+/// already fatal, so a literal bound of 0 could only mean "fail every annotation", which is
+/// never what a caller asks for — and it doubles as the way to switch the shipped bound (200,
+/// from the built-in layer) off from the command line.
+fn resolve_rules(raw: RawRules, cli: &CliOverrides) -> Rules {
     Rules {
         deny: raw
             .deny
@@ -350,6 +355,10 @@ fn resolve_rules(raw: RawRules) -> Rules {
         forbid_cycles: raw.forbid_cycles.unwrap_or(false),
         forbid_orphans: raw.forbid_orphans.unwrap_or(false),
         require_package_charter: raw.require_package_charter.unwrap_or(false),
+        max_annotation_length: cli
+            .max_annotation_length
+            .or(raw.max_annotation_length)
+            .filter(|&n| n > 0),
     }
 }
 
@@ -425,7 +434,7 @@ mod tests {
         for lang in &config.languages {
             let example = lang.example();
             assert_eq!(
-                crate::annotation::analyze(&example, lang),
+                crate::annotation::analyze(&example, lang, None),
                 crate::annotation::Outcome::Ok,
                 "language '{}' example is not self-conforming: {:?}",
                 lang.name,

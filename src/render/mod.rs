@@ -1,4 +1,4 @@
-// Concern: the renderer extension seam — a `Renderer` trait mapping the canonical map to output, plus the text implementation | Non-concern: building the map | IO: (CodebaseMap) -> String
+// Concern: the renderer seam — the `Renderer` trait, the format -> renderer factory, and the shared elision summary | Non-concern: building the map | IO: (CodebaseMap) -> String
 
 use crate::cli::Format;
 use crate::model::CodebaseMap;

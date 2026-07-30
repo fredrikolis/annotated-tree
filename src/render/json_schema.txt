@@ -25,7 +25,6 @@ DirNode  = {
   "dirs":         [ DirNode, … ],  // always present (possibly empty)
   "files":        [ FileNode, … ], // always present (possibly empty)
   "deps":         DirDeps,         // OMITTED unless the dir holds a manifest
-  "tokens":       integer,         // OMITTED unless --tokens (subtree estimate)
   "elided_dirs":  integer,         // OMITTED unless subdirs exceed --max-per-node
   "elided_files": integer          // OMITTED unless files exceed --max-per-node
 }
@@ -33,22 +32,13 @@ DirNode  = {
 Charter  = {                       // a directory's concern charter (dir-scale annotation)
   "concern":     string,           // what the directory owns
   "non_concern": string,           // what it deliberately does NOT own
-  "io":          string            // its IO contract, or the blessed literal "none"
+  "io":          string            // its IO contract, or the literal `none`
 }
 
 FileNode = {
   "name":       string,
   "annotation": string,            // OMITTED when the file has no annotation
-  "age_secs":   integer,           // OMITTED unless --age
-  "tokens":     integer,           // OMITTED unless --tokens
-  "symbols":    [ Symbol, … ]      // OMITTED unless --symbols (empty ⇒ omitted)
-}
-
-Symbol   = {
-  "kind":      string,             // function|method|class|struct|enum|trait|interface|type
-  "name":      string,
-  "signature": string,             // compact one-line signature
-  "line":      integer             // 1-based start line
+  "age_secs":   integer            // OMITTED unless --age
 }
 
 DirDeps  = {
@@ -58,7 +48,7 @@ DirDeps  = {
 }
 
 Absent data is omitted rather than emitted as `null`, so the default-flags output is
-deterministic (no timestamp/token noise) and consumers branch on key-presence. The
+deterministic (no timestamp noise) and consumers branch on key-presence. The
 `warnings` array follows the same rule — omitted entirely when empty — so its mere
 presence signals the dependency graph is incomplete. Warnings are non-fatal (exit 0).
 

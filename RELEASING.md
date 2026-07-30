@@ -77,7 +77,14 @@ require pushing.
 1. Bump `version` in `Cargo.toml`; move the `CHANGELOG.md` `[Unreleased]` section
    under the new version heading.
 2. `./scripts/local-release-check.sh` — must pass.
-3. Commit, then tag: `git tag vX.Y.Z && git push --tags`.
+3. Commit, then tag and push **that tag only**:
+   ```sh
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+   Never `git push --tags` — it publishes every local tag, including working tags
+   that were never meant to leave the machine. `release.yml` triggers on the `v*`
+   tag pattern either way, so the pipeline is unaffected.
 4. The `release` workflow creates the GitHub Release, uploads binaries + checksums,
    publishes to crates.io, and publishes the npm channel.
 

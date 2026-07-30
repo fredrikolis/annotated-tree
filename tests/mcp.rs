@@ -1,4 +1,4 @@
-// Concern: drives the built `--mcp` server through one real stdio JSON-RPC round-trip (initialize -> tools/list -> tools/call), freezing the EXTERNAL contract agents consume — the JSON-RPC envelope plus the map/strict tool payloads | Non-concern: re-freezing the sync builders (the golden suite owns model/graph/strict; the MCP tools are thin adapters) | IO: (fixture tree, JSON-RPC requests) -> asserted responses
+// Concern: end-to-end test driving the built --mcp server through one stdio JSON-RPC round-trip — the envelope plus the map and strict tool payloads | Non-concern: re-freezing the sync builders | IO: (fixture tree, JSON-RPC requests) -> asserted responses
 //
 // The round-trip is DETERMINISTIC by construction: it reads line-delimited JSON-RPC
 // responses on a drainer thread and waits for the specific ids it expects, bounded
@@ -241,7 +241,7 @@ fn map_tool_round_trip_returns_versioned_map() {
         gap["example"]
     );
     // The same structured guidance the CLI JSON path carries: a machine defect and a
-    // file-tailored suggestion whose placeholder slots keep it un-submittable unedited.
+    // file-tailored suggestion whose `<…>` slots mark the judgments left to make.
     assert_eq!(
         gap["defect"]["missing"],
         json!(["concern", "non_concern", "io"]),

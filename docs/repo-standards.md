@@ -1,4 +1,4 @@
-<!-- Concern: universal programming principles - KISS, YAGNI, DRY, dependency inversion (SOLID mapped to first principles), DbC, canonical representation at boundaries, fail-fast, SoC, agent UX, file size | Non-concern: first-line annotations (the git hooks and docs/annotation-guide.md own them) plus language- and interface-specific patterns and standards (concrete timestamp/timezone forms, idiomatic types, per-language testing, CLI grammar such as envelope shapes and exit-code tables) | IO: none -->
+<!-- Concern: the repo-wide, language-agnostic engineering principles — KISS, YAGNI, SoC, dependency inversion, minimal API, DbC, DRY, fail fast, agent UX, file size | Non-concern: the annotation format, commit-gate mechanics, and prose style (sibling docs own each), plus language- and interface-specific grammar | IO: none -->
 # Repo Standards
 
 Universal principles. All languages. All paradigms.
@@ -153,7 +153,7 @@ Ownership includes owning your dependency *direction*. High-level policy must no
 
 ### Agent UX — Design for the Agent as Primary User
 
-**When a tool's primary consumer is an AI agent, agent UX IS the UX. Any commit that touches the invocation surface — command syntax, flags, defaults, output, errors, exit codes, `--help` — is an agent-UX change, and is scored on whether an agent parses, trusts, and acts on it more reliably.**
+**When a tool's primary consumer is an AI agent, agent UX IS the UX. Any commit that touches the invocation surface — command syntax, flags, defaults, output, errors, exit codes, `--help` — is an agent-UX change, and its review carries a severity for whether an agent parses, trusts, and acts on it more reliably.**
 
 An agent invokes the tool programmatically — it parses the output, branches on it, and pays a token/latency cost per call. The human reading the same run is the *dual-render* of one structured object, never a separate code path. Design for the agent first; the human view falls out for free. The test for every surface change: does it convert an act of inference into an act of reading? And the surface only ratchets forward — a regression in agent ergonomics is a blocker, not a tradeoff.
 
@@ -198,16 +198,19 @@ Some agent-first tools do more than report — their signal becomes something an
 
 - **Observable** — a machine-readable, dispatchable signal (stable `code`s + counts), never a human verdict the agent must interpret.
 - **Convergent** — a *gradient*, not a pass/fail gate. Emit a distance-to-done (N of M, a decreasing violation count) so the agent knows it is getting warmer and can recognize *done*. A binary gate is a weak target; a slope is a strong one.
-- **Goodhart-resistant** — satisfying the metric must *require* improving (or honestly reporting) the underlying property. Reject filler that passes the format but carries no meaning; an anti-filler gate must cover *every* required slot, because gating some fields but not all just relocates the filler to the unchecked one. Reward **honesty over tidiness** — surface the real state (dead code, cycles, overlapping responsibilities), never a description that conceals a mess; honest overlap between two units is an architecture finding (keep/move/delete), not something to reword away. Anchor the signal in what the tool *observes* about the system and cross-check it against what the code *self-reports*: the discrepancy between claim and reality is the least gameable signal of all.
+- **Goodhart-resistant** — satisfying the metric must *require* improving (or honestly reporting) the underlying property, as far as a deterministic check reaches. It does not reach meaning: a gate can confirm that a field is present, non-empty, and inside a length bound, never that what it says is worth reading. So scope the gate to form and route the meaning to a reviewer — filler that clears the form is a review finding, not a gate failure, and a gate that claims to catch it is claiming coverage it does not have. Reward **honesty over tidiness** — surface the real state (dead code, cycles, overlapping responsibilities), never a description that conceals a mess; honest overlap between two units is an architecture finding (keep/move/delete), not something to reword away. Anchor the signal in what the tool *observes* about the system and cross-check it against what the code *self-reports*: the discrepancy between claim and reality is the least gameable signal of all.
 
 | Pattern | Score | Notes |
 |---------|-------|-------|
 | Metric is a gradient with an explicit distance-to-done | +9 | Agent can converge and know when finished |
 | Signal anchored in observed facts, cross-checked vs self-report | +10 | Discrepancy is un-gameable |
-| Passing requires improving the real property | +9 | Optimizer and intent aligned |
-| Metric satisfiable by filler / tidy-but-false reporting | -10 | Goodhart — optimizes the proxy, corrupts the loop |
-| Anti-filler gate covers some required slots but not all | -6 | Filler relocates to the ungated field |
+| Passing requires improving the real property, where a check can observe it | +9 | Optimizer and intent aligned |
+| Form checked by the gate, meaning left to a reviewer | +8 | Honest split — deterministic half gated, semantic half attested |
+| Metric that rewards a tidy report over an honest one | -10 | Goodhart — optimizes the proxy, corrupts the loop |
+| Gate advertised as catching what it cannot detect | -8 | False coverage — the defect passes with the gate vouching for it |
 | Binary pass/fail with no convergence signal | -5 | Weak target; agent can't tell it's getting warmer |
+
+**Filler is guidance, not a gate.** A form check — every required part present, non-empty, inside its length bound — is the most a deterministic gate can honestly claim about an annotation. Whether a present field *says* anything is a judgment, so it belongs to the annotation review (`docs/githook-guide.md`, Gate B), where a reviewer names it as a finding. Filler is still bad practice and a reviewer should send it back; it is not grounds for a meaning-judging gate, which is the inference this section forbids.
 
 **The rendered map is itself an optimization target, kept honest at a human-authored ceiling by two checks.** A *charter* — a package/repo-scale annotation whose `Non-concern:` clauses are concrete enough to *reject* an ill-fitting feature by naming the sibling that owns it, not a strawman (a repo charter rejecting "add a program executor" because that is a runtime tool; a service charter rejecting "parse rules in the handler" because a named CLI owns that). And a *stress test* — replaying realistic change-requests to confirm each routes to exactly one unit from the map alone. A charter too vague to reject scope-creep is the map's failure mode, not the agent's.
 
@@ -442,7 +445,7 @@ Need to document?
 | **SoC**                       | Every unit owns one job; fractal pkg→variable | Unit doing a neighbor's job; "just use layers" |
 | **Dependency Inversion**      | Depend on abstractions; point at stability | High-level module depends on low-level detail |
 | **Minimal API**               | Expose only necessary               | Leaking implementation details            |
-| **Agent UX**                  | Agent is the primary user; every invocation-surface change scored for it, ratcheting forward | Surface change that makes an agent's parse, dispatch, or self-repair worse |
+| **Agent UX**                  | Agent is the primary user; every invocation-surface change reviewed for it, ratcheting forward | Surface change that makes an agent's parse, dispatch, or self-repair worse |
 | **Remove-then-Replace**       | Delete old, boundary tests = spec   | Keeping internal tests during rewrite     |
 | **File Size**                 | Agent-manageable; split at natural seams | Multi-thousand-line multi-concern monolith |
 | **DbC**                       | Own interface → know contract       | Defensive code for own types              |

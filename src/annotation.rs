@@ -1,4 +1,4 @@
-// Concern: extracts a file's first-line annotation (per a Language, or marker-agnostically) and validates it against the three-field Concern/Non-concern/IO format | Non-concern: which files to visit | IO: (file head, Language?) -> Option<String>
+// Concern: extracts a file's first-line annotation and checks its three-field Concern/Non-concern/IO form and per-part length | Non-concern: which files to visit, or what a part means | IO: (file head, Language?, length bound) -> Outcome
 
 use std::path::Path;
 
@@ -196,51 +196,71 @@ fn non_empty(s: &str) -> Option<String> {
 }
 
 /// The three fixed fields of the one annotation format — the stable part tokens an agent
-/// branches on (a missing/vacuous slot names one of these). Defined here, at the grader
-/// that produces them, so [`crate::strict`]'s `Defect`/`Expected` and the embedded annotation
-/// guide ([`crate::guide`]) all reference ONE source of truth and cannot drift.
+/// branches on (an absent, empty, or over-length part names one of these). Defined here, at
+/// the checker that produces them, so [`crate::strict`]'s `Defect`/`Expected` and the embedded
+/// annotation guide ([`crate::guide`]) all reference ONE source of truth and cannot drift.
 pub(crate) const PART_CONCERN: &str = "concern";
 pub(crate) const PART_NON_CONCERN: &str = "non_concern";
 pub(crate) const PART_IO: &str = "io";
+
+/// The human label for a part token (`concern` -> `Concern`) — the field name as it appears
+/// in the annotation itself, so a diagnostic quotes what the author typed while the machine
+/// surface keeps the snake_case token. Kept beside the tokens, the ONE place the pairing lives.
+///
+/// The three tokens above are the only ones that exist (they are `pub(crate)` constants and
+/// every caller passes one), so anything else is a caller bug, not input — it fails loudly
+/// rather than leaking a snake_case token into human prose.
+pub(crate) fn part_label(part: &str) -> &'static str {
+    match part {
+        PART_CONCERN => "Concern",
+        PART_NON_CONCERN => "Non-concern",
+        PART_IO => "IO",
+        other => unreachable!("part_label: `{other}` is not an annotation part token"),
+    }
+}
 
 /// The structured verdict for one file's annotation, consumed by the strict layer to
 /// build a rich, actionable diagnostic (language + marker + real line + example).
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
-    /// A conforming, fully-formed annotation is present (all three fields, none hollow).
+    /// A conforming annotation is present: all three fields, each non-empty and within any
+    /// length bound the caller supplied.
     Ok,
     /// No conforming annotation at all. `raw` carries the offending non-comment /
     /// wrong-marker line when one was present (so the message can hint at it), or
     /// `None` for an empty / unreadable head.
     Missing { line: usize, raw: Option<String> },
-    /// A comment is present but is NOT the three-field `Concern: … | Non-concern: … |
-    /// IO: …` shape (a key absent, or the ` | ` structure broken). `missing` names which
-    /// of the three keyed fields are absent (by [`PART_CONCERN`] etc.) so an agent knows
-    /// what to add. `actual` is the extracted comment text.
+    /// A comment is present but does not carry three non-empty `Concern: … | Non-concern: …
+    /// | IO: …` fields — a key is absent, a field is empty after trimming, or the ` | `
+    /// structure is broken. `missing` names which of the three keyed fields are absent or
+    /// empty (by [`PART_CONCERN`] etc.) so an agent knows what to add; `actual` is the
+    /// extracted comment text. `detail` is human prose for the two cases `missing` alone
+    /// reads wrong on — a present-but-empty field, and a broken structure whose keys are all
+    /// visible — and `None` for a plainly absent key.
     Malformed {
         line: usize,
         actual: String,
         missing: Vec<&'static str>,
+        detail: Option<String>,
     },
-    /// The three-field shape is present but a required slot is empty, a filler token, or
-    /// an unfilled placeholder — a copied box-filling stub. FATAL: this is what makes a
-    /// thoughtless suggestion-stub a *failing* state rather than merely a discouraged one.
-    /// `slot` is the stable machine token for which field is hollow ([`PART_CONCERN`] |
-    /// [`PART_NON_CONCERN`] | [`PART_IO`]) so an agent branches on it; `reason` is the
-    /// human prose naming the same defect.
-    Vacuous {
+    /// All three fields are present and non-empty, but at least one is longer than the bound
+    /// the caller supplied. `parts` names each offending field with its length in Unicode
+    /// scalar values; `max` is the bound it breached.
+    TooLong {
         line: usize,
         actual: String,
-        slot: &'static str,
-        reason: String,
+        parts: Vec<(&'static str, usize)>,
+        max: usize,
     },
 }
 
-/// Diagnose `text` against the one annotation format. The strict layer turns this into a
-/// message; [`extract`]/[`extract_from`] stay unchanged for the tree renderer.
-pub fn analyze(text: &str, lang: &Language) -> Outcome {
+/// Diagnose `text` against the one annotation format, bounding each part at `max_len`
+/// characters when a bound is supplied (`None` raises no length issue at any length). The
+/// strict layer turns this into a message; [`extract`]/[`extract_from`] stay unchanged for
+/// the tree renderer.
+pub fn analyze(text: &str, lang: &Language, max_len: Option<usize>) -> Outcome {
     match locate(text, lang) {
-        Located::Found { text, line } => grade_found(text, line),
+        Located::Found { text, line } => check_found(text, line, max_len),
         Located::NoComment { line, raw } => Outcome::Missing {
             line,
             raw: Some(raw),
@@ -249,52 +269,84 @@ pub fn analyze(text: &str, lang: &Language) -> Outcome {
     }
 }
 
-/// Grade an already-located annotation body against the three-field format — the shared tail
-/// of both [`analyze`] (which locates a file's first comment first) and [`analyze_charter`]
-/// (whose whole input IS the body, no comment to locate). ONE grader, so a marker-bearing
-/// comment and a bare `.annotation` line are held to the exact same shape and can never drift.
-fn grade_found(text: String, line: usize) -> Outcome {
+/// Check an already-located annotation body against the three-field format and the optional
+/// per-part bound `max_len` — the shared tail of both [`analyze`] (which locates a file's
+/// first comment first) and [`analyze_charter`] (whose whole input IS the body, no comment to
+/// locate). ONE checker, so a marker-bearing comment and a bare `.annotation` line are held
+/// to the exact same shape and can never drift. Structure outranks length: at most one
+/// outcome exists per input, and length is evaluated only for an otherwise-conforming line.
+fn check_found(text: String, line: usize, max_len: Option<usize>) -> Outcome {
     match parse_fields(&text) {
-        // Structurally the format: grade each slot for box-filling. A hollow slot is a
-        // FATAL vacuous stub; all three substantive is a pass.
-        Some(fields) => match grade(&fields) {
-            None => Outcome::Ok,
-            Some((slot, reason)) => Outcome::Vacuous {
-                line,
-                actual: text,
-                slot,
-                reason,
-            },
-        },
-        // A comment, but not the three-field shape — name which keys are absent.
+        Some(fields) => {
+            // A present-but-empty field is the same defect class as an absent one (CHECK1
+            // admits both), so it is `Malformed` with that part named — and `detail` carries
+            // the difference, since the key IS visible in `actual`.
+            let empty = empty_parts(&fields);
+            if !empty.is_empty() {
+                let detail = Some(empty_detail(&empty));
+                return Outcome::Malformed {
+                    line,
+                    actual: text,
+                    missing: empty,
+                    detail,
+                };
+            }
+            if let Some(max) = max_len {
+                let parts = over_length_parts(&text, max);
+                if !parts.is_empty() {
+                    return Outcome::TooLong {
+                        line,
+                        actual: text,
+                        parts,
+                        max,
+                    };
+                }
+            }
+            Outcome::Ok
+        }
+        // A comment, but not the three-field shape — name which keys are absent. All three
+        // keys present yet unparseable means the ` | ` structure is broken or the keys are
+        // out of order, so NO part could be extracted: report all three, and say why.
         None => {
-            let missing = absent_parts(&text);
+            let mut missing = absent_parts(&text);
+            let mut detail = None;
+            if missing.is_empty() {
+                missing = vec![PART_CONCERN, PART_NON_CONCERN, PART_IO];
+                detail = Some(BROKEN_STRUCTURE.to_string());
+            }
             Outcome::Malformed {
                 line,
                 actual: text,
                 missing,
+                detail,
             }
         }
     }
 }
 
 /// Diagnose a bare (marker-less) `.annotation` file body — the whole file IS the annotation,
-/// with no comment marker to strip — against the SAME three-field grammar [`analyze`] applies
-/// after locating a file's first comment. An empty/whitespace body is `Missing` (an empty
-/// opt-in file is a defect, not a silent no-op). Reuses [`grade_found`], so a directory's
-/// charter is validated by the one grader, never a second parser.
-pub fn analyze_charter(text: &str) -> Outcome {
+/// with no comment marker to strip — against the SAME three-field grammar and `max_len` bound
+/// [`analyze`] applies after locating a file's first comment. An empty/whitespace body is
+/// `Missing` (an empty opt-in file is a defect, not a silent no-op). Reuses [`check_found`],
+/// so a directory's charter is checked by the one checker, never a second parser.
+pub fn analyze_charter(text: &str, max_len: Option<usize>) -> Outcome {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Outcome::Missing { line: 1, raw: None };
     }
-    grade_found(trimmed.to_string(), 1)
+    check_found(trimmed.to_string(), 1, max_len)
 }
+
+/// The `detail` prose for a comment whose three keys are all present yet whose structure
+/// defeats [`parse_fields`]. Without it a reader is told all three parts are absent while all
+/// three keys are plainly visible in the offending line.
+const BROKEN_STRUCTURE: &str = "the ` | ` field separators are missing or the keys are out of \
+                                order, so no part could be extracted";
 
 /// Split a bare three-field line into its `(concern, non_concern, io)` values, or `None` when
 /// it is not structurally the format. The render-side counterpart of [`analyze_charter`]:
 /// "render, don't reason" — it only splits (reusing the ONE [`parse_fields`] grammar), leaving
-/// vacuity grading to `--strict-check`. Fed both a `.annotation` body and an entry file's
+/// every issue to `--strict-check`. Fed both a `.annotation` body and an entry file's
 /// already-extracted annotation (both bare three-field lines), so promotion needs no re-parse.
 pub fn split_charter(text: &str) -> Option<(String, String, String)> {
     let fields = parse_fields(text.trim())?;
@@ -338,9 +390,37 @@ fn parse_fields(text: &str) -> Option<Fields<'_>> {
     })
 }
 
-/// Which of the three keyed fields a malformed comment is missing (by presence of the
-/// key text). Case-sensitive: the keys are exact, and `Concern:` is not a substring of
-/// `Non-concern:` (capital `C`), so the checks don't alias.
+/// The MAXIMAL extent of each field, for the length bound ALONE — never for parse or render.
+/// Each span runs from where its value can first begin to where it can last end, so it is the
+/// widest text the line's grammar allows that field to hold:
+/// `concern` reaches the LAST ` | Non-concern:`, `non_concern` runs from the FIRST one to the
+/// LAST ` | IO:` after it, and `io` runs from the FIRST ` | IO:` after that to the end.
+///
+/// Why measure over spans rather than over [`parse_fields`]' values: the three values always
+/// partition the line minus its separators, so the total measured length is fixed and picking a
+/// different occurrence only MOVES length between fields — first-occurrence under-measures a
+/// field whose prose quotes a separator ahead of the real key, last-occurrence under-measures one
+/// that quotes it after, and which is right depends on the field the quote sits in, which the
+/// string does not say. Spans OVERLAP instead: on a conforming line each separator occurs once,
+/// first and last are the same occurrence and all three spans equal the parsed values exactly;
+/// on a line that quotes a separator every span grows, so the bound over-measures and fails
+/// LOUDLY. A bound that over-measures annoys an author; one that under-measures lies to them.
+///
+/// `None` only when the text is not the format at all — the same three tests [`parse_fields`]
+/// makes, so a text it accepted yields spans here.
+fn measured_spans(text: &str) -> Option<[(&str, &'static str); 3]> {
+    let rest = text.strip_prefix(CONCERN_KEY)?;
+    let concern = rest[..rest.rfind(NON_CONCERN_SEP)?].trim();
+    let after_nc = &rest[rest.find(NON_CONCERN_SEP)? + NON_CONCERN_SEP.len()..];
+    let non_concern = after_nc[..after_nc.rfind(IO_SEP)?].trim();
+    let io = after_nc[after_nc.find(IO_SEP)? + IO_SEP.len()..].trim();
+    Some(paired(concern, non_concern, io))
+}
+
+/// Which of the three keyed fields are absent from a comment that failed to parse, by
+/// presence of the key TEXT (this path never sees a field value, so it cannot judge
+/// emptiness — [`empty_parts`] owns that). Case-sensitive: the keys are exact, and `Concern:`
+/// is not a substring of `Non-concern:` (capital `C`), so the checks don't alias.
 fn absent_parts(text: &str) -> Vec<&'static str> {
     let mut missing = Vec::new();
     if !text.contains(CONCERN_KEY) {
@@ -355,214 +435,116 @@ fn absent_parts(text: &str) -> Vec<&'static str> {
     missing
 }
 
-/// Grade the three fields, returning the FIRST hollow slot (its part token) and why, or
-/// `None` when all three are substantive. Order is Concern, then Non-concern, then IO —
-/// the file's primary claim first.
-fn grade(f: &Fields) -> Option<(&'static str, String)> {
-    if let Some(reason) = grade_prose(f.concern, "Concern") {
-        return Some((PART_CONCERN, reason));
-    }
-    if let Some(reason) = grade_prose(f.non_concern, "Non-concern")
-        .or_else(|| grade_non_concern_outward(f.non_concern))
-    {
-        return Some((PART_NON_CONCERN, reason));
-    }
-    if let Some(reason) = grade_io(f.io) {
-        return Some((PART_IO, reason));
-    }
-    None
+/// Which of the three fields are present but EMPTY after trimming, in the format's own
+/// Concern -> Non-concern -> IO order. Every one of them, never just the first: the machine
+/// `missing` list must not under-report what an agent has to fill in.
+fn empty_parts(f: &Fields) -> Vec<&'static str> {
+    part_values(f)
+        .into_iter()
+        .filter(|(value, _)| value.trim().is_empty())
+        .map(|(_, part)| part)
+        .collect()
 }
 
-/// Filler words that mean the author never actually stated the concern/non-concern — a
-/// box filled to satisfy the format, carrying no meaning. Matched case-insensitively
-/// against the WHOLE trimmed field (never a substring), so a real statement mentioning
-/// one of these words in passing never false-positives. Deliberate asymmetry: `none`
-/// is filler HERE (a file must say what it does and does not own) but a blessed value
-/// in `IO:` (a file may legitimately have no callable contract) — see [`grade_io`].
-const PROSE_FILLER: &[&str] = &[
-    "none",
-    "n/a",
-    "nothing",
-    "everything",
-    "anything",
-    "misc",
-    // Code-scaffolding non-words the guide names explicitly as failures (`Filler
-    // ("utils", "helpers")`) — a file whose whole stated concern is "utils"/"helpers"
-    // has not said what it does. Enforcing them keeps the guide's advertised FAILS
-    // honest (no advertise-vs-enforce drift).
-    "utils",
-    "util",
-    "helpers",
-    "helper",
-    "stuff",
-    "the rest",
-    "todo",
-    "tbd",
-    "...",
-];
-
-/// Grade a `Concern:` / `Non-concern:` field. `None` means substantive. Rejects empty, a
-/// whole-slot bracket placeholder (`<…>` / `[…]` — a copied suggestion stub), and the
-/// [`PROSE_FILLER`] tokens.
-fn grade_prose(value: &str, name: &str) -> Option<String> {
-    let display = value.trim();
-    if display.is_empty() {
-        return Some(format!("the {name} field is empty"));
-    }
-    // A whole-slot `<…>` / `[…]` is a copied suggestion placeholder. Checking the WHOLE
-    // slot (not any embedded `<…>`) keeps a real field that happens to use generics from
-    // tripping this.
-    if (display.starts_with('<') && display.ends_with('>'))
-        || (display.starts_with('[') && display.ends_with(']'))
-    {
-        return Some(format!(
-            "the {name} field is an unfilled placeholder ('{display}')"
-        ));
-    }
-    let norm = display
-        .trim_end_matches(['.', ',', ';', ':'])
-        .trim()
-        .to_ascii_lowercase();
-    if PROSE_FILLER.contains(&norm.as_str()) {
-        return Some(format!(
-            "the {name} field is filler, not a real statement ('{display}')"
-        ));
-    }
-    None
+/// Which of the three fields are longer than `max`, each with its length, in the same
+/// Concern -> Non-concern -> IO order. Measured in Unicode scalar values over each field's
+/// trimmed [`measured_spans`] extent — never the key, the ` | ` separators alone, or the whole
+/// line — so the bound means the same thing in every language. A field exactly at `max` passes;
+/// only longer fails.
+///
+/// Takes the annotation TEXT, not the parsed [`Fields`]: a field's length is measured over its
+/// maximal extent, which the values a single split produced cannot express (see
+/// [`measured_spans`]).
+fn over_length_parts(text: &str, max: usize) -> Vec<(&'static str, usize)> {
+    measured_spans(text)
+        .expect("over_length_parts: only called on text parse_fields accepted")
+        .into_iter()
+        .filter_map(|(value, part)| {
+            let len = value.trim().chars().count();
+            (len > max).then_some((part, len))
+        })
+        .collect()
 }
 
-/// Self-referential phrases that make a `Non-concern:` point INWARD at the file itself
-/// instead of OUTWARD at a sibling — the non-answer the guide names ("the file's own
-/// internals are non-answers"). Matched case-insensitively at WORD BOUNDARIES (so
-/// "this file" never fires inside "this filesystem"), and ONLY phrases that EXPLICITLY name
-/// the file. Two categories are deliberately excluded, because gating them would force the
-/// tool to judge a referent — a semantic call it must not make (render, don't reason): a
-/// bare word like "internals" (can name a SIBLING's internals — "caching internals
-/// (CacheLayer owns it)"), and a reflexive pronoun like "itself" / "its own" (can refer to a
-/// sibling — "each module owns its own", "React handles itself"). Applies to Non-concern
-/// only; a `Concern:` describing the file's own job is exactly right.
-const NON_CONCERN_INWARD: &[&str] = &["this file", "the file's own", "the file itself"];
-
-/// Whether `hay` contains `phrase` bounded by non-alphanumeric edges (a whole-phrase match),
-/// so "this file" matches in "this file's state" but NOT inside "this filesystem". `phrase`
-/// is a lowercase ASCII literal from [`NON_CONCERN_INWARD`]; `hay` is already lowercased.
-fn contains_bounded_phrase(hay: &str, phrase: &str) -> bool {
-    let mut from = 0;
-    while let Some(rel) = hay[from..].find(phrase) {
-        let start = from + rel;
-        let end = start + phrase.len();
-        let left_ok = hay[..start]
-            .chars()
-            .next_back()
-            .is_none_or(|c| !c.is_alphanumeric());
-        let right_ok = hay[end..]
-            .chars()
-            .next()
-            .is_none_or(|c| !c.is_alphanumeric());
-        if left_ok && right_ok {
-            return true;
-        }
-        from = start + 1;
-    }
-    false
+/// The three parsed values paired with their stable part tokens, in the format's own order.
+fn part_values<'a>(f: &Fields<'a>) -> [(&'a str, &'static str); 3] {
+    paired(f.concern, f.non_concern, f.io)
 }
 
-/// Reject a `Non-concern:` that points at the file itself rather than a neighbour. `None`
-/// means it points outward (substantive). Fires only on [`NON_CONCERN_INWARD`].
-fn grade_non_concern_outward(value: &str) -> Option<String> {
-    let hay = value.to_ascii_lowercase();
-    for &marker in NON_CONCERN_INWARD {
-        if contains_bounded_phrase(&hay, marker) {
-            return Some(format!(
-                "the Non-concern points inward ('{marker}'); name the sibling that owns the neighbouring concern, not this file's own parts"
-            ));
-        }
-    }
-    None
+/// Three field texts paired with their stable part tokens, in the format's own order — the ONE
+/// ordered table every per-part check iterates (the emptiness check over parsed values, the
+/// length check over maximal spans), so they cannot disagree on order.
+fn paired<'a>(concern: &'a str, non_concern: &'a str, io: &'a str) -> [(&'a str, &'static str); 3] {
+    [
+        (concern, PART_CONCERN),
+        (non_concern, PART_NON_CONCERN),
+        (io, PART_IO),
+    ]
 }
 
-/// IO operand tokens that mean the author never filled the slot — the exact placeholders
-/// the strict-check suggestion stub prints (`<inputs>`, `<outputs>`) plus obvious fillers.
-/// Matched case-insensitively against a WHOLE trimmed operand, so a real type or generic
-/// (`Job`, `Vec<Entry<K, V>>`, `Result`, `Option<String>`) never trips. NOTE bare `...`
-/// is deliberately absent: `(...) -> void` / `() -> ...` are blessed "unspecified"
-/// operands, only the bracketed `<...>` is a hole.
-const IO_FILLER: &[&str] = &[
-    "<inputs>",
-    "<outputs>",
-    "<in>",
-    "<out>",
-    "<...>",
-    "todo",
-    "tbd",
-];
-
-/// Grade the `IO:` field. `None` means substantive. `none` is the blessed "no callable
-/// contract" value (first-class, not filler). Otherwise the operands (split on `->`) must
-/// carry real types — the placeholders the suggestion stub prints fail.
-fn grade_io(value: &str) -> Option<String> {
-    let s = value.trim();
-    if s.is_empty() {
-        return Some("the IO field is empty".to_string());
-    }
-    // Blessed: the file-level analog of `void`/`()` — an honest "no callable contract".
-    if s.eq_ignore_ascii_case("none") {
-        return None;
-    }
-    io_operand_defect(s)
-}
-
-/// Whether the `IO:` operands are placeholder/filler box-filling, and why. Splits on the
-/// `->` arrow into inputs and outputs and grades each; a contract with no arrow is graded
-/// as one operand (never split a real type). `None` = substantive.
-fn io_operand_defect(operands: &str) -> Option<String> {
-    match operands.split_once("->") {
-        Some((inputs, outputs)) => grade_operand(inputs.trim(), "IO input")
-            .or_else(|| grade_operand(outputs.trim(), "IO output")),
-        None => grade_operand(operands.trim(), "IO"),
-    }
-}
-
-/// Grade one IO operand. A wrapping `(…)` is stripped first so a no-args `()` reads as the
-/// deliberate empty it is (substantive, not a hole) and `(Job)` grades on its inner text.
-/// Then a wholly-empty operand or a known placeholder/filler token fires; real types,
-/// generics, and a bare `...` ("unspecified but present") pass.
-fn grade_operand(operand: &str, name: &str) -> Option<String> {
-    let inner = match operand.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
-        Some(inner) => match inner.trim() {
-            // `()` — an explicit no-args marker, not an unfilled hole.
-            "" => return None,
-            inner => inner,
-        },
-        None => operand,
+/// The `detail` prose naming every present-but-empty field. Without it a reader is told
+/// `concern` is missing while `Concern:` is plainly visible in the offending line.
+fn empty_detail(parts: &[&'static str]) -> String {
+    let labels: Vec<&str> = parts.iter().map(|p| part_label(p)).collect();
+    let (noun, verb) = if labels.len() == 1 {
+        ("field", "is")
+    } else {
+        ("fields", "are")
     };
-    if inner.is_empty() {
-        return Some(format!("the {name} operand is empty"));
+    format!(
+        "the {} {noun} {verb} present but empty",
+        join_clauses(&labels)
+    )
+}
+
+/// Join prose fragments as an English list: `A`, `A and B`, `A, B and C`. The ONE joiner every
+/// annotation diagnostic uses — this module's empty-field prose and [`crate::strict`]'s
+/// over-length prose — so two messages about the same three fields cannot punctuate differently.
+pub(crate) fn join_clauses<S: AsRef<str>>(items: &[S]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.as_ref().to_string(),
+        [rest @ .., last] => format!(
+            "{} and {}",
+            rest.iter().map(S::as_ref).collect::<Vec<_>>().join(", "),
+            last.as_ref()
+        ),
     }
-    if IO_FILLER.contains(&inner.to_ascii_lowercase().as_str()) {
-        return Some(format!(
-            "the {name} operand is a placeholder, not a real type ('{inner}')"
-        ));
+}
+
+/// A counted noun for prose: `1 character`, `21 characters` — the pluralization the
+/// over-length diagnostic renders a field's length with. Kept beside [`join_clauses`], the
+/// other prose helper the diagnostics share.
+pub(crate) fn counted(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("{n} {noun}")
+    } else {
+        format!("{n} {noun}s")
     }
-    None
 }
 
 /// The descriptive text of a candidate annotation to SEED a file-tailored strict-check
-/// suggestion — whatever a file already carries before the first ` | `, with a leading
-/// `Concern:` key stripped. Empty when the text is only a delimiter/contract with no
-/// lead-in. Reuses the same key the parser splits on, so seed and grade stay consistent.
+/// suggestion — whatever a file already carries before its ` | Non-concern:` boundary, with a
+/// leading `Concern:` key stripped. Empty when the text is only a delimiter/contract with no
+/// lead-in. Cuts at the same separator, at the same first occurrence, as [`parse_fields`], so the
+/// seed is exactly the `Concern` the checker parsed: a bare ` | ` is prose, not a boundary, and
+/// never cuts here.
 pub(crate) fn concern_seed(text: &str) -> &str {
-    let head = text.split(" | ").next().unwrap_or(text);
+    let head = match text.find(NON_CONCERN_SEP) {
+        Some(at) => &text[..at],
+        None => text,
+    };
     let head = head.strip_prefix(CONCERN_KEY).unwrap_or(head);
     head.trim().trim_end_matches(['.', ',', ';', ':']).trim()
 }
 
-/// Diagnose the file at `path` by reading its bounded head, then [`analyze`]. An
-/// unreadable file (open/read error) is reported as a missing annotation with no
-/// `raw`, preserving the pre-existing "unreadable ⇒ missing" strict behaviour.
-pub fn analyze_file(path: &Path, lang: &Language) -> Outcome {
+/// Diagnose the file at `path` by reading its bounded head, then [`analyze`] with the
+/// caller's `max_len` bound. An unreadable file (open/read error) is reported as a missing
+/// annotation with no `raw`, preserving the pre-existing "unreadable ⇒ missing" strict
+/// behaviour.
+pub fn analyze_file(path: &Path, lang: &Language, max_len: Option<usize>) -> Outcome {
     match read_head(path) {
-        Some(head) => analyze(&head, lang),
+        Some(head) => analyze(&head, lang, max_len),
         None => Outcome::Missing { line: 1, raw: None },
     }
 }
@@ -686,21 +668,22 @@ mod tests {
         // and the real line; a foreign first line is Missing with the raw line captured.
         let l = lang(Some("#"), None, &[]);
         assert_eq!(
-            analyze(&format!("# {OK}\n"), &l),
+            analyze(&format!("# {OK}\n"), &l, None),
             Outcome::Ok,
             "a fully-formed three-field annotation passes"
         );
         assert_eq!(
-            analyze("# just a comment\n", &l),
+            analyze("# just a comment\n", &l, None),
             Outcome::Malformed {
                 line: 1,
                 actual: "just a comment".into(),
                 missing: vec![PART_CONCERN, PART_NON_CONCERN, PART_IO],
+                detail: None,
             },
             "a comment that is not the format is Malformed, naming every absent key"
         );
         assert_eq!(
-            analyze("x = 1\n", &l),
+            analyze("x = 1\n", &l, None),
             Outcome::Missing {
                 line: 1,
                 raw: Some("x = 1".into()),
@@ -712,155 +695,306 @@ mod tests {
     #[test]
     fn malformed_names_only_the_absent_keys() {
         // A comment with two of three keys is Malformed, and `missing` names ONLY the
-        // absent one — the machine delta an agent adds, not prose.
+        // absent one — the machine delta an agent adds, not prose. A genuinely absent key
+        // carries no `detail`: the report already reads right without one.
         let l = lang(Some("//"), None, &[]);
         assert_eq!(
-            analyze("// Concern: does X | IO: (a) -> b\n", &l),
+            analyze("// Concern: does X | IO: (a) -> b\n", &l, None),
             Outcome::Malformed {
                 line: 1,
                 actual: "Concern: does X | IO: (a) -> b".into(),
                 missing: vec![PART_NON_CONCERN],
+                detail: None,
             },
         );
     }
 
     #[test]
-    fn vacuous_slots_are_a_fatal_box_fill() {
-        // Past the three-field gate the grader rejects hollow slots. Behaviour only —
-        // assert on the variant + which slot, not the exact reason prose.
+    fn an_empty_part_is_malformed_and_named() {
+        // A present-but-EMPTY field is fatal, reported as Malformed with that part in
+        // `missing` — the regression guard for the emptiness check that used to live inside
+        // the deleted content grader. `detail` carries what `missing` alone cannot: the key
+        // IS visible in the offending line.
         let l = lang(Some("//"), None, &[]);
-        let cases = [
-            (
-                "Concern: <what it does> | Non-concern: storage | IO: (a) -> b",
-                PART_CONCERN,
-            ),
-            (
-                "Concern: caches | Non-concern: nothing | IO: (a) -> b",
-                PART_NON_CONCERN,
-            ),
-            (
-                "Concern: caches | Non-concern: none | IO: (a) -> b",
-                PART_NON_CONCERN,
-            ),
-            (
-                "Concern: caches | Non-concern: eviction | IO: (<inputs>) -> <outputs>",
-                PART_IO,
-            ),
-            (
-                "Concern: caches | Non-concern: eviction | IO: (Job) -> TODO",
-                PART_IO,
-            ),
-            (
-                "Concern:  | Non-concern: eviction | IO: (a) -> b",
-                PART_CONCERN,
-            ),
-            // A: code-scaffolding filler the guide advertises as failing, now enforced —
-            // symmetric across the two prose slots (Concern AND Non-concern).
-            (
-                "Concern: utils | Non-concern: eviction | IO: (a) -> b",
-                PART_CONCERN,
-            ),
-            (
-                "Concern: helpers | Non-concern: eviction | IO: (a) -> b",
-                PART_CONCERN,
-            ),
-            (
-                "Concern: caches | Non-concern: helpers | IO: (a) -> b",
-                PART_NON_CONCERN,
-            ),
-            // B: a Non-concern pointing INWARD at the file itself is not a boundary — the
-            // guide calls "the file's own internals" a non-answer; now gated.
-            (
-                "Concern: caches lookups | Non-concern: this file's own state | IO: (a) -> b",
-                PART_NON_CONCERN,
-            ),
-            (
-                "Concern: caches lookups | Non-concern: the file itself | IO: (a) -> b",
-                PART_NON_CONCERN,
-            ),
-        ];
-        for (line, slot) in cases {
-            match analyze(&format!("// {line}\n"), &l) {
-                Outcome::Vacuous { slot: got, .. } => {
-                    assert_eq!(got, slot, "wrong slot for: {line}")
+        match analyze(
+            "// Concern:  | Non-concern: eviction | IO: (a) -> b\n",
+            &l,
+            None,
+        ) {
+            Outcome::Malformed {
+                missing, detail, ..
+            } => {
+                assert_eq!(missing, vec![PART_CONCERN]);
+                assert_eq!(
+                    detail.as_deref(),
+                    Some("the Concern field is present but empty")
+                );
+            }
+            other => panic!("an empty Concern must be Malformed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn every_empty_part_is_reported_not_just_the_first() {
+        // `missing` must not under-report: all three empty fields are named, in the
+        // format's own order, and the detail names all three too.
+        let l = lang(Some("//"), None, &[]);
+        match analyze("// Concern:  | Non-concern:  | IO: \n", &l, None) {
+            Outcome::Malformed {
+                missing, detail, ..
+            } => {
+                assert_eq!(missing, vec![PART_CONCERN, PART_NON_CONCERN, PART_IO]);
+                assert_eq!(
+                    detail.as_deref(),
+                    Some("the Concern, Non-concern and IO fields are present but empty")
+                );
+            }
+            other => panic!("three empty fields must be Malformed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn broken_structure_with_all_keys_present_reports_all_three() {
+        // The parser needs the space-padded ` | ` delimiters, in order. A line carrying all
+        // three keys that still will not parse yields no extractable part, so all three are
+        // reported — and `detail` says why, since every key is plainly visible.
+        let l = lang(Some("//"), None, &[]);
+        for line in [
+            "Concern: a|Non-concern: b|IO: c",
+            "Concern: a | IO: b | Non-concern: c",
+        ] {
+            match analyze(&format!("// {line}\n"), &l, None) {
+                Outcome::Malformed {
+                    missing, detail, ..
+                } => {
+                    assert_eq!(
+                        missing,
+                        vec![PART_CONCERN, PART_NON_CONCERN, PART_IO],
+                        "no part is extractable from: {line}"
+                    );
+                    assert_eq!(detail.as_deref(), Some(BROKEN_STRUCTURE), "for: {line}");
                 }
-                other => panic!("expected Vacuous({slot}) for {line:?}, got {other:?}"),
+                other => panic!("expected Malformed for {line:?}, got {other:?}"),
             }
         }
     }
 
     #[test]
-    fn outward_non_concern_naming_a_siblings_internals_passes() {
-        // B gates only unambiguous INWARD phrases. A Non-concern that names a SIBLING's
-        // internals is a real boundary and must pass — gating a bare "internals" would force
-        // the tool to judge whose internals (a semantic call it must not make).
+    fn form_only_checking_admits_any_wording() {
+        // The check is form-only: a present, non-empty part passes whatever words it holds.
+        // Freezes the removal of the word-list graders, the inward-Non-concern gate, the
+        // bracket-placeholder gate, and the IO-operand gate.
         let l = lang(Some("//"), None, &[]);
         for ok in [
-            // A sibling's internals — "internals" is not gated.
-            "// Concern: caches lookups | Non-concern: caching internals (CacheLayer owns it) | IO: (Key) -> Value\n",
-            // Reflexive pronouns whose referent is a SIBLING, not this file — must pass.
-            "// Concern: re-exports the public API | Non-concern: implementing any component (each module owns its own) | IO: none\n",
-            "// Concern: mounts the app | Non-concern: state management (React handles itself) | IO: (Element) -> void\n",
-            // "this file" must not fire inside "this filesystem" (word-boundary match).
-            "// Concern: resolves paths | Non-concern: this filesystem's mount logic (VfsLayer owns it) | IO: (Path) -> Resolved\n",
+            "// Concern: utils | Non-concern: none | IO: none\n",
+            "// Concern: helpers | Non-concern: nothing | IO: (<inputs>) -> <outputs>\n",
+            "// Concern: caches lookups | Non-concern: this file's own state | IO: TODO\n",
+            "// Concern: <what it does> | Non-concern: <Y> | IO: (a) -> b\n",
+            "// Concern: does X | Non-concern: storage | IO: (a) ->\n",
         ] {
             assert_eq!(
-                analyze(ok, &l),
+                analyze(ok, &l, None),
                 Outcome::Ok,
-                "outward boundary must pass, not read as self-reference: {ok}",
+                "a present, non-empty part passes on form alone: {ok}"
             );
         }
     }
 
     #[test]
-    fn none_is_blessed_in_io_but_filler_in_prose() {
-        // The deliberate asymmetry: `IO: none` PASSES (a file may have no contract), but
-        // `Non-concern: none` FAILS (a file must state what it does not own).
+    fn a_part_over_the_bound_is_too_long() {
+        // Length is per part, in Unicode scalar values, over the trimmed maximal SPAN. Exactly at
+        // the bound passes; only strictly longer fails; an absent bound never fails.
         let l = lang(Some("//"), None, &[]);
+        let at = "x".repeat(10);
+        let over = "é".repeat(11);
+        let line_at = format!("// Concern: {at} | Non-concern: b | IO: c\n");
+        let line_over = format!("// Concern: {over} | Non-concern: b | IO: c\n");
         assert_eq!(
-            analyze(
-                "// Concern: re-exports the public API | Non-concern: implementing it | IO: none\n",
-                &l
-            ),
+            analyze(&line_at, &l, Some(10)),
             Outcome::Ok,
-            "IO: none is a first-class blessed value",
+            "a part exactly at the bound passes"
         );
-        assert!(
-            matches!(
-                analyze(
-                    "// Concern: re-exports the public API | Non-concern: none | IO: none\n",
-                    &l
-                ),
-                Outcome::Vacuous {
-                    slot: PART_NON_CONCERN,
-                    ..
-                }
-            ),
-            "Non-concern: none is filler and fails",
+        assert_eq!(
+            analyze(&line_over, &l, None),
+            Outcome::Ok,
+            "no bound raises no length issue at any length"
         );
+        match analyze(&line_over, &l, Some(10)) {
+            Outcome::TooLong { parts, max, .. } => {
+                // 11 scalar values, 22 bytes — the count is characters, not bytes.
+                assert_eq!(parts, vec![(PART_CONCERN, 11)]);
+                assert_eq!(max, 10);
+            }
+            other => panic!("expected TooLong, got {other:?}"),
+        }
     }
 
     #[test]
-    fn real_and_no_args_io_operands_pass() {
-        // False-positive guard: legitimate IO must NOT be flagged — real types, a no-args
-        // `()`, an explicit `void`, generics, and the blessed unspecified `(...)`/`...`.
+    fn structure_outranks_length() {
+        // At most one outcome per input, and length is checked only for an otherwise
+        // conforming line: an empty part on an over-length line stays Malformed.
         let l = lang(Some("//"), None, &[]);
-        for io in [
-            "(Job) -> Result",
-            "() -> void",
-            "(Vec<Entry<K, V>>) -> Summary",
-            "(files, Config) -> (report, exit_code)",
-            "(...) -> void",
-            "() -> ...",
-            "none",
+        let long = "y".repeat(50);
+        let line = format!("// Concern: {long} | Non-concern:  | IO: c\n");
+        match analyze(&line, &l, Some(10)) {
+            Outcome::Malformed { missing, .. } => {
+                assert_eq!(missing, vec![PART_NON_CONCERN])
+            }
+            other => panic!("expected Malformed to outrank TooLong, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_separator_quoted_before_the_real_key_reports_the_true_length() {
+        // Bypass A: a `Concern` whose prose quotes BOTH separators, colons and all, ahead of
+        // the real keys. The parser splits at the first occurrence, so the parsed `Concern` is
+        // only the 150 characters before the quote — three fields all under 200, exit 0, while
+        // the field the author actually wrote runs 300. The bound measures the MAXIMAL span
+        // (here: everything up to the LAST ` | Non-concern:`), so the 300 is what is reported.
+        let l = lang(Some("//"), None, &[]);
+        let true_concern = format!(
+            "{}{NON_CONCERN_SEP} {}{IO_SEP} {}",
+            "q".repeat(150),
+            "m".repeat(50),
+            "t".repeat(77),
+        );
+        assert_eq!(true_concern.chars().count(), 300);
+        let line = format!("// Concern: {true_concern} | Non-concern: b | IO: c\n");
+        match analyze(&line, &l, Some(200)) {
+            Outcome::TooLong { parts, max, .. } => {
+                assert_eq!(parts, vec![(PART_CONCERN, 300)]);
+                assert_eq!(max, 200);
+            }
+            other => panic!("expected TooLong with the true Concern length, got {other:?}"),
+        }
+        // Parsing is untouched: still the first occurrence, so the parsed fields are the
+        // quote-truncated ones (150 characters of `Concern`, and an `IO` that swallowed the
+        // real keys), and the seed cuts at exactly the boundary the parser did. Only
+        // MEASUREMENT widened — parse and render behaviour are byte-for-byte as before.
+        let bare = format!("Concern: {true_concern} | Non-concern: b | IO: c");
+        let f = parse_fields(&bare).unwrap();
+        assert_eq!(
+            (f.concern, f.non_concern, f.io),
+            (
+                "q".repeat(150).as_str(),
+                "m".repeat(50).as_str(),
+                format!("{} | Non-concern: b | IO: c", "t".repeat(77)).as_str(),
+            )
+        );
+        assert_eq!(concern_seed(&bare), "q".repeat(150));
+    }
+
+    #[test]
+    fn a_separator_quoted_after_the_real_key_reports_the_true_length() {
+        // Bypass B, the mirror image: the ` | IO:` separator is quoted a SECOND time, after
+        // the real one. Measuring from the LAST occurrence would attribute 108 characters to
+        // `non_concern` and 100 to `io` — both under 200, exit 0 — while the text the `IO:`
+        // key actually introduces is 207 long. The `io` span runs from the FIRST ` | IO:` to
+        // the end of the line, so the 207 is reported and nothing is redistributed.
+        let l = lang(Some("//"), None, &[]);
+        let true_io = format!("{} | IO: {}", "m".repeat(100), "t".repeat(100));
+        assert_eq!(true_io.chars().count(), 207);
+        let line = format!("// Concern: c1 | Non-concern: b | IO: {true_io}\n");
+        match analyze(&line, &l, Some(200)) {
+            Outcome::TooLong { parts, max, .. } => {
+                assert_eq!(parts, vec![(PART_IO, 207)]);
+                assert_eq!(max, 200);
+            }
+            other => panic!("expected TooLong with the true IO length, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_repeated_non_concern_separator_reports_the_widest_span() {
+        // A second ` | Non-concern:` between the real key and the ` | IO:`. Which occurrence
+        // opens the field is unknowable from the string, so the bound takes the widest reading
+        // — first key to last ` | IO:` — and 216 fails. Measuring from the last occurrence
+        // would see 100 and pass.
+        let l = lang(Some("//"), None, &[]);
+        let line = format!(
+            "// Concern: c | Non-concern: {} | Non-concern: {} | IO: z\n",
+            "x".repeat(100),
+            "y".repeat(100),
+        );
+        match analyze(&line, &l, Some(200)) {
+            Outcome::TooLong { parts, max, .. } => {
+                assert_eq!(parts, vec![(PART_NON_CONCERN, 216)]);
+                assert_eq!(max, 200);
+            }
+            other => panic!("expected TooLong naming non_concern, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_non_concern_separator_quoted_inside_io_stays_a_length_finding() {
+        // The `IO` field quotes ` | Non-concern:`, so the LAST ` | Non-concern:` of the line
+        // sits inside `IO` and nothing follows it that carries an ` | IO:` key. Splitting at
+        // that last occurrence makes the line unparseable and mis-reports it as malformed;
+        // first-occurrence parsing keeps it a well-formed line whose `IO` is 216 long, and the
+        // bound says exactly that — a length finding, not a structural one.
+        let l = lang(Some("//"), None, &[]);
+        let true_io = format!("{} | Non-concern: {}", "m".repeat(100), "t".repeat(100));
+        assert_eq!(true_io.chars().count(), 216);
+        let line = format!("// Concern: c | Non-concern: b | IO: {true_io}\n");
+        match analyze(&line, &l, Some(200)) {
+            Outcome::TooLong { parts, max, .. } => {
+                assert_eq!(parts, vec![(PART_IO, 216)]);
+                assert_eq!(max, 200);
+            }
+            other => panic!("expected TooLong naming io, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn on_a_conforming_line_every_measured_span_is_the_parsed_field() {
+        // The safety property the maximal spans rest on: a line holding each separator exactly
+        // once has first == last, so all three spans collapse onto the parsed values and the
+        // bound measures precisely what it measured before. Freezes that this fix is a no-op
+        // on every conforming annotation, this repo's own included.
+        let l = lang(Some("//"), None, &[]);
+        for text in [
+            OK,
+            "Concern: a | Non-concern: b | IO: none",
+            "Concern: pipes a | b | Non-concern: x || y | IO: (a) -> b",
+            "Concern: holds Non-concern: as prose | Non-concern: IO: bare | IO: c",
         ] {
-            let line = format!("// Concern: runs it | Non-concern: storage | IO: {io}\n");
+            let f = parse_fields(text).unwrap();
             assert_eq!(
-                analyze(&line, &l),
+                measured_spans(text).unwrap(),
+                part_values(&f),
+                "span and parsed field must agree on: {text}"
+            );
+            assert_eq!(
+                analyze(&format!("// {text}\n"), &l, Some(200)),
                 Outcome::Ok,
-                "legitimate IO must pass: {io}"
+                "a conforming line passes the bound: {text}"
             );
         }
+        let f = parse_fields(OK).unwrap();
+        assert_eq!(
+            (f.concern, f.non_concern, f.io),
+            ("runs the loop", "transport", "(Job) -> Result")
+        );
+        assert_eq!(concern_seed(OK), "runs the loop");
+    }
+
+    #[test]
+    fn a_bare_pipe_in_prose_never_false_splits() {
+        // Why the separators carry their keys AND colons: a field's own freetext (a shell
+        // pipe, a Rust closure, SQL `||`) holds ` | ` without marking a boundary. This is the
+        // property the colons exist to guarantee — parser, seed and length span all honour it.
+        let text = "Concern: pipes a | b through | x | y and ors a || b \
+                    | Non-concern: storage | IO: (a) -> b";
+        let f = parse_fields(text).unwrap();
+        assert_eq!(f.concern, "pipes a | b through | x | y and ors a || b");
+        assert_eq!(f.non_concern, "storage");
+        assert_eq!(f.io, "(a) -> b");
+        assert_eq!(
+            concern_seed(text),
+            "pipes a | b through | x | y and ors a || b"
+        );
+        let l = lang(Some("//"), None, &[]);
+        assert_eq!(analyze(&format!("// {text}\n"), &l, Some(200)), Outcome::Ok);
     }
 
     #[test]
@@ -869,11 +1003,12 @@ mod tests {
         // malformed comment must be reported at line 2, never a hardcoded line 1.
         let l = lang(Some("#"), None, &[]);
         assert_eq!(
-            analyze("#!/usr/bin/env bash\n# just a comment\n", &l),
+            analyze("#!/usr/bin/env bash\n# just a comment\n", &l, None),
             Outcome::Malformed {
                 line: 2,
                 actual: "just a comment".into(),
                 missing: vec![PART_CONCERN, PART_NON_CONCERN, PART_IO],
+                detail: None,
             },
         );
     }

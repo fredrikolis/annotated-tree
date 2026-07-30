@@ -1,4 +1,4 @@
-// Concern: evaluates architectural dependency policy (denied edges, forbidden cycles/orphans) over the package edge list from `graph` | Non-concern: computing edges or formatting the report | IO: (packages, Rules) -> Vec<Violation>
+// Concern: declares the resolved `[rules]` table and evaluates its dependency half (denied edges, forbidden cycles/orphans) | Non-concern: computing edges, enforcing the annotation length bound it declares, or formatting the report | IO: (packages, Rules) -> Vec<Violation>
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -19,11 +19,18 @@ pub struct Rules {
     /// concern charter FAILS the check. Off by default (a package may honestly omit a
     /// charter); enabling it turns the always-available charter census into a gate.
     pub require_package_charter: bool,
+    /// Per-part length bound: each annotation field (`Concern`, `Non-concern`, `IO`) may be at
+    /// most this many characters. The built-in config ships `200`, so this is `Some(200)`
+    /// unless a layer overrides it. `None` — what a configured `0` normalizes to — raises no
+    /// length issue at any length, which is how an adopter turns the bound off.
+    pub max_annotation_length: Option<usize>,
 }
 
 impl Rules {
-    /// Whether any rule is configured. When false the strict path skips the whole
-    /// graph build — no rules, no cost, no behaviour change.
+    /// Whether any GRAPH rule is configured. When false the strict path skips the whole
+    /// graph build — no rules, no cost, no behaviour change. `max_annotation_length` is
+    /// deliberately excluded: it is a per-file property the annotation pass reads directly,
+    /// so setting it must not pull in a graph build.
     pub fn is_active(&self) -> bool {
         !self.deny.is_empty()
             || self.forbid_cycles
@@ -134,11 +141,9 @@ fn deny_violations(packages: &[PackageEdges], deny: &[(String, String)], out: &m
 }
 
 /// Every package with no resolved internal edge in OR out — depended on by nothing and
-/// depending on nothing within the scanned tree. This is the ONE orphan definition, shared
-/// by the `forbid_orphans` rule below and the non-fatal `annotation_on_orphan` advisory in
-/// `strict`, so the two surfaces can never disagree on what "orphaned" means. Membership is
-/// keyed by `(ecosystem, name)`: deps are per-ecosystem, so a name shared across ecosystems
-/// is not the same node.
+/// depending on nothing within the scanned tree. This is the ONE orphan definition, which the
+/// `forbid_orphans` rule below builds on. Membership is keyed by `(ecosystem, name)`: deps are
+/// per-ecosystem, so a name shared across ecosystems is not the same node.
 pub fn orphan_packages(packages: &[PackageEdges]) -> Vec<&PackageEdges> {
     let mut depended_on: HashSet<(Ecosystem, &str)> = HashSet::new();
     for pkg in packages {
@@ -399,9 +404,8 @@ mod tests {
 
     #[test]
     fn orphan_packages_is_the_shared_definition() {
-        // The reusable definition the `forbid_orphans` rule AND the `annotation_on_orphan`
-        // advisory both build on: exactly the package with no edge in or out is returned,
-        // and the connected pair (web -> core) is not.
+        // The definition the `forbid_orphans` rule builds on: exactly the package with no
+        // edge in or out is returned, and the connected pair (web -> core) is not.
         let packages = [pkg("web", &["core"]), pkg("core", &[]), pkg("lonely", &[])];
         let orphans: Vec<&str> = orphan_packages(&packages)
             .iter()
