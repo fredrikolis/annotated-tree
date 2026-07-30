@@ -19,10 +19,10 @@ pub struct Rules {
     /// concern charter FAILS the check. Off by default (a package may honestly omit a
     /// charter); enabling it turns the always-available charter census into a gate.
     pub require_package_charter: bool,
-    /// Opt-in per-part length bound: each annotation field (`Concern`, `Non-concern`, `IO`)
-    /// may be at most this many characters. `None` — the default, and what a configured `0`
-    /// normalizes to — raises no length issue at any length, so an existing adopter's tree
-    /// does not start failing on upgrade.
+    /// Per-part length bound: each annotation field (`Concern`, `Non-concern`, `IO`) may be at
+    /// most this many characters. The built-in config ships `200`, so this is `Some(200)`
+    /// unless a layer overrides it. `None` — what a configured `0` normalizes to — raises no
+    /// length issue at any length, which is how an adopter turns the bound off.
     pub max_annotation_length: Option<usize>,
 }
 

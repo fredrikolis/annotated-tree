@@ -38,7 +38,7 @@ pub struct Cli {
     pub no_guide: bool,
 
     /// Fail --strict-check when any annotation field (Concern, Non-concern, IO) is longer
-    /// than N characters. Unset by default (no bound); 0 also means no bound, so it turns a
+    /// than N characters. 200 by default; 0 means no bound, so it turns the shipped or a
     /// repo-configured one off. Overrides `[rules] max_annotation_length`.
     #[arg(long, value_name = "N")]
     pub max_length: Option<usize>,

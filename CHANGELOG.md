@@ -12,15 +12,21 @@ to [Semantic Versioning](https://semver.org/).
 ### Added
 - `[rules] max_annotation_length` and `--max-length <N>`: fail any annotation field
   (`Concern`, `Non-concern`, `IO`) whose MAXIMAL SPAN runs over N characters — on a conforming
-  line that span is exactly the trimmed value (see Fixed, below). N itself passes. Unset by
-  default; `--max-length 0` normalizes to no bound, like `--max-per-node 0`.
+  line that span is exactly the trimmed value (see Fixed, below). N itself passes. 200 by
+  default (see Changed); `--max-length 0` normalizes to no bound, like `--max-per-node 0`.
 - `annotation_too_long` category, carrying `defect.too_long` (each offending part and its
   length) and `defect.max` (the bound).
 - `annotation::Outcome::TooLong` variant. `Outcome` is a `pub enum` with no
   `#[non_exhaustive]`, so a downstream exhaustive `match` must handle it.
 
 ### Changed
-- `--strict-check` is form-only: every field present, non-empty, within the optional length
+- BREAKING: the annotation length bound ships ON at 200 characters per field —
+  `default_config.toml` now sets `[rules] max_annotation_length = 200`, the built-in layer every
+  other layer overrides. A repo that passed `--strict-check` on 0.4.0 with longer annotations now
+  FAILS with no config change. A bound nobody enables catches nothing: 0.4.0 in real repos let
+  agents write 500–1600 character fields. Raise it with `[rules] max_annotation_length = <N>` or
+  `--max-length <N>`; `--max-length 0` disables it. The failing TEXT report names that escape once.
+- `--strict-check` is form-only: every field present, non-empty, within the length
   bound. Filler `Concern`s, inward `Non-concern`s, `<placeholder>` slots and an empty IO
   operand (`IO: (a) ->`) all pass. The annotation guide still advises against filler.
 - An empty field is fatal as `malformed_annotation`, naming the field in `defect.missing`. A

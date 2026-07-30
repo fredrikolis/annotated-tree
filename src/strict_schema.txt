@@ -51,13 +51,13 @@ footer prints "N of M files annotated"). Three violation categories FAIL the che
 nonzero exit: `missing_annotation` (no conforming comment), `malformed_annotation` (a comment
 that is not the three-field `Concern: … | Non-concern: … | IO: …` shape, or one of whose fields
 is empty after trimming), and `annotation_too_long` (a field longer than the `[rules]
-max_annotation_length` / `--max-length` bound, which is unset by default — measured in
-characters over each field's MAXIMAL span: `Concern` up to the LAST ` | Non-concern:`,
-`Non-concern` from the first of those to the LAST ` | IO:`, `IO` from the first of those to the
-end of the line. On a conforming line each separator occurs once, so a span is exactly the
-trimmed field value; an annotation whose prose QUOTES a separator over-measures and fails
-loudly rather than under-measuring. A field exactly at the bound passes). What a field
-SAYS is never a finding: the check is form only. A directory's `.annotation` charter breadcrumb
+max_annotation_length` / `--max-length` bound, which SHIPS AT 200 and is turned off with
+`--max-length 0` — measured in characters over each field's MAXIMAL span: `Concern` up to the
+LAST ` | Non-concern:`, `Non-concern` from the first of those to the LAST ` | IO:`, `IO` from
+the first of those to the end of the line. On a conforming line each separator occurs once, so a
+span is exactly the trimmed field value; an annotation whose prose QUOTES a separator
+over-measures and fails loudly rather than under-measuring. A field exactly at the bound
+passes). What a field SAYS is never a finding: the check is form only. A directory's `.annotation` charter breadcrumb
 (a bare, marker-less three-field line) is enforced by the SAME grammar and, when malformed or
 over-length, appears as a Violation with `language: "charter"` and `path: "<dir>/.annotation"`.
 The opt-in `[rules] require_package_charter` gate adds a `missing_package_charter`

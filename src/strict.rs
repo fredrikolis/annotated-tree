@@ -300,6 +300,15 @@ impl StrictReport {
                 self.violations.len(),
                 self.files_checked
             ));
+            // The length bound ships ON, so an adopter can hit it having configured nothing:
+            // name the escape in the same output that failed them. Once per report, not per
+            // violation — the remedy is identical for every over-length field, and repeating it
+            // on each line would drown the findings.
+            if let Some(max) = self.violations.iter().find_map(|v| v.defect.max) {
+                out.push_str(&format!(
+                    "note: the annotation length bound is {max} — change it with `[rules] max_annotation_length = <N>` or `--max-length <N>`, or disable it with `--max-length 0`\n"
+                ));
+            }
             code = crate::exit::STRICT_FAILURE;
         }
         // Progress, not just a terminal error count: how far the tree is toward every

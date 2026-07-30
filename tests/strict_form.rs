@@ -162,11 +162,28 @@ fn the_length_bound_fires_only_past_the_limit() {
     );
     assert_eq!(code, 0, "under and exactly at the bound pass:\n{out}");
 
-    let (out, code) = check("len-unset", &["--no-guide"], &[("over.rs", &over)]);
+    // No flag, no repo config: the built-in layer supplies 200, so a 250-character field fails.
+    let long = format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(250));
+    let (out, code) = check("len-default", &["--no-guide"], &[("long.rs", &long)]);
     assert_eq!(
-        code, 0,
-        "an unset bound raises nothing at any length:\n{out}"
+        code, 1,
+        "the shipped 200 bound applies with no flag:\n{out}"
     );
+    assert!(
+        out.contains("the Concern field is 250 characters, over the 200 limit"),
+        "the default bound is 200: {out}"
+    );
+    assert!(
+        out.contains("`--max-length 0`"),
+        "the report teaches the escape from the shipped bound: {out}"
+    );
+
+    let (out, code) = check(
+        "len-disabled",
+        &["--no-guide", "--max-length", "0"],
+        &[("long.rs", &long), ("over.rs", &over)],
+    );
+    assert_eq!(code, 0, "`--max-length 0` turns the bound off:\n{out}");
 
     let (out, code) = check(
         "len-fail",

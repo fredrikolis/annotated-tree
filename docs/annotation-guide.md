@@ -14,8 +14,8 @@ BREVITY — every field states WHAT, never why, how, or when: no mechanism, rati
 conditions in any of them. Naming WHERE an excluded concern lives is OPTIONAL — the tree
 often shows the owner, so add the pointer only when it is not obvious from the map. An
 agent ingests a whole workspace's map in one pass; brevity buys that. `[rules]
-max_annotation_length` (or `--max-length <N>`) bounds each field mechanically — unset by
-default.
+max_annotation_length` (or `--max-length <N>`) bounds each field mechanically — 200
+characters by default; raise it there, or `--max-length 0` to disable.
 
 GOOD   // Concern: memoizes lookups | Non-concern: eviction (LRU owns it) | IO: (Key) -> Value
 FAILS  // Concern: memoizes lookups | IO: (Key) -> Value

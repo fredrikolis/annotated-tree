@@ -161,8 +161,8 @@ only the opener; Markdown and HTML need both, e.g.
 `<!-- Concern: ... | Non-concern: ... | IO: ... -->`.
 
 - **Form.** All three fields must be present and non-empty. `--strict-check`
-  enforces that, plus an optional per-field length bound, and it **never checks
-  what a field says**.
+  enforces that, plus a per-field length bound of 200 characters by default, and
+  it **never checks what a field says**.
 - **Content.** Every field states WHAT, never why, how, or when. No mechanism,
   no rationale, no conditions. That one is a writing rule, not a check.
 - **`Non-concern`.** Names something an agent would expect here but this file
@@ -328,7 +328,7 @@ Same prebuilt binary on every channel.
 | Only what changed, plus blast radius | `--changed`, `--since <ref>` |
 | Serve to agents and editors as MCP tools | `--mcp` *(build with `--features mcp`)* |
 | Lint annotations + architectural rules (git hook or CI) | `--strict-check` |
-| Bound each annotation field's length | `--max-length <N>` |
+| Bound each annotation field's length *(200 by default)* | `--max-length <N>`, `0` to disable |
 | Cap entries shown per directory (big corpora) | `--max-per-node <N>`, `--full` |
 | Runaway-scope guard | `--max-files <N>` |
 

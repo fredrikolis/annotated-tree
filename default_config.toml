@@ -8,7 +8,8 @@
 #   <comment> Concern: <what it does> | Non-concern: <what it deliberately isn't> | IO: <(in) -> out  OR  none>
 # All three fields are required and must be non-empty after trimming (`IO: none` is the
 # usual value for config, data, and docs). `--strict-check` checks presence, non-emptiness,
-# and — when a bound is configured — each field's length; it never checks what a field says.
+# and each field's length against the bound below (200 by default); it never checks what a
+# field says.
 # This is enforced in code, not by a regex here, so the only per-LANGUAGE knob is the
 # comment MARKER (below). One knob constrains field LENGTH rather than shape, globally
 # rather than per language: `[rules] max_annotation_length`.
@@ -25,20 +26,21 @@ max_files = 10000
 
 [rules]
 # Rules enforced by --strict-check: dependency policy, plus the annotation length bound.
-# All optional; these defaults enforce nothing. Package names are canonical (as shown in
-# the dependency tree).
+# The dependency rules are opt-in and enforce nothing here; the length bound ships ON.
+# Package names are canonical (as shown in the dependency tree).
 deny = []              # e.g. [["web", "core"]] forbids package `web` depending on `core`
 forbid_cycles = false  # flag any dependency cycle among internal packages
 forbid_orphans = false # flag internal packages with no dependency edge in or out
 require_package_charter = false # fail a manifest-bearing package that has annotated files but resolves no concern charter (a .annotation breadcrumb, else its entry file's annotation)
-# Opt-in annotation length bound: fail any field (Concern/Non-concern/IO) longer than N
+# Annotation length bound, ON by default: fail any field (Concern/Non-concern/IO) longer than N
 # characters, measured over each field's maximal span: Concern up to the last " | Non-concern:",
 # Non-concern from the first of those to the last " | IO:", IO from the first of those to the end
 # of the line. On a conforming line a span is exactly the trimmed value; prose that quotes a
-# separator over-measures and fails loudly rather than under-measuring. 0 means "no bound". Left
-# UNSET here on purpose, since shipping a default would fail an existing tree on upgrade. Set it
-# below, or per run with --max-length <N>.
-# max_annotation_length = 200
+# separator over-measures and fails loudly rather than under-measuring. 200 is the brevity the
+# annotation guide teaches; shipped ON because a bound nobody enables catches nothing, and
+# unbounded agents wrote 500-1600 character fields. Override it here, in a repo
+# .annotated-tree.toml, or per run with --max-length <N>; 0 means "no bound" and turns it off.
+max_annotation_length = 200
 
 [display]
 show_age = false        # append file mtimes (non-deterministic); opt in with --age

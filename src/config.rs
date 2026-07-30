@@ -88,7 +88,7 @@ pub struct CliOverrides {
     pub max_per_node: Option<Option<usize>>,
     /// `--max-length <N>`: the per-part annotation length bound. A plain `Option<usize>` —
     /// `None` is "the CLI said nothing; fall through to the config layers". There is no
-    /// `--full`-style sentinel; `--max-length 0` is how you turn a repo-configured bound off,
+    /// `--full`-style sentinel; `--max-length 0` is how you turn the shipped bound off,
     /// since 0 normalizes to "no bound" (the same normalization `--max-per-node 0` uses).
     pub max_annotation_length: Option<usize>,
 }
@@ -342,8 +342,8 @@ pub fn builtin_example() -> String {
 /// value (built-in < user < repo < CLI). A resolved bound of `0` normalizes to `None` (no
 /// bound) exactly as [`resolve_max_per_node`] does for its own numeric knob: an empty field is
 /// already fatal, so a literal bound of 0 could only mean "fail every annotation", which is
-/// never what a caller asks for — and it doubles as the way to switch a repo-configured bound
-/// off from the command line.
+/// never what a caller asks for — and it doubles as the way to switch the shipped bound (200,
+/// from the built-in layer) off from the command line.
 fn resolve_rules(raw: RawRules, cli: &CliOverrides) -> Rules {
     Rules {
         deny: raw
