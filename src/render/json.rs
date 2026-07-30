@@ -1,4 +1,4 @@
-// Concern: serializes the canonical map as a versioned, machine-readable contract for external consumers (MCP server, editors) | Non-concern: building the map or human formatting | IO: (CodebaseMap) -> String
+// Concern: serializes the canonical map as the versioned, machine-readable JSON contract | Non-concern: building the map or human formatting | IO: (CodebaseMap) -> String
 
 //! # Public JSON schema (version 1)
 //!

@@ -1,4 +1,4 @@
-// Concern: the runaway-scope cap resolves CLI > env > repo config, and a garbage env value fails fast; these paths only run for real through a spawned process (the env var and `.annotated-tree.toml` discovery are process/CWD state), so freeze them at the boundary scripts see | Non-concern: rendering | IO: (env, temp repo, argv) -> asserted (exit code, stderr)
+// Concern: end-to-end tests that the runaway-scope cap resolves CLI > env > repo config, and that a garbage env value fails fast | Non-concern: rendering | IO: (env, temp repo, argv) -> asserted (exit code, stderr)
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

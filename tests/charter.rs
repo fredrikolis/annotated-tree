@@ -1,4 +1,4 @@
-// Concern: end-to-end tests freezing the folder-charter contract — a directory's `Concern | Non-concern | IO` line resolved most-explicit-first (a `.annotation` breadcrumb overriding, else the promoted code entry file), rendered on the directory row and surfaced in JSON, with `.annotation` shape enforced and the opt-in require_package_charter gate | Non-concern: the resolution/parsing units (tested in src/charter.rs) or the annotation grammar (src/annotation.rs) | IO: (charter fixtures) -> asserted (stdout, code)
+// Concern: end-to-end tests for the folder-charter contract — resolution, the rendered and JSON surfaces, .annotation form, and the require_package_charter gate | Non-concern: the resolution units, or the annotation grammar | IO: (charter fixtures) -> asserted (stdout, code)
 
 use std::path::PathBuf;
 
@@ -134,6 +134,9 @@ fn require_package_charter_flags_a_charterless_package() {
     // The opt-in gate (the fixture's `.annotated-tree.toml` sets require_package_charter = true):
     // `nocharter` owns an annotated file but its crate resolves no charter (its annotated file is
     // not the entry file) — a fatal rule violation. `withcharter` (entry-file charter) is clean.
+    // ALSO the regression guard for the shared `annotated_files` / `packages_owning_annotations`
+    // path: the removed orphan advisory was the other consumer, and the graph build is now
+    // reached only via `Rules::is_active()`. If either seam broke, this gate goes silent.
     let (out, code) = run(&["--strict-check"], "charter_rule");
     assert_eq!(
         code, 1,

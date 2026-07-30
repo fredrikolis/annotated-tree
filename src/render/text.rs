@@ -1,4 +1,4 @@
-// Concern: formats the canonical map as a `tree`-style view with glyph connectors, per-file `# annotation`/age suffixes, and per-directory dependency edges | Non-concern: filesystem reads | IO: (CodebaseMap) -> String
+// Concern: formats the canonical map as a `tree`-style text view | Non-concern: filesystem reads | IO: (CodebaseMap) -> String
 
 use crate::model::{CodebaseMap, DirNode};
 use crate::util::format_relative_time;
@@ -25,7 +25,6 @@ struct Glyphs {
     elbow: &'static str,
     pipe: &'static str,
     blank: &'static str,
-    sym: &'static str,
 }
 
 impl Glyphs {
@@ -36,7 +35,6 @@ impl Glyphs {
                 elbow: "`-- ",
                 pipe: "|   ",
                 blank: "    ",
-                sym: "- ",
             }
         } else {
             Glyphs {
@@ -44,7 +42,6 @@ impl Glyphs {
                 elbow: "└── ",
                 pipe: "│   ",
                 blank: "    ",
-                sym: "· ",
             }
         }
     }
@@ -68,12 +65,8 @@ fn render_node(node: &DirNode, prefix: &str, glyphs: &Glyphs, out: &mut String) 
         let is_last = index == child_count - 1;
         index += 1;
         let connector = if is_last { glyphs.elbow } else { glyphs.tee };
-        let tokens = dir_tokens(child);
         let annotation = dir_annotation(child);
-        out.push_str(&format!(
-            "{prefix}{connector}{}/{tokens}{annotation}\n",
-            child.name
-        ));
+        out.push_str(&format!("{prefix}{connector}{}/{annotation}\n", child.name));
 
         let extension = if is_last { glyphs.blank } else { glyphs.pipe };
         let child_prefix = format!("{prefix}{extension}");
@@ -85,25 +78,11 @@ fn render_node(node: &DirNode, prefix: &str, glyphs: &Glyphs, out: &mut String) 
         index += 1;
         let connector = if is_last { glyphs.elbow } else { glyphs.tee };
         let age = age_suffix(file.age_secs);
-        let tokens = token_suffix(file.tokens);
         let annotation = file_annotation(file.annotation.as_deref());
         out.push_str(&format!(
-            "{prefix}{connector}{}{age}{tokens}{annotation}\n",
+            "{prefix}{connector}{}{age}{annotation}\n",
             file.name
         ));
-
-        // Symbols are leaves under the file: indent them past the file's own row
-        // using its continuation column (blank when the file is the last child,
-        // else the pipe), so the outline lines up beneath the filename.
-        if !file.symbols.is_empty() {
-            let extension = if is_last { glyphs.blank } else { glyphs.pipe };
-            for symbol in &file.symbols {
-                out.push_str(&format!(
-                    "{prefix}{extension}{}{}  :{}\n",
-                    glyphs.sym, symbol.signature, symbol.line
-                ));
-            }
-        }
     }
 
     // The per-node overflow marker is always the directory's final child (it was
@@ -140,23 +119,6 @@ fn file_annotation(annotation: Option<&str>) -> String {
 fn age_suffix(age_secs: Option<i64>) -> String {
     match age_secs {
         Some(secs) => format!("  ({})", format_relative_time(secs)),
-        None => String::new(),
-    }
-}
-
-/// A package directory shows its aggregate subtree token estimate; plain
-/// directories carry no dependency identity, so they stay unlabelled.
-fn dir_tokens(dir: &DirNode) -> String {
-    if dir.deps.is_some() {
-        token_suffix(dir.tokens)
-    } else {
-        String::new()
-    }
-}
-
-fn token_suffix(tokens: Option<u32>) -> String {
-    match tokens {
-        Some(count) => format!("  [~{count} tok]"),
         None => String::new(),
     }
 }

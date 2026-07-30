@@ -1,4 +1,4 @@
-// Concern: formats the canonical map as human-facing Markdown — a heading per directory (with its dependency summary) and a bullet per file with its annotation | Non-concern: filesystem reads or machine contracts | IO: (CodebaseMap) -> String
+// Concern: formats the canonical map as human-facing Markdown | Non-concern: filesystem reads or machine contracts | IO: (CodebaseMap) -> String
 
 use crate::model::{CodebaseMap, DirNode};
 

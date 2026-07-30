@@ -1,4 +1,4 @@
-// Concern: freezes that `--age` is actually wired into the render — every file row carries a relative-age token — over a tempdir of real files, asserting the column's SHAPE (a `… ago)` suffix) | Non-concern: the column's nondeterministic value or the pure seconds -> bucket logic (unit-tested in `src/util.rs`) | IO: (temp tree, --age) -> asserted stdout
+// Concern: end-to-end test that --age puts a relative-age token on every file row | Non-concern: the token's value, or the seconds -> bucket unit logic | IO: (temp tree, --age) -> asserted stdout
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};

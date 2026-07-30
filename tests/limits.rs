@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the runaway-scope safety valve — a tree over the cap aborts with exit 3 (RUNAWAY_SCOPE) and EMPTY stdout (the JSON/agent-safety guarantee) while naming the override, and --no-limit completes, freezing the external abort contract | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, stderr, code)
+// Concern: end-to-end tests for the runaway-scope cap — over the cap aborts with exit 3, empty stdout, and the override named; --no-limit completes | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, stderr, code)
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

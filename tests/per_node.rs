@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the per-directory display cap (`--max-per-node`) — a directory over the cap renders N entries plus a single `[+N folders and F files, use --full to expand]` marker (exit 0, tree still shown), while `--full` expands everything, freezing the soft-truncation contract | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, code, json)
+// Concern: end-to-end tests for the per-directory display cap — --max-per-node shows N entries plus one overflow marker, --full expands everything | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, code, json)
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

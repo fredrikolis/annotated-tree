@@ -1,4 +1,4 @@
-// Concern: small pure helpers — glob-pattern compilation and relative-time formatting | Non-concern: domain logic | IO: (values) -> values
+// Concern: small pure helpers — unix path normalization, glob compilation, and relative-time formatting | Non-concern: domain logic | IO: (values) -> values
 
 use std::path::Path;
 

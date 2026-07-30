@@ -1,4 +1,4 @@
-// Concern: the single canonical in-memory codebase map — builds the sorted dir/file tree once and performs every filesystem read (annotations, mtime) | Non-concern: output formatting | IO: (root, files, graph, Config) -> CodebaseMap
+// Concern: the canonical in-memory codebase map and every filesystem read behind it — a sorted directory/file tree carrying each file's annotation and mtime | Non-concern: output formatting | IO: (root, files, graph, Config) -> CodebaseMap
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -10,8 +10,6 @@ use crate::annotation;
 use crate::charter::{self, Charter};
 use crate::config::Config;
 use crate::graph::DirDeps;
-use crate::symbols::{self, Symbol};
-use crate::tokens;
 
 /// One canonical tree per analyzed root. Renderers convert this to text/JSON/etc.
 #[derive(Serialize)]
@@ -91,14 +89,8 @@ pub struct DirNode {
     pub deps: Option<DirDeps>,
     pub dirs: Vec<DirNode>,
     pub files: Vec<FileNode>,
-    /// Sum of every descendant file's estimated tokens; `Some` only when
-    /// `show_tokens` and the subtree was expanded (a pruned depth cutoff is `None`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tokens: Option<u32>,
-    /// Subdirectories hidden by the per-node display cap (`--max-per-node`); the
-    /// aggregate `tokens` above is still summed over the FULL set, so a collapsed
-    /// directory still reports its true subtree size. `0` (omitted in JSON) unless
-    /// this directory's subdir count exceeds the cap.
+    /// Subdirectories hidden by the per-node display cap (`--max-per-node`); `0`
+    /// (omitted in JSON) unless this directory's subdir count exceeds the cap.
     #[serde(skip_serializing_if = "is_zero")]
     pub elided_dirs: u32,
     /// Files hidden by the per-node display cap; `0` (omitted) unless the file
@@ -119,13 +111,6 @@ pub struct FileNode {
     pub annotation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub age_secs: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tokens: Option<u32>,
-    /// Top-level definitions, filled only under `--symbols` on a `symbols`-feature
-    /// build. Empty otherwise, and skipped in JSON when empty — so the default
-    /// schema is byte-for-byte unchanged whether or not the feature is compiled in.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub symbols: Vec<Symbol>,
 }
 
 /// Intermediate sorted tree: dirs and files under a directory, keyed by name so
@@ -206,7 +191,6 @@ fn convert(
             deps,
             dirs: Vec::new(),
             files: Vec::new(),
-            tokens: None,
             elided_dirs: 0,
             elided_files: 0,
         };
@@ -231,15 +215,10 @@ fn convert(
     let files: Vec<FileNode> = node
         .files
         .iter()
-        .map(|(name, abs)| {
-            let (annotation, symbols) = annotation_and_symbols(abs, config);
-            FileNode {
-                name: name.clone(),
-                annotation,
-                age_secs: age_secs(abs, now, config),
-                tokens: file_tokens(abs, config),
-                symbols,
-            }
+        .map(|(name, abs)| FileNode {
+            name: name.clone(),
+            annotation: file_annotation(abs, config),
+            age_secs: age_secs(abs, now, config),
         })
         .collect();
 
@@ -248,11 +227,6 @@ fn convert(
     // `__init__.py`), which a display cap could otherwise elide out from under it.
     let charter = resolve_charter(abs_dir, &dirs, &files);
 
-    // Aggregate BEFORE truncating: the token total must reflect the full subtree
-    // even when the display collapses it, so a hidden corpus dir still reports its
-    // true size (the "skip this folder" signal). Truncation is a display concern
-    // applied last — the walk already visited every file.
-    let tokens = subtree_tokens(&dirs, &files, config);
     let cap = config.display.max_per_node;
     let (dirs, elided_dirs) = truncate(dirs, cap);
     let (files, elided_files) = truncate(files, cap);
@@ -263,7 +237,6 @@ fn convert(
         deps,
         dirs,
         files,
-        tokens,
         elided_dirs,
         elided_files,
     }
@@ -315,78 +288,22 @@ fn truncate<T>(mut items: Vec<T>, cap: Option<usize>) -> (Vec<T>, u32) {
     }
 }
 
-/// Sum this directory's own file tokens with its children's already-computed
-/// totals. `None` when tokens are off, so the marker vanishes entirely by default.
-fn subtree_tokens(dirs: &[DirNode], files: &[FileNode], config: &Config) -> Option<u32> {
-    if !config.display.show_tokens {
-        return None;
-    }
-    let file_sum: u32 = files.iter().filter_map(|f| f.tokens).sum();
-    let dir_sum: u32 = dirs.iter().filter_map(|d| d.tokens).sum();
-    Some(file_sum + dir_sum)
-}
-
 fn dir_deps(abs_dir: &Path, graph: &HashMap<PathBuf, DirDeps>) -> Option<DirDeps> {
     // `abs_dir` is already canonical (descended from the canonicalized root), so this
     // is a direct lookup — no per-node canonicalize syscall.
     graph.get(abs_dir).cloned()
 }
 
-/// Resolve a file's annotation and — when `--symbols` is active and the language has
-/// a grammar — its definition outline. Efficiency (single read boundary): in the
-/// symbol path the file is opened ONCE and the buffer feeds both extractors, instead
-/// of a head read for the annotation plus a second full read for symbols. In the
-/// default path the annotation stays a bounded head-only read, byte-identical to a
-/// symbol-free build; a missing extension/language/unreadable file yields `(None, [])`
-/// (graceful, like `annotation: None`).
-fn annotation_and_symbols(abs: &Path, config: &Config) -> (Option<String>, Vec<Symbol>) {
-    let Some(lang) = config.language_for_path(abs) else {
-        // No known language: the file is in the tree only because a `--include` selector opted
-        // it in (the default walk yields recognized languages only). Read its annotation
-        // marker-agnostically; with no grammar there is no symbol outline.
-        return (annotation::extract_any(abs), Vec::new());
-    };
-
-    if config.display.show_symbols {
-        if let Some(extractor) = symbols::for_language(&lang.name) {
-            return match read_full_lossy(abs) {
-                // The annotation logic reads only the leading comment, so scanning
-                // the full buffer is equivalent to the head read for our comment-based
-                // languages while avoiding a second open.
-                //
-                // Inert seam (no shipped language uses it): a language configured with
-                // a `pattern` regex could match content BEYOND the 64 KiB annotation
-                // head, in which case this full-buffer scan and the non-symbol build's
-                // bounded head read (`annotation::extract`) could disagree on the
-                // annotation. Acknowledged, not currently reachable.
-                Some(src) => (
-                    annotation::extract_from(&src, lang),
-                    extractor.extract(&src),
-                ),
-                None => (None, Vec::new()),
-            };
-        }
+/// Resolve a file's annotation from a bounded head-only read. An unreadable file, or one
+/// with no leading annotation, yields `None` (graceful, never fatal).
+fn file_annotation(abs: &Path, config: &Config) -> Option<String> {
+    match config.language_for_path(abs) {
+        Some(lang) => annotation::extract(abs, lang),
+        // No known language: the file is in the tree only because a `--include` selector
+        // opted it in (the default walk yields recognized languages only), so read the
+        // annotation marker-agnostically.
+        None => annotation::extract_any(abs),
     }
-
-    (annotation::extract(abs, lang), Vec::new())
-}
-
-/// Read a file's full contents, lossily decoding invalid UTF-8 (a stray binary byte
-/// becomes U+FFFD rather than failing the read) — mirroring the annotation head read.
-fn read_full_lossy(abs: &Path) -> Option<String> {
-    let bytes = std::fs::read(abs).ok()?;
-    Some(String::from_utf8_lossy(&bytes).into_owned())
-}
-
-fn file_tokens(abs: &Path, config: &Config) -> Option<u32> {
-    if !config.display.show_tokens {
-        return None;
-    }
-    // The heuristic is byte-based, so the size from metadata is all we need — no
-    // content read, no per-file buffering (a large blob would otherwise be slurped
-    // whole just to count its bytes). Unreadable files yield `None`.
-    let bytes = std::fs::metadata(abs).ok()?.len();
-    Some(tokens::estimate(bytes))
 }
 
 fn age_secs(abs: &Path, now: SystemTime, config: &Config) -> Option<i64> {

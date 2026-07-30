@@ -1,4 +1,4 @@
-// Concern: wires config -> walk -> (tree | strict) and exposes run() plus the low-level walk/annotation/config primitives and the map/render surface as a library | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code
+// Concern: the library surface — run(), which drives config, the walk, and either tree or strict output, plus the walk/annotation/config/map/render primitives | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code
 //
 // This tool is a one-shot batch traversal of the local filesystem, so it is
 // deliberately synchronous: the `ignore` crate parallelizes the walk across a thread
@@ -15,15 +15,15 @@
 //! - **Primitives** (this is the library surface): the [`walk`] module (the `ignore`-based
 //!   [`walk::configured_walk`] and [`walk::collect_code_files`]), the [`annotation`] module
 //!   (marker-based [`annotation::extract`] and marker-agnostic [`annotation::extract_any`], plus
-//!   the [`annotation::analyze`] grader), the [`config`] module ([`config::Config`] /
+//!   the [`annotation::analyze`] checker), the [`config`] module ([`config::Config`] /
 //!   [`config::Language`]), and the glob-compile helper [`build_globset`]. Compose them freely; a
 //!   consumer that wants its own model/renderer never touches the internal tree/graph/strict
 //!   machinery.
 //! - **Map + render** (access-only): assemble a [`CodebaseMap`] by hand from [`DirNode`] /
-//!   [`FileNode`] (the `charter`/`deps`/`symbols`/`warnings` fields may be `None`/`Vec::new()`)
+//!   [`FileNode`] (the `charter`/`deps`/`warnings` fields may be `None`/`Vec::new()`)
 //!   and render it via [`for_format`] + the [`Renderer`] trait — the tool's own text/json/md
 //!   output over a tree you built yourself. The node field types ([`DirDeps`], [`Charter`],
-//!   [`Symbol`], …) are re-exported so every field is nameable.
+//!   …) are re-exported so every field is nameable.
 //!
 //! ```no_run
 //! use annotated_tree::config::{CliOverrides, Config};
@@ -49,7 +49,7 @@
 // `walk`/`annotation`/`config`/`util` primitives a downstream consumer composes, and the map +
 // render DATA surface (`CodebaseMap`/`DirNode`/`FileNode` + the `Renderer`) re-exported below so a
 // consumer can assemble and render its own tree. Every module stays `pub(crate)` — only the
-// curated re-exports are public, so the graph/symbols/strict/MCP BUILDER machinery stays internal.
+// curated re-exports are public, so the graph/strict/MCP BUILDER machinery stays internal.
 pub mod annotation;
 pub(crate) mod changed;
 pub(crate) mod charter;
@@ -65,8 +65,6 @@ pub(crate) mod model;
 pub(crate) mod render;
 pub(crate) mod rules;
 pub(crate) mod strict;
-pub(crate) mod symbols;
-pub(crate) mod tokens;
 pub(crate) mod util;
 pub mod walk;
 
@@ -83,16 +81,15 @@ pub use cli::{parse as parse_cli, Cli};
 pub use util::build_globset;
 
 // The map + render surface (issue #11), access-only. A consumer assembles a `CodebaseMap` from
-// `DirNode`/`FileNode` (the optional/collection fields — `charter`, `deps`, `symbols`, `warnings`
-// — may be `None`/`Vec::new()`) and renders it via the exposed `Renderer`/`for_format`, driving
-// its own tree without the internal `build` pipeline. The node field types (`DirDeps`,
-// `InternalDep`, `Charter`, `Warning`, `Symbol`, `SymbolKind`) are re-exported too so every field
-// is nameable — but the graph/symbols BUILDER functions stay crate-internal.
+// `DirNode`/`FileNode` (the optional/collection fields — `charter`, `deps`, `warnings` — may be
+// `None`/`Vec::new()`) and renders it via the exposed `Renderer`/`for_format`, driving its own
+// tree without the internal `build` pipeline. The node field types (`DirDeps`, `InternalDep`,
+// `Charter`, `Warning`) are re-exported too so every field is nameable — but the graph BUILDER
+// functions stay crate-internal.
 pub use charter::Charter;
 pub use graph::{DirDeps, InternalDep, Warning};
 pub use model::{CodebaseMap, Coverage, DirNode, FileNode};
 pub use render::{for_format, Renderer};
-pub use symbols::{Symbol, SymbolKind};
 // `Format` is both re-exported (a consumer picks the renderer via `for_format(Format, ascii)`)
 // and used internally below, so this one `pub use` serves both.
 pub use cli::Format;
@@ -229,19 +226,6 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
         }
     };
 
-    // `--symbols` on a binary built WITHOUT the `symbols` feature is inert: the
-    // extractor registry is empty, so every file yields no symbols. Say so once,
-    // explicitly (Fail-Fast/explicit-over-silent), rather than silently doing
-    // nothing — but keep going, so scripts targeting a lean binary don't hard-fail.
-    #[cfg(not(feature = "symbols"))]
-    if cli.symbols {
-        writeln!(
-            err,
-            "annotated-tree: --symbols ignored — built without symbols support \
-             (rebuild with --features symbols)."
-        )?;
-    }
-
     let overrides = cli.overrides();
     let excludes = match util::build_globset(&cli.ignore) {
         Ok(excludes) => excludes,
@@ -330,7 +314,7 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
             code = code.max(root_code);
         }
         // On a FAILING text run, print the annotation guide (how to write a conforming,
-        // non-vacuous annotation) inline after the report — the teaching rides on the surface
+        // brief annotation) inline after the report — the teaching rides on the surface
         // an agent already reads, instead of behind a separate command. Suppressed by
         // `--no-guide` (a caller that knows the format), never shown on success (nothing to
         // fix), and never on the JSON surface (which stays a clean parse; an agent there

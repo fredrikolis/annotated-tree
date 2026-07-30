@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# commit-msg gate: the commit message must carry a neutral-review scorecard.
+# commit-msg gate: the commit message must carry a neutral-review attestation.
 # This hook does NOT run a reviewer — the dev agent runs a neutral review ITSELF
-# (a reviewer distinct from the author), grades the change against EVERY category in
-# docs/repo-standards.md, and writes the result into the commit message. The hook only
-# verifies that report: a reviewer is named, every category is scored (or marked N/A
-# with a reason), and no MAJOR/MEDIUM blockers were raised.
+# (a reviewer distinct from the author), judges the change against EVERY principle this
+# gate scopes (see docs/repo-standards.md), and writes the verdict into the commit
+# message. The hook only verifies that report: a reviewer is named, every principle
+# carries a SEVERITY (MAJOR/MODERATE/MINOR + the finding), `none`, or `N/A — reason`,
+# the MAJOR/MODERATE/MINOR counts are present, and no MAJOR or MODERATE remains.
+# The rule the gate states: iterate fix -> re-review until no MAJOR and no MODERATE is
+# left. MINOR never blocks — it is the author's discretion, fixed or consciously left.
 # Bypass a genuinely trivial, non-code commit: git commit --no-verify.
 # Enable per clone: git config core.hooksPath .githooks
 set -euo pipefail
@@ -18,18 +21,18 @@ case "$subject" in
 esac
 
 # Circular-standards guard: docs/repo-standards.md IS the rubric every other commit's
-# scorecard is graded against. Scoring a commit that CHANGES that rubric against itself is
+# review is judged against. Judging a commit that CHANGES that rubric against itself is
 # circular — the very yardstick is in flux — so a standards change must land on its own,
-# unscored, via an explicit bypass. Fail loud and tell the author exactly how.
+# unreviewed, via an explicit bypass. Fail loud and tell the author exactly how.
 if git diff --cached --name-only | grep -qxF 'docs/repo-standards.md'; then
 	echo "" >&2
 	echo "commit-msg: STANDARDS-DOC GATE FAILED" >&2
 	echo "  - this commit changes docs/repo-standards.md — the rubric every other commit is" >&2
-	echo "    scored against. Grading a change to the yardstick against itself is circular." >&2
+	echo "    judged against. Judging a change to the yardstick against itself is circular." >&2
 	echo "" >&2
 	echo "  Commit the standards change on its OWN, bypassing the neutral-review gate:" >&2
 	echo "      git commit --no-verify" >&2
-	echo "  Keep it in a SEPARATE commit from any code change (which still needs its scorecard)." >&2
+	echo "  Keep it in a SEPARATE commit from any code change (which still needs its review)." >&2
 	echo "" >&2
 	exit 1
 fi
@@ -39,11 +42,20 @@ fail() {
 	echo "commit-msg: NEUTRAL-REVIEW GATE FAILED" >&2
 	printf '  - %s\n' "$@" >&2
 	echo "" >&2
-	echo "  Run a neutral reviewer (a reviewer separate from the author), grade this" >&2
-	echo "  change against EVERY category in docs/repo-standards.md, and put the scorecard" >&2
-	echo "  in the commit message: a 'Reviewer:' line, one '- <Category>: <0-10>/10 —" >&2
-	echo "  justification' (or 'N/A — reason') per category, and 'MAJOR:'/'MEDIUM:'" >&2
-	echo "  counts that are both 0." >&2
+	echo "  Run a neutral reviewer (a reviewer separate from the author) over this change," >&2
+	echo "  against the principles this gate scopes — docs/repo-standards.md states them." >&2
+	echo "  Give EVERY principle a severity, 'none', or 'N/A — reason'. Then iterate" >&2
+	echo "  fix -> re-review until no MAJOR and no MODERATE remains (MINOR is the author's" >&2
+	echo "  discretion: fixed, or consciously left). Attest the final round:" >&2
+	echo "      Reviewer: <name of the neutral reviewer>" >&2
+	echo "      - KISS: none" >&2
+	echo "      - SoC: MODERATE — <the finding, one line>" >&2
+	echo "      - DbC: N/A — <why this principle does not apply to this change>" >&2
+	echo "      MAJOR: 0" >&2
+	echo "      MODERATE: 0" >&2
+	echo "      MINOR: <n>" >&2
+	echo "  One line per principle, plus all three counts, spelled exactly as above. The" >&2
+	echo "  retired numeric payload and the retired blocker key are not accepted." >&2
 	exit 1
 }
 
@@ -55,7 +67,11 @@ fail_ann() {
 	echo "  Once the standards review above passes (content is FINAL), run a neutral" >&2
 	echo "  reviewer over EVERY file in this diff. For each, confirm it carries an" >&2
 	echo "  appropriate first-line annotation per docs/annotation-guide.md AND that this" >&2
-	echo "  diff did not make that annotation stale. Then attest in the commit message:" >&2
+	echo "  diff did not make that annotation stale. APPROPRIATE: every field states WHAT," >&2
+	echo "  never why/how/when; Concern is the file's ONE job; Non-concern is a concern the" >&2
+	echo "  file does not own, its where-it-lives pointer optional (omit it when the tree" >&2
+	echo "  already shows the owner). docs/annotation-guide.md is the normative statement." >&2
+	echo "  Then attest in the commit message:" >&2
 	echo "      Annotation-Reviewer: <name of the neutral reviewer>" >&2
 	echo "      Annotation-Issues: 0" >&2
 	echo "  (Presence/form is already gated by pre-commit; this is the semantic quality +" >&2
@@ -90,10 +106,10 @@ fail_style() {
 
 problems=()
 
-reviewer=$(grep -E '^Reviewer:' "$msg_file" | head -n1 | sed -E 's/^Reviewer:[[:space:]]*//' || true)
+reviewer=$(grep -E '^Reviewer:' "$msg_file" | tail -n1 | sed -E 's/^Reviewer:[[:space:]]*//' || true)
 [ -n "${reviewer// /}" ] || problems+=("no non-empty 'Reviewer:' line naming the neutral reviewer")
 
-# The grading rubric — the judgment-call subset of docs/repo-standards.md's principles.
+# The reviewable set — the judgment-call subset of docs/repo-standards.md's principles.
 # Excluded: first-line annotations, which are owned entirely by their own two gates
 # (pre-commit `--strict-check` for presence/form, and the annotation-review attestation
 # below for quality + staleness), plus principles that are meta or structurally N/A for
@@ -107,38 +123,86 @@ categories=(
 	"Fail Fast"
 )
 
+# Is there any substance left in a payload once its leading separators are gone? Deletes
+# spaces, tabs, colons and hyphens outright — this only ever answers "empty or not", never
+# echoes the result back. `tr` is byte-oriented and would mangle the multibyte em-dash the
+# recipe uses, so that one is swapped for a space by bash first.
+substance() {
+	local s=${1//—/ }
+	printf '%s' "$s" | tr -d ' \t:-'
+}
+
+# Cross-check tallies: how many per-principle lines actually carry each blocking severity.
+line_major=0
+line_moderate=0
+
 for cat in "${categories[@]}"; do
 	prefix="- ${cat}: "
 	rest=""
 	found=0
+	# Read to EOF and keep the LAST match — do NOT add a `break`. A body line at column 0
+	# reading `- KISS: none` would otherwise shadow the real trailer line below it, and the
+	# cross-check tallies below would inherit that hole instead of catching it. Symmetric
+	# with the `tail -n1` count greps: the trailer is authoritative, so it wins.
 	while IFS= read -r line; do
 		if [ "${line#"$prefix"}" != "$line" ]; then
 			rest="${line#"$prefix"}"
 			found=1
-			break
 		fi
 	done < "$msg_file"
 
 	if [ "$found" -ne 1 ]; then
-		problems+=("missing category: '- ${cat}: <0-10>/10 — … | N/A — …'")
+		problems+=("missing principle: '- ${cat}: none | N/A — … | MAJOR|MODERATE|MINOR — …'")
 		continue
 	fi
 
-	if printf '%s' "$rest" | grep -Eqi '^n\/?a([[:space:]]|$)'; then
-		reason=$(printf '%s' "$rest" | sed -E 's/^[Nn]\/?[Aa]//' | tr -d ' \t:-')
+	# The payload is a SEVERITY or an explicit absence, never a number: `none` where the
+	# principle is clean, `N/A — <reason>` where it does not apply, else one of
+	# MAJOR/MODERATE/MINOR plus the finding on the same line. Anything else — a retired
+	# numeric payload included — falls through to the else and fails loudly, so an
+	# old-format message cannot pass silently.
+	sev=""
+	case "$rest" in
+		MAJOR | MAJOR[![:alnum:]]*) sev="MAJOR" ;;
+		MODERATE | MODERATE[![:alnum:]]*) sev="MODERATE" ;;
+		MINOR | MINOR[![:alnum:]]*) sev="MINOR" ;;
+	esac
+
+	if [ -z "$(substance "$rest")" ]; then
+		problems+=("${cat}: empty payload — say 'none', 'N/A — reason', or a severity + finding")
+	elif printf '%s' "$rest" | grep -Eqi '^none([[:space:]]|$)'; then
+		: # clean on this principle; nothing further to state and nothing to cross-check
+	elif printf '%s' "$rest" | grep -Eqi '^n\/?a([[:space:]]|$)'; then
+		reason=$(substance "$(printf '%s' "$rest" | sed -E 's/^[Nn]\/?[Aa]//')")
 		[ -n "$reason" ] || problems+=("${cat}: N/A needs a reason (why it does not apply)")
-	elif printf '%s' "$rest" | grep -Eq '^(10|[0-9])/10([[:space:]]|$)'; then
-		just=$(printf '%s' "$rest" | sed -E 's#^(10|[0-9])/10##' | tr -d ' \t:-')
-		[ -n "$just" ] || problems+=("${cat}: score needs a one-line justification")
+	elif [ -n "$sev" ]; then
+		finding=$(substance "${rest#"$sev"}")
+		if [ -z "$finding" ]; then
+			problems+=("${cat}: ${sev} needs the finding on the same line")
+		elif [ "$sev" = "MAJOR" ]; then
+			line_major=$((line_major + 1))
+		elif [ "$sev" = "MODERATE" ]; then
+			line_moderate=$((line_moderate + 1))
+		fi
 	else
-		problems+=("${cat}: expected '<0-10>/10 — justification' or 'N/A — reason' (got: ${rest})")
+		problems+=("${cat}: expected 'none', 'N/A — reason', or 'MAJOR|MODERATE|MINOR — finding' (got: ${rest})")
 	fi
 done
 
-major=$(grep -E '^MAJOR:[[:space:]]*[0-9]+' "$msg_file" | head -n1 | grep -Eo '[0-9]+' | head -n1 || true)
-medium=$(grep -E '^MEDIUM:[[:space:]]*[0-9]+' "$msg_file" | head -n1 | grep -Eo '[0-9]+' | head -n1 || true)
+# Take the LAST match, not the first: a body line at column 0 reading `MAJOR: 0 blockers
+# remained after the fix` would otherwise shadow the real trailer below it, and the gate
+# would read a 0 the reviewer never attested. The trailer is authoritative, so it wins.
+major=$(grep -E '^MAJOR:[[:space:]]*[0-9]+' "$msg_file" | tail -n1 | grep -Eo '[0-9]+' | head -n1 || true)
+moderate=$(grep -E '^MODERATE:[[:space:]]*[0-9]+' "$msg_file" | tail -n1 | grep -Eo '[0-9]+' | head -n1 || true)
+minor=$(grep -E '^MINOR:[[:space:]]*[0-9]+' "$msg_file" | tail -n1 | grep -Eo '[0-9]+' | head -n1 || true)
+# PRESENCE FIRST, COMPARISON ONLY AFTER — do not invert this. An absent or non-numeric count
+# leaves the variable empty, and `[ "" -gt 0 ]` exits with status 2 (a `test` usage error, not
+# a verdict). Inside an `if` condition `set -e` does not fire, so status 2 reads as "false"
+# and a malformed count would sail through as "no blockers". Every count is therefore
+# presence-checked into `problems` and `fail`ed below BEFORE any `-gt` test runs on it.
 [ -n "$major" ] || problems+=("missing 'MAJOR: <n>' blocker count")
-[ -n "$medium" ] || problems+=("missing 'MEDIUM: <n>' blocker count")
+[ -n "$moderate" ] || problems+=("missing 'MODERATE: <n>' blocker count")
+[ -n "$minor" ] || problems+=("missing 'MINOR: <n>' count (never blocks; it is where a real nit goes instead of being inflated)")
 
 if [ "${#problems[@]}" -gt 0 ]; then
 	fail "${problems[@]}"
@@ -148,20 +212,34 @@ blockers=()
 if [ "$major" -gt 0 ]; then
 	blockers+=("reviewer raised $major MAJOR blocker(s) — resolve them before committing")
 fi
-if [ "$medium" -gt 0 ]; then
-	blockers+=("reviewer raised $medium MEDIUM blocker(s) — resolve them before committing")
+if [ "$moderate" -gt 0 ]; then
+	blockers+=("reviewer raised $moderate MODERATE blocker(s) — resolve them before committing")
+fi
+# Cross-check the two halves against each other. The per-principle lines and the counts are
+# one verdict written twice; a disagreement means one half was filled in without reading the
+# other, and taking the counts on faith would let a declared 0 bury a stated finding. This is
+# what makes keeping both halves safe rather than redundant. `MINOR` is not cross-checked: it
+# gates nothing, so the two halves cannot disagree about an outcome.
+if [ "$line_major" -gt 0 ] && [ "$major" -eq 0 ]; then
+	blockers+=("$line_major per-principle line(s) carry MAJOR but 'MAJOR: 0' is declared — the lines and the counts disagree")
+fi
+if [ "$line_moderate" -gt 0 ] && [ "$moderate" -eq 0 ]; then
+	blockers+=("$line_moderate per-principle line(s) carry MODERATE but 'MODERATE: 0' is declared — the lines and the counts disagree")
 fi
 if [ "${#blockers[@]}" -gt 0 ]; then
 	fail "${blockers[@]}"
 fi
 
 # --- Gate 2: first-line annotation review (semantic: quality + staleness) -----
-# Conceptually runs AFTER the standards scorecard above, so the reviewer judges each
+# Conceptually runs AFTER the standards review above, so the reviewer judges each
 # annotation against FINAL content. The dev agent runs the neutral review over every
 # file in the diff and attests; this hook only verifies the attestation.
-ann_reviewer=$(grep -E '^Annotation-Reviewer:' "$msg_file" | head -n1 | sed -E 's/^Annotation-Reviewer:[[:space:]]*//' || true)
-ann_issues=$(grep -E '^Annotation-Issues:[[:space:]]*[0-9]+' "$msg_file" | head -n1 | grep -Eo '[0-9]+' | head -n1 || true)
+# `tail -n1` on the count for the same reason as the blocker counts above: the trailer
+# wins over any prose line that happens to start with the key at column 0.
+ann_reviewer=$(grep -E '^Annotation-Reviewer:' "$msg_file" | tail -n1 | sed -E 's/^Annotation-Reviewer:[[:space:]]*//' || true)
+ann_issues=$(grep -E '^Annotation-Issues:[[:space:]]*[0-9]+' "$msg_file" | tail -n1 | grep -Eo '[0-9]+' | head -n1 || true)
 
+# Presence first, comparison only after — see the note on the blocker counts above.
 ann_problems=()
 [ -n "${ann_reviewer// /}" ] || ann_problems+=("no non-empty 'Annotation-Reviewer:' line")
 [ -n "$ann_issues" ] || ann_problems+=("missing 'Annotation-Issues: <n>' count")
@@ -177,9 +255,10 @@ fi
 # fresh-context review against docs/communication-style.md and attest; the hook cannot
 # stop a determined agent from rubber-stamping, so this is a nudge, not a guarantee.
 if git diff --cached --name-only | grep -qE '^(README\.md|README_APPENDIX\.md)$'; then
-	style_reviewer=$(grep -E '^Style-Reviewer:' "$msg_file" | head -n1 | sed -E 's/^Style-Reviewer:[[:space:]]*//' || true)
-	style_issues=$(grep -E '^Style-Issues:[[:space:]]*[0-9]+' "$msg_file" | head -n1 | grep -Eo '[0-9]+' | head -n1 || true)
+	style_reviewer=$(grep -E '^Style-Reviewer:' "$msg_file" | tail -n1 | sed -E 's/^Style-Reviewer:[[:space:]]*//' || true)
+	style_issues=$(grep -E '^Style-Issues:[[:space:]]*[0-9]+' "$msg_file" | tail -n1 | grep -Eo '[0-9]+' | head -n1 || true)
 
+	# Presence first, comparison only after — see the note on the blocker counts above.
 	style_problems=()
 	[ -n "${style_reviewer// /}" ] || style_problems+=("no non-empty 'Style-Reviewer:' line")
 	[ -n "$style_issues" ] || style_problems+=("missing 'Style-Issues: <n>' count")

@@ -1,4 +1,4 @@
-// Concern: resolves and represents a directory's concern charter — the three-field line promoted onto the directory's own render row, sourced most-explicit-first (a `.annotation` breadcrumb, else the code entry file's annotation) | Non-concern: locating a file's first comment or grading vacuity (annotation.rs owns the one grammar) | IO: (dir, Config) -> Option<Charter>
+// Concern: resolves and represents a directory's concern charter — the three-field line on its render row | Non-concern: locating a file's first comment or checking a line's form (annotation.rs) | IO: (dir, Config) -> Option<Charter>
 
 use std::path::Path;
 
@@ -144,7 +144,7 @@ mod tests {
         // The DbC guarantee against advertise-vs-enforce drift: the bare exemplar a malformed
         // `.annotation` diagnostic shows must itself pass the charter grammar it advertises.
         assert_eq!(
-            annotation::analyze_charter(EXAMPLE),
+            annotation::analyze_charter(EXAMPLE, None),
             annotation::Outcome::Ok
         );
     }

@@ -22,10 +22,22 @@ else
 	run=(cargo run --quiet --)
 fi
 
-if ! "${run[@]}" --strict-check . --ignore sample; then
+# Two invocations, because `walk::keep_entry` prunes any directory named `tests` unless
+# `--include-tests` (default off): the first line cannot see tests/ at all, and most of the
+# repo's annotations live there. `tests/fixtures` stays excluded — charter_malformed is
+# deliberately malformed. `--max-length 200` bounds each field; the doctrine targets ~150.
+if ! "${run[@]}" --strict-check . --ignore sample --max-length 200; then
 	echo "" >&2
 	echo "pre-commit: ANNOTATION GATE FAILED" >&2
 	echo "  - one or more code files lack a conforming first-line annotation (see above)." >&2
+	echo "  Fix them, then re-commit. Bypass a trivial, non-code commit: git commit --no-verify" >&2
+	exit 1
+fi
+
+if ! "${run[@]}" --strict-check . --ignore sample --include-tests -I 'tests/fixtures' --max-length 200; then
+	echo "" >&2
+	echo "pre-commit: ANNOTATION GATE FAILED (tests/)" >&2
+	echo "  - one or more files under tests/ lack a conforming first-line annotation (see above)." >&2
 	echo "  Fix them, then re-commit. Bypass a trivial, non-code commit: git commit --no-verify" >&2
 	exit 1
 fi

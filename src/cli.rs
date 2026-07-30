@@ -37,6 +37,12 @@ pub struct Cli {
     #[arg(long)]
     pub no_guide: bool,
 
+    /// Fail --strict-check when any annotation field (Concern, Non-concern, IO) is longer
+    /// than N characters. Unset by default (no bound); 0 also means no bound, so it turns a
+    /// repo-configured one off. Overrides `[rules] max_annotation_length`.
+    #[arg(long, value_name = "N")]
+    pub max_length: Option<usize>,
+
     /// Descend at most LEVEL directories deep.
     #[arg(short = 'L', long, value_name = "LEVEL")]
     pub max_depth: Option<usize>,
@@ -52,16 +58,6 @@ pub struct Cli {
     /// Append each file's modification time.
     #[arg(long)]
     pub age: bool,
-
-    /// Append an estimated token count per file and package (~4 bytes/token
-    /// heuristic, not an exact tokenizer). No package total below a -L cutoff.
-    #[arg(long)]
-    pub tokens: bool,
-
-    /// List each file's top-level definitions (functions, classes, methods)
-    /// (requires a build with --features symbols; inert otherwise).
-    #[arg(long)]
-    pub symbols: bool,
 
     /// Draw the tree with ASCII characters instead of Unicode.
     #[arg(long)]
@@ -199,8 +195,6 @@ impl Cli {
     pub fn overrides(&self) -> CliOverrides {
         CliOverrides {
             show_age: self.age.then_some(true),
-            show_tokens: self.tokens.then_some(true),
-            show_symbols: self.symbols.then_some(true),
             ascii: self.ascii.then_some(true),
             gitignore: self.no_gitignore.then_some(false),
             include_tests: self.include_tests.then_some(true),
@@ -220,6 +214,7 @@ impl Cli {
             } else {
                 self.max_per_node.map(Some)
             },
+            max_annotation_length: self.max_length,
         }
     }
 }

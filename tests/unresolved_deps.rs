@@ -1,4 +1,4 @@
-// Concern: end-to-end test that a workspace/path dependency pointing at a package absent from the scanned tree renders with an `(unresolved)` marker instead of masquerading as a normal internal edge | Non-concern: unit-level logic | IO: (temp tree) -> asserted stdout
+// Concern: end-to-end test that a dependency on a package absent from the scanned tree renders with an (unresolved) marker | Non-concern: unit-level logic | IO: (temp tree) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

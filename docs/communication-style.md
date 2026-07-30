@@ -1,4 +1,4 @@
-<!-- Concern: the rubric a fresh-context reviewer scores README.md / README_APPENDIX.md changes against - the voice the docs use, and that every claim, example, and link still matches the shipped code | Non-concern: the review mechanism (the .githooks commit-msg gate owns when it runs and how it is reported), the annotation format (annotation-guide.md), universal code principles (repo-standards.md), or the citations and bibliography (README_APPENDIX.md owns them) | IO: none -->
+<!-- Concern: the prose standard for README.md and README_APPENDIX.md — the voice the docs use, and that every claim, example, and link matches the shipped code | Non-concern: when the review runs and how it is reported (.githooks/commit-msg owns that), the annotation format, code principles, or the bibliography | IO: none -->
 # Communication Style
 
 The rules for reviewing changes to README.md and README_APPENDIX.md, scored one changed

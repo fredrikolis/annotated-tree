@@ -1,4 +1,4 @@
-// Concern: end-to-end test for `--since` / `--changed` — editing a package surfaces that file PLUS its blast radius (every package that transitively depends on it), and a git failure (bad ref / non-repo) is an explicit error, not an empty view, freezing the feature's whole value: "editing core surfaces api+worker" | Non-concern: unit-level logic | IO: (temp git repo) -> asserted (stdout, code)
+// Concern: end-to-end tests for --since/--changed — the changed files, their blast radius, and a git failure as an explicit error | Non-concern: unit-level logic | IO: (temp git repo) -> asserted (stdout, code)
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

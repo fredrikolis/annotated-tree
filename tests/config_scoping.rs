@@ -1,4 +1,4 @@
-// Concern: two user-facing guarantees about WHERE config comes from — `--config <FILE>` replaces `.annotated-tree.toml` discovery, and a multi-root run applies each root's OWN discovered config, never one root's to another; runs over throwaway temp trees under the system temp root so no ancestor config leaks in | Non-concern: rendering glyphs | IO: (temp trees, flags) -> asserted stdout
+// Concern: end-to-end tests that --config <FILE> replaces config discovery, and that each root of a multi-root run uses its own discovered config | Non-concern: rendering glyphs | IO: (temp trees, flags) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

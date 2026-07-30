@@ -1,4 +1,4 @@
-// Concern: end-to-end tests that pin the tool's output over the `sample/` fixture — the fixture + expected files ARE the behavioral spec, so a diff means a deliberate decision changed | Non-concern: unit-level logic | IO: (sample tree) -> asserted output
+// Concern: end-to-end tests freezing the tool's stdout for the text, JSON, Markdown, strict-check, and guide surfaces — by golden file or structural assertion | Non-concern: unit-level logic | IO: (sample tree, temp fixtures) -> asserted output
 
 use std::path::PathBuf;
 
@@ -81,52 +81,6 @@ fn ascii_is_default_with_glyphs_substituted() {
     assert_eq!(
         ascii_out, substituted,
         "--ascii must be exactly the default view with box glyphs swapped for ASCII"
-    );
-}
-
-/// `--tokens` adds a `[~N tok]` column; freeze the CONTRACT of that column (a file
-/// shows `ceil(bytes/4)` of its own size, a package dir shows the aggregated subtree
-/// total) over representative nodes, rather than re-pinning every annotation in the
-/// fixture. The `ceil(bytes/4)` heuristic itself is unit-tested in `tokens.rs`.
-#[test]
-fn tokens_estimate_per_file_and_package() {
-    let (out, code) = run(&["--tokens"]);
-    assert_eq!(code, 0, "tokens exit code");
-    let sample = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sample");
-
-    // A representative leaf: its column is ceil(bytes/4) of its own byte length.
-    let engine = sample.join("packages/core/acme_core/engine.py");
-    let engine_tok = std::fs::metadata(&engine).unwrap().len().div_ceil(4);
-    // Anchor on the tree connector so this selects the `engine.py` FILE row and not a
-    // sibling whose annotation text merely mentions `engine.py` (e.g. __init__.py naming
-    // it as the owner of a concern it leaves alone) — a fixture reword can never silently
-    // pick the wrong node.
-    let engine_line = out
-        .lines()
-        .find(|l| l.contains("── engine.py"))
-        .expect("engine.py is listed");
-    assert!(
-        engine_line.contains(&format!("[~{engine_tok} tok]")),
-        "engine.py must show its own ceil(bytes/4)={engine_tok} estimate:\n{engine_line}"
-    );
-
-    // A package dir shows the aggregated subtree total: the sum of its files'
-    // per-file estimates (core/ holds __init__.py + engine.py + utils.py).
-    let core = sample.join("packages/core/acme_core");
-    let core_tok: u64 = ["__init__.py", "engine.py", "utils.py"]
-        .iter()
-        .map(|f| std::fs::metadata(core.join(f)).unwrap().len().div_ceil(4))
-        .sum();
-    // Anchor on the tree connector so this selects the `core/` package dir line and
-    // NOT `acme_core/` (whose name segment is `acme_core/`, so `── core/` can't match
-    // it) — a fixture reorder can never silently pick the wrong node.
-    let core_line = out
-        .lines()
-        .find(|l| l.contains("── core/"))
-        .expect("core/ package dir is listed");
-    assert!(
-        core_line.contains(&format!("[~{core_tok} tok]")),
-        "core/ must show the aggregated subtree total {core_tok}:\n{core_line}"
     );
 }
 
@@ -249,15 +203,15 @@ fn strict_check_json_emits_structured_violations() {
         py["example"]
     );
     // The machine-coded delta an agent branches on: the comment carries NONE of the three
-    // keyed fields, so all are missing; `vacuous` is absent when empty.
+    // keyed fields, so all are missing; `too_long`/`max` are absent when they do not apply.
     assert_eq!(
         py["defect"]["missing"],
         serde_json::json!(["concern", "non_concern", "io"]),
         "defect names the missing fields, not prose"
     );
     assert!(
-        py["defect"].get("vacuous").is_none(),
-        "empty defect lists are omitted (absent-key convention)"
+        py["defect"].get("too_long").is_none() && py["defect"].get("max").is_none(),
+        "empty/absent defect fields are omitted (absent-key convention)"
     );
     // The contract to converge on: the fill-in template plus which fields are enforced.
     assert!(
@@ -283,7 +237,8 @@ fn strict_check_json_emits_structured_violations() {
     );
     // The file-tailored scaffold: reuses the file's own text as the Concern seed, opens
     // with the language marker, and leaves the judgment slots as `<…>` placeholders —
-    // which themselves FAIL `annotation_vacuous`, so the stub can't be submitted unedited.
+    // which mark what an agent should replace, on a line whose FORM already conforms (this
+    // run sets no length bound, which would apply to the stub like any other line).
     let suggestion = py["suggestion"].as_str().expect("suggestion string");
     assert!(
         suggestion.starts_with("# Concern: small helpers used across the engine")
@@ -295,29 +250,6 @@ fn strict_check_json_emits_structured_violations() {
         doc["rule_violations"].is_array(),
         "rule_violations is always present (empty here)"
     );
-}
-
-/// Freeze the `--symbols` TEXT contract: how a file's top-level definitions are
-/// indented beneath it. Runs only in a `symbols`-feature build (the extractor is
-/// gated) and over a DEDICATED fixture of real `.py/.rs/.go/.ts` definitions — the
-/// `sample/` files are annotation-only, so they exercise no extraction. Deterministic
-/// over committed fixtures; the per-language unit tests cover extraction edge cases.
-#[cfg(feature = "symbols")]
-#[test]
-fn symbols_outline_over_fixture() {
-    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/symbols");
-    let cli = Cli::parse_from([
-        "annotated-tree",
-        "--symbols",
-        "--ascii",
-        &fixture.to_string_lossy(),
-    ]);
-    let mut buf: Vec<u8> = Vec::new();
-    let mut err: Vec<u8> = Vec::new();
-    let code = annotated_tree::run(&cli, &mut buf, &mut err).expect("run failed");
-    assert_eq!(code, 0, "symbols exit code");
-    let got = String::from_utf8(buf).expect("utf8");
-    assert_eq!(got, golden("symbols.txt"), "symbols text drift");
 }
 
 /// The versioned envelope is frozen by `json_schema_is_versioned`; here we freeze
@@ -393,8 +325,8 @@ fn md_format_surfaces_package_headings() {
 /// A FAILING `--strict-check` prints the annotation guide inline on stdout by default (the
 /// teaching rides on the surface the agent already reads); `--no-guide` suppresses it; a
 /// PASSING run never shows it. Assert the guide's load-bearing invariants — the enforced
-/// template, the GOOD/FAILS contrast, and that a filler boundary is stated to FAIL — rather
-/// than byte-freezing instructional prose. Uses a throwaway fixture with one unannotated file.
+/// template, the GOOD/FAILS contrast, and the brevity doctrine — rather than byte-freezing
+/// instructional prose. Uses a throwaway fixture with one unannotated file.
 #[test]
 fn strict_failure_prints_guide_on_stdout() {
     let dir = std::env::temp_dir().join(format!("at-guide-{}", std::process::id()));
@@ -431,8 +363,8 @@ fn strict_failure_prints_guide_on_stdout() {
         "the guide renders the enforced template"
     );
     assert!(
-        out.contains("GOOD") && out.contains("FAILS") && out.contains("annotation_vacuous"),
-        "the guide shows the GOOD/FAILS contrast and names the vacuous failure category"
+        out.contains("GOOD") && out.contains("FAILS") && out.contains("BREVITY"),
+        "the guide shows the GOOD/FAILS contrast and teaches the brevity doctrine"
     );
     assert!(
         out.contains("HOW TO FIND THE NON-CONCERN"),
@@ -460,4 +392,36 @@ fn strict_failure_prints_guide_on_stdout() {
         !out.contains("ANNOTATION GUIDE"),
         "a passing run never shows the guide, got: {out}"
     );
+}
+
+/// `--githook-guide` ships the commit-message ATTESTATION KEYS to adopters who wire the example
+/// hook into their own repo, so those keys are an external contract with consumers we cannot
+/// coordinate. Pin the keys — never the prose around them — and pin the absence of the retired
+/// vocabulary, so a half-migrated guide (new hook, old recipe) cannot land.
+#[test]
+fn githook_guide_ships_the_attestation_keys() {
+    // The flag short-circuits before any traversal, so the appended sample path is unused.
+    let (out, code) = run(&["--githook-guide"]);
+    assert_eq!(
+        code, 0,
+        "--githook-guide is an info flag: print and exit clean"
+    );
+    for key in [
+        "MAJOR:",
+        "MODERATE:",
+        "MINOR:",
+        "Annotation-Issues:",
+        "Style-Issues:",
+    ] {
+        assert!(
+            out.contains(key),
+            "the guide must ship the `{key}` attestation key, got: {out}"
+        );
+    }
+    for retired in ["MEDIUM", "/10"] {
+        assert!(
+            !out.contains(retired),
+            "the guide must not name the retired `{retired}` payload, got: {out}"
+        );
+    }
 }

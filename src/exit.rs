@@ -1,4 +1,4 @@
-// Concern: the process exit-code taxonomy — one disjoint code per failure class so an agent can branch recovery on it | Non-concern: rendering the diagnostic (each caller writes its own message) | IO: none
+// Concern: the process exit-code taxonomy — one disjoint code per failure class | Non-concern: the diagnostic text for any of them | IO: none
 
 //! # Exit-code contract (`annotated-tree`)
 //!
@@ -67,16 +67,4 @@ pub mod code {
     /// in the JSON envelope's `warnings` array (and the CLI's stderr) to signal that the
     /// dependency graph is incomplete — distinguishing "no deps" from "couldn't read them".
     pub const MANIFEST_PARSE_ERROR: &str = "manifest_parse_error";
-    /// (`--strict-check`) A file carrying an annotation lives in a package the dependency
-    /// graph shows ORPHANED — nothing imports it and it imports nothing internal — within
-    /// an ecosystem that otherwise has real dependency structure. NON-FATAL guidance: the
-    /// check still PASSES (it exits [`super::SUCCESS`] absent other findings), but the
-    /// advisory rides in the strict report's `warnings` array. This is where the two halves
-    /// of the tool meet: an annotation on a dead package misleads agents into treating it as
-    /// live infrastructure, so the advisory points at the SoC "should we just delete it?"
-    /// lens rather than the annotation format. Distinct from the `[rules] forbid_orphans`
-    /// FATAL `orphan_package` rule (opt-in, flags every orphan including lone entry-point
-    /// binaries): this advisory is always-on but only fires on an ANNOTATED orphan inside a
-    /// structured ecosystem, so a single-package repo or a lone binary never trips it.
-    pub const ANNOTATION_ON_ORPHAN: &str = "annotation_on_orphan";
 }

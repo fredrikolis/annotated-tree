@@ -1,4 +1,4 @@
-// Concern: lint mode — validates every code file's annotation against the one three-field format and reports offenders as `path:LINE: message` (language, marker, real line, offending content, a conformant example) | Non-concern: the tree view | IO: (files, Config) -> (report, exit_code)
+// Concern: lint mode — reports every file and charter whose annotation is absent, malformed, or over the length bound | Non-concern: the tree view | IO: (files, Config) -> (report, exit_code)
 
 //! # Strict-check JSON schema (`--strict-check --format json` and MCP `strict_check`)
 //!
@@ -12,13 +12,11 @@
 //!
 #![doc = concat!("```text\n", include_str!("strict_schema.txt"), "```")]
 //!
-//! `category` maps `Outcome::Missing` -> `missing_annotation`,
-//! `Outcome::Malformed` -> `malformed_annotation` (a comment that is not the three-field
-//! shape), and `Outcome::Vacuous` -> `annotation_vacuous` (the shape is present but a
-//! required slot is box-filled — a FATAL violation). `found` carries the raw landing line
-//! even for ordinary code (so no misleading "unrecognized token" category is needed). A
-//! separate, NON-FATAL `warnings` array carries advisories that do not fail the check —
-//! today only `annotation_on_orphan` (an annotated file in an orphaned package).
+//! `category` maps `Outcome::Missing` -> `missing_annotation`, `Outcome::Malformed` ->
+//! `malformed_annotation` (a keyed field is absent or empty, or the ` | ` structure is
+//! broken), and `Outcome::TooLong` -> `annotation_too_long` (a field is longer than the
+//! configured bound). `found` carries the raw landing line even for ordinary code (so no
+//! misleading "unrecognized token" category is needed). Every category FAILS the check.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -48,16 +46,15 @@ pub const SCHEMA_DOC: &str = include_str!("strict_schema.txt");
 pub enum Category {
     /// No conforming annotation at all (`Outcome::Missing`).
     MissingAnnotation,
-    /// A comment is present but is not the three-field `Concern: … | Non-concern: … |
-    /// IO: …` shape — a keyed field is absent or the ` | ` structure is broken
-    /// (`Outcome::Malformed`).
+    /// A comment is present but does not carry three non-empty `Concern: … | Non-concern: …
+    /// | IO: …` fields — a keyed field is absent, a field is empty after trimming, or the
+    /// ` | ` structure is broken (`Outcome::Malformed`).
     MalformedAnnotation,
-    /// The three-field shape is present but a required slot (Concern, Non-concern, or an
-    /// IO operand) is empty, a filler token, or an unfilled placeholder — a copied
-    /// box-filling stub (`Outcome::Vacuous`). Distinct from `MalformedAnnotation` so an
-    /// agent can tell "not the format" from "the format, but hollow", and so a
-    /// thoughtlessly-filled suggestion is a FAILING state, not merely discouraged.
-    AnnotationVacuous,
+    /// All three fields are present and non-empty, but at least one is longer than the
+    /// configured `[rules] max_annotation_length` / `--max-length` bound
+    /// (`Outcome::TooLong`). Distinct from `MalformedAnnotation` so an agent can tell "not
+    /// the shape" from "the shape, but too wordy to ingest".
+    AnnotationTooLong,
 }
 
 /// The canonical annotation shape an agent should converge on — the fill-in `template`
@@ -65,7 +62,7 @@ pub enum Category {
 /// violation carries this so an agent reads the contract off the finding instead of
 /// reverse-engineering it. All three fields are `required`; `recommended` is empty (the
 /// old advisory boundary is now a required field). Part tokens come from
-/// [`crate::annotation`], the grader that produces them, so the contract and the delta
+/// [`crate::annotation`], the checker that produces them, so the contract and the delta
 /// name the SAME parts and cannot drift.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Expected {
@@ -75,9 +72,9 @@ pub struct Expected {
 }
 
 /// The one enforced contract, identical for every finding (declared once so it can't drift
-/// from the grader). All three fields are required and substantive; `IO:` accepts the
-/// blessed value `none`. `pub(crate)` so the embedded annotation guide ([`crate::guide`])
-/// renders the SAME template the grader enforces.
+/// from the checker). All three fields are required and must be non-empty. `pub(crate)` so
+/// the embedded annotation guide ([`crate::guide`]) renders the SAME template the checker
+/// enforces.
 pub(crate) const EXPECTED: Expected = Expected {
     template: "Concern: {what it does} | Non-concern: {what it isn't} | IO: (in) -> out  OR  none",
     required: &[
@@ -88,16 +85,28 @@ pub(crate) const EXPECTED: Expected = Expected {
     recommended: &[],
 };
 
-/// The machine-coded delta between the required shape and what `found` carries: which
-/// named parts are ABSENT (`missing`) vs PRESENT-BUT-HOLLOW (`vacuous`). An agent branches
-/// on these stable part tokens (`concern` | `non_concern` | `io`), never on `message`
-/// prose. Each list is omitted when empty, per the schema's absent-key convention.
+/// The machine-coded delta between the required shape and what `found` carries: which named
+/// parts are ABSENT-OR-EMPTY (`missing`) and which are OVER the configured length bound
+/// (`too_long`, with the bound itself in `max`). An agent branches on these stable part
+/// tokens (`concern` | `non_concern` | `io`), never on `message` prose. Each list is omitted
+/// when empty and `max` when absent, per the schema's absent-key convention.
 #[derive(Debug, Clone, Serialize)]
 pub struct Defect {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub missing: Vec<&'static str>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub vacuous: Vec<&'static str>,
+    pub too_long: Vec<TooLong>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<usize>,
+}
+
+/// One over-length annotation part: the stable part token and its length in Unicode scalar
+/// values. The bound it breached lives once per violation in [`Defect::max`], never repeated
+/// per entry.
+#[derive(Debug, Clone, Serialize)]
+pub struct TooLong {
+    pub part: &'static str,
+    pub length: usize,
 }
 
 /// One structured annotation violation. The default TEXT report is one rendering over
@@ -111,7 +120,7 @@ pub struct AnnotationViolation {
     /// Resolved language name (e.g. `python`).
     pub language: String,
     /// Which class of failure (`missing_annotation` | `malformed_annotation` |
-    /// `annotation_vacuous`).
+    /// `annotation_too_long`).
     pub category: Category,
     /// The comment delimiter this language expects the annotation to open with.
     pub marker: String,
@@ -119,31 +128,39 @@ pub struct AnnotationViolation {
     /// per-language exemplar) — a guaranteed-valid concrete instance, distinct from the
     /// abstract `expected.template` and the file-tailored `suggestion`.
     pub example: String,
-    /// The machine-coded delta — which template parts are missing/vacuous. An agent acts
-    /// on this, not on `message`.
+    /// The machine-coded delta — which template parts are absent/empty, and which are over
+    /// the length bound. An agent acts on this, not on `message`.
     pub defect: Defect,
     /// The canonical annotation contract (template + required/recommended parts).
     pub expected: Expected,
     /// The offending line — the raw landing line (missing) or the extracted annotation
-    /// (malformed / vacuous) — or `None` for an empty / unreadable head.
+    /// (malformed / too long) — or `None` for an empty / unreadable head.
     pub found: Option<String>,
     /// A FILE-TAILORED candidate to adapt: whatever descriptive text the file already
     /// carries (or its stem) seeds the `Concern:` field, with the judgment fields scaffolded
-    /// as VACUOUS placeholder slots (`<concern owned elsewhere>`, `(<inputs>) -> <outputs>`).
-    /// Because the `annotation_vacuous` gate rejects those slots, the stub scaffolds the
-    /// shape WITHOUT letting an agent submit it unthought — the placeholders must be replaced.
-    pub suggestion: String,
-    /// Why the annotation is vacuous — which slot is empty/filler/placeholder. Present
-    /// only for `annotation_vacuous`; absent (not null) for the other categories, per the
-    /// schema's key-presence convention.
+    /// as `<…>` placeholder slots (`<concern owned elsewhere>`, `(<inputs>) -> <outputs>`).
+    /// The check is form-only, so the stub itself is well-formed and applying it does not
+    /// stack a second failure — but a configured length bound still applies to it, and the
+    /// `<…>` slots are unfilled judgments an agent has to write out. Absent for
+    /// `annotation_too_long`: the only text available to seed a stub from is the over-length
+    /// field itself, and the other two fields are already conforming.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
+    /// Human prose for the cases where the machine fields alone would mislead: which fields are
+    /// present but empty, that the ` | ` structure is broken, or which fields are over the bound
+    /// and by how much. Absent (not null) when the machine fields suffice, per the schema's
+    /// key-presence convention.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
 
 impl AnnotationViolation {
     /// The one human message line for this violation, keeping the machine-parseable
-    /// `path:line:` prefix. The TEXT report is exactly these, one per line — so this is
-    /// the single place the wording lives, shared by the CLI report and any renderer.
+    /// `path:line:` prefix. The TEXT report is exactly these, one per line, shared by the CLI
+    /// report and any renderer. The per-category FRAME lives here; the `detail` clause it
+    /// interpolates is authored where the defect is diagnosed ([`annotation`]'s
+    /// broken-structure and empty-field prose, and [`too_long_detail`]) — so a message is one
+    /// frame plus one carried clause, never two competing renderings.
     fn message(&self) -> String {
         match self.category {
             Category::MissingAnnotation => {
@@ -151,61 +168,51 @@ impl AnnotationViolation {
                 // example, and — when a foreign/wrong-marker line was present — echo
                 // it so the fix is unambiguous (e.g. "you used `;` not `--`").
                 let mut msg = format!(
-                    "{}:{}: missing annotation [{}] — add a `{}` comment. suggestion: {}",
-                    self.path, self.line, self.language, self.marker, self.suggestion,
+                    "{}:{}: missing annotation [{}] — add a `{}` comment.",
+                    self.path, self.line, self.language, self.marker,
                 );
+                if let Some(suggestion) = &self.suggestion {
+                    msg.push_str(&format!(" suggestion: {suggestion}"));
+                }
                 if let Some(found) = &self.found {
                     msg.push_str(&format!(" found: '{found}'"));
                 }
                 msg
             }
-            Category::MalformedAnnotation => format!(
-                "{}:{}: annotation is malformed [{}] — expected '{}'. found: '{}'. suggestion: {}",
+            Category::MalformedAnnotation => {
+                // `detail` is interpolated right after the language marker (the same slot the
+                // too-long message uses), so it reads as the diagnosis rather than as a
+                // comment on the trailing suggestion. A plainly-absent key carries no
+                // `detail`, and then this renders exactly as it always has.
+                let diagnosis = match &self.detail {
+                    Some(detail) => format!("{detail}; "),
+                    None => String::new(),
+                };
+                let mut msg = format!(
+                    "{}:{}: annotation is malformed [{}] — {}expected '{}'. found: '{}'.",
+                    self.path,
+                    self.line,
+                    self.language,
+                    diagnosis,
+                    self.expected.template,
+                    self.found.as_deref().unwrap_or(""),
+                );
+                if let Some(suggestion) = &self.suggestion {
+                    msg.push_str(&format!(" suggestion: {suggestion}"));
+                }
+                msg
+            }
+            Category::AnnotationTooLong => format!(
+                "{}:{}: annotation is too long [{}] — {}. found: '{}'",
                 self.path,
                 self.line,
                 self.language,
-                self.expected.template,
+                self.detail
+                    .as_deref()
+                    .expect("TooLong always carries a rendered detail"),
                 self.found.as_deref().unwrap_or(""),
-                self.suggestion,
-            ),
-            Category::AnnotationVacuous => format!(
-                "{}:{}: annotation is vacuous [{}] — {}. Say what this file actually does and \
-                 what it does NOT. found: '{}'. suggestion: {}",
-                self.path,
-                self.line,
-                self.language,
-                self.detail.as_deref().unwrap_or("a required slot is empty"),
-                self.found.as_deref().unwrap_or(""),
-                self.suggestion,
             ),
         }
-    }
-}
-
-/// One NON-FATAL annotation advisory — guidance that does NOT fail `--strict-check`.
-/// Carries a stable dispatch [`code`](crate::exit::code) + `path` + human `message`, the
-/// same located-diagnostic shape as [`AnnotationViolation`] and [`crate::graph::Warning`],
-/// so an agent branches on `code` and only humans read the prose. One kind today: the
-/// per-package [`crate::exit::code::ANNOTATION_ON_ORPHAN`] — a package-level concern, so
-/// `path` is the package directory and there is no single line or language.
-#[derive(Debug, Clone, Serialize)]
-pub struct AnnotationWarning {
-    /// Stable dispatch code (`annotation_on_orphan`).
-    pub code: &'static str,
-    /// Path relative to the checked root, unix slashes — the package directory.
-    pub path: String,
-    /// The advisory body (no location prefix) — the dual-render kept next to the `code`,
-    /// the same way [`RuleViolation::message`] carries its finding verbatim.
-    pub message: String,
-}
-
-impl AnnotationWarning {
-    /// The one human TEXT line for this advisory, keeping the machine-parseable `path`
-    /// prefix and flagging it as non-fatal — the single place its text rendering lives (not
-    /// serialized; JSON carries the structured fields instead). A package-level advisory
-    /// tags the bracket with the dispatch `code` (`path: warning [code] — …`).
-    fn text_line(&self) -> String {
-        format!("{}: warning [{}] — {}", self.path, self.code, self.message)
     }
 }
 
@@ -236,8 +243,7 @@ pub struct RuleViolation {
 /// can drift.
 #[derive(Debug, Clone, Serialize)]
 pub struct StrictReport {
-    /// True iff there are no annotation AND no rule violations. NON-FATAL `warnings`
-    /// never flip this — guidance advises, it does not fail the check.
+    /// True iff there are no annotation violations AND no rule violations.
     pub passed: bool,
     /// Number of annotation violations (matches the TEXT "Found N error(s)").
     pub error_count: usize,
@@ -249,12 +255,6 @@ pub struct StrictReport {
     pub annotated_count: usize,
     pub violations: Vec<AnnotationViolation>,
     pub rule_violations: Vec<RuleViolation>,
-    /// NON-FATAL annotation advisories (`annotation_on_orphan`). Never truncated in
-    /// JSON (an agent needs every finding); the TEXT report caps them via the
-    /// `--max-per-node` overflow idiom. Omitted from JSON when empty, per the schema's
-    /// absent-key convention, so a clean run's document is byte-for-byte unchanged.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub warnings: Vec<AnnotationWarning>,
 }
 
 impl StrictReport {
@@ -268,12 +268,11 @@ impl StrictReport {
             annotated_count: 0,
             violations: Vec::new(),
             rule_violations: Vec::new(),
-            warnings: Vec::new(),
         }
     }
 
     /// Fold another root's verdict in (multi-root `--strict-check --format json`): sum
-    /// the counts, concatenate the findings and advisories, AND together the pass flags.
+    /// the counts, concatenate the findings, AND together the pass flags.
     pub fn merge(&mut self, other: StrictReport) {
         self.passed = self.passed && other.passed;
         self.error_count += other.error_count;
@@ -281,15 +280,12 @@ impl StrictReport {
         self.annotated_count += other.annotated_count;
         self.violations.extend(other.violations);
         self.rule_violations.extend(other.rule_violations);
-        self.warnings.extend(other.warnings);
     }
 
     /// Render the DEFAULT human report + exit code (0 pass / 1 any violation). Violation
-    /// lines (or "All N files passed"), then any rule lines, then NON-FATAL advisory
-    /// warnings — each list capped for humans at `max_per_node` via the `[+N more …]`
-    /// overflow idiom (JSON is never capped; a summary count line is always present).
-    /// `max_per_node` is `None` for "no cap" (`--full`). A run with zero violations and
-    /// zero rule findings still exits 0 even when warnings are present.
+    /// lines (or "All N files passed"), then any rule lines — each list capped for humans at
+    /// `max_per_node` via the `[+N more …]` overflow idiom (JSON is never capped; a summary
+    /// count line is always present). `max_per_node` is `None` for "no cap" (`--full`).
     pub fn to_text(&self, max_per_node: Option<usize>) -> (String, i32) {
         let mut out = String::new();
         push_capped(&mut out, &self.violations, max_per_node, "error", |v| {
@@ -327,15 +323,6 @@ impl StrictReport {
                 self.rule_violations.len()
             ));
             code = crate::exit::STRICT_FAILURE;
-        }
-        // NON-FATAL advisories last, clearly separated, and NEVER changing the exit code —
-        // guidance nudges the author toward a bounded annotation without failing the gate.
-        if !self.warnings.is_empty() {
-            out.push('\n');
-            push_capped(&mut out, &self.warnings, max_per_node, "warning", |w| {
-                w.text_line()
-            });
-            out.push_str(&format!("Found {} warning(s)\n", self.warnings.len()));
         }
         (out, code)
     }
@@ -387,14 +374,11 @@ pub(crate) fn check_structured(
     config: &Config,
     excludes: &GlobSet,
 ) -> StrictReport {
-    let (violations, mut warnings, annotated_count, annotated_files) =
-        check_annotations(root, files, config);
+    let (violations, annotated_count, annotated_files) = check_annotations(root, files, config);
     let mut rule_violations = Vec::new();
-    // The dependency graph now feeds TWO signals: the architectural `[rules]` findings (only
-    // when a rule is active) AND the always-on `annotation_on_orphan` advisory that connects
-    // annotations to the graph. Build it when EITHER is wanted — a repo with no rules AND no
-    // annotated files (nothing an orphan advisory could fire on) still does zero graph work.
-    if config.rules.is_active() || !annotated_files.is_empty() {
+    // The dependency graph feeds ONE signal: the architectural `[rules]` findings. No rule
+    // configured, no graph build — a repo with no `[rules]` does zero extra work.
+    if config.rules.is_active() {
         // Same filter as the file walk: the rules graph sees exactly the manifests the
         // tree would show (gitignore/hidden/`tests`/`-I` honored).
         let graph = graph::build(
@@ -408,19 +392,17 @@ pub(crate) fn check_structured(
         // (falling back to the full dir if it lies outside the root, mirroring
         // `check_annotations`' `strip_prefix(root).unwrap_or(path)`).
         let root_canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-        if config.rules.is_active() {
-            rule_violations = rules::evaluate(&graph.packages, &config.rules)
-                .into_iter()
-                .map(|v| RuleViolation {
-                    code: v.code,
-                    message: v.message,
-                    packages: v.packages,
-                    path: v.dir.map(|d| {
-                        crate::util::to_unix_path(d.strip_prefix(&root_canon).unwrap_or(&d))
-                    }),
-                })
-                .collect();
-        }
+        rule_violations = rules::evaluate(&graph.packages, &config.rules)
+            .into_iter()
+            .map(|v| RuleViolation {
+                code: v.code,
+                message: v.message,
+                packages: v.packages,
+                path: v
+                    .dir
+                    .map(|d| crate::util::to_unix_path(d.strip_prefix(&root_canon).unwrap_or(&d))),
+            })
+            .collect();
         // Opt-in gate: a manifest-bearing package that owns annotated files but resolves no
         // concern charter FAILS the check. Modeled on `forbid_orphans` (a `[rules]` toggle →
         // a fatal `RuleViolation`), so it rides the existing rule-violation surface. Off by
@@ -434,14 +416,6 @@ pub(crate) fn check_structured(
             ));
             rule_violations.sort_by(|a, b| a.message.cmp(&b.message));
         }
-        // The always-on cross-file signal: annotated files sitting in an orphaned package.
-        warnings.extend(orphan_annotation_warnings(
-            &graph,
-            &root_canon,
-            &annotated_files,
-        ));
-        // Keep the merged advisories deterministic; package-level warnings are keyed by path.
-        warnings.sort_by(|a, b| a.path.cmp(&b.path));
     }
     StrictReport {
         passed: violations.is_empty() && rule_violations.is_empty(),
@@ -450,20 +424,18 @@ pub(crate) fn check_structured(
         annotated_count,
         violations,
         rule_violations,
-        warnings,
     }
 }
 
 /// The structured verdict for a SINGLE explicitly-named file — annotation linting ONLY. A
 /// lone file has no package neighbourhood, so the directory-scale signals `check_structured`
-/// derives from the dependency graph (`[rules]`, the charter gate, the `annotation_on_orphan`
-/// advisory) do not apply and no graph is built. Reuses the ONE per-file analyzer
-/// [`check_annotations`], so a file checked this way is graded byte-identically to the same
-/// file checked inside its directory; only the composition (no graph) differs. `root` is the
-/// file's parent, used solely to relativize the displayed path.
+/// derives from the dependency graph (`[rules]`, the charter gate) do not apply and no graph
+/// is built. Reuses the ONE per-file analyzer [`check_annotations`], so a file checked this
+/// way is checked byte-identically to the same file checked inside its directory; only the
+/// composition (no graph) differs. `root` is the file's parent, used solely to relativize the
+/// displayed path.
 pub(crate) fn check_file(root: &Path, files: &[PathBuf], config: &Config) -> StrictReport {
-    let (violations, warnings, annotated_count, _annotated_files) =
-        check_annotations(root, files, config);
+    let (violations, annotated_count, _annotated_files) = check_annotations(root, files, config);
     StrictReport {
         passed: violations.is_empty(),
         error_count: violations.len(),
@@ -471,29 +443,23 @@ pub(crate) fn check_file(root: &Path, files: &[PathBuf], config: &Config) -> Str
         annotated_count,
         violations,
         rule_violations: Vec::new(),
-        warnings,
     }
 }
 
-/// Analyze every code file's annotation and produce the sorted structured violations
-/// PLUS the non-fatal advisory warnings. Both lists are sorted by the machine-parseable
-/// `path:line` key so the report is deterministic regardless of walk order.
+/// Analyze every code file's annotation and produce the sorted structured violations, the
+/// count of conforming files, and the root-relative paths of the annotated ones. Violations
+/// are sorted by the machine-parseable `path:line` key so the report is deterministic
+/// regardless of walk order.
 fn check_annotations(
     root: &Path,
     files: &[PathBuf],
     config: &Config,
-) -> (
-    Vec<AnnotationViolation>,
-    Vec<AnnotationWarning>,
-    usize,
-    Vec<String>,
-) {
+) -> (Vec<AnnotationViolation>, usize, Vec<String>) {
     let mut violations: Vec<AnnotationViolation> = Vec::new();
-    let mut warnings: Vec<AnnotationWarning> = Vec::new();
     let mut annotated_count = 0usize;
     // Root-relative unix paths of the files that CARRY an annotation (any comment, even a
-    // non-conforming or vacuous one) — the input to the `annotation_on_orphan` advisory,
-    // which only fires on a package whose files are actually annotated.
+    // non-conforming one) — the input to the `require_package_charter` rule, which only fires
+    // on a package whose files are actually annotated.
     let mut annotated_files: Vec<String> = Vec::new();
     for path in files {
         let Some(lang) = config.language_for_path(path) else {
@@ -505,22 +471,24 @@ fn check_annotations(
         // Per-branch facts, assembled ONCE below (shared `expected`, marker, hint + the
         // tailored suggestion). A conforming annotation is counted and skipped; every other
         // outcome maps to a violation via the shared `defect_parts`.
-        let Some((line, category, defect, found, seed, detail)) =
-            defect_parts(annotation::analyze_file(path, lang))
-        else {
+        let Some((line, category, defect, found, seed, detail)) = defect_parts(
+            annotation::analyze_file(path, lang, config.rules.max_annotation_length),
+        ) else {
             annotated_count += 1;
             annotated_files.push(rel);
             continue;
         };
 
-        // A non-conforming or vacuous outcome still CARRIES a comment (only `Missing` does
-        // not), so the file is annotated for the orphan advisory's purpose — a misleading
-        // annotation on a dead package is exactly what it warns about.
+        // A malformed or over-length outcome still CARRIES a comment (only `Missing` does
+        // not), so the file counts as annotated for the charter rule's purpose — a package
+        // whose files carry annotations is a package that owes a charter.
         if !matches!(category, Category::MissingAnnotation) {
             annotated_files.push(rel.clone());
         }
+        // No stub for an over-length annotation — see `defect_parts`.
         let seed = seed.as_deref().filter(|s| !s.is_empty());
-        let suggestion = tailored_suggestion(&mk, &rel, seed);
+        let suggestion = (!matches!(category, Category::AnnotationTooLong))
+            .then(|| tailored_suggestion(&mk, &rel, seed));
         violations.push(AnnotationViolation {
             path: rel,
             line,
@@ -538,16 +506,15 @@ fn check_annotations(
 
     // A present `.annotation` breadcrumb is an OPT-IN charter, so its shape is enforced by the
     // very same grammar — a malformed one is a violation, never a silent no-op.
-    violations.extend(charter_violations(root, files));
+    violations.extend(charter_violations(root, files, config));
 
     violations.sort_by(|a, b| (&a.path, a.line).cmp(&(&b.path, b.line)));
-    warnings.sort_by(|a, b| a.path.cmp(&b.path));
-    (violations, warnings, annotated_count, annotated_files)
+    (violations, annotated_count, annotated_files)
 }
 
 /// The per-violation facts extracted from one non-`Ok` annotation outcome: the real `line`, the
 /// [`Category`], the machine `defect`, the offending `found` text, a concern `seed` to tailor the
-/// suggestion from, and the vacuous `detail`. A named tuple so both the per-file lint and the
+/// suggestion from, and the human `detail`. A named tuple so both the per-file lint and the
 /// `.annotation` charter check share the one extraction ([`defect_parts`]).
 type DefectParts = (
     usize,
@@ -577,18 +544,21 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
                     annotation::PART_NON_CONCERN,
                     annotation::PART_IO,
                 ],
-                vacuous: Vec::new(),
+                too_long: Vec::new(),
+                max: None,
             },
             raw.map(|r| r.trim().to_string()),
             None,
             None,
         )),
-        // A comment exists but is not the three-field shape: reuse its text as the concern
-        // seed; `missing` names which keyed fields are absent.
+        // A comment exists but does not carry three non-empty fields: reuse its text as the
+        // concern seed; `missing` names which keyed fields are absent or empty, and `detail`
+        // (when the checker set one) says which of those two it was.
         Outcome::Malformed {
             line,
             actual,
             missing,
+            detail,
         } => {
             let seed = annotation::concern_seed(&actual).to_string();
             Some((
@@ -596,35 +566,67 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
                 Category::MalformedAnnotation,
                 Defect {
                     missing,
-                    vacuous: Vec::new(),
+                    too_long: Vec::new(),
+                    max: None,
                 },
                 Some(actual),
                 Some(seed),
-                None,
+                detail,
             ))
         }
-        // FATAL: a box-filling stub — the shape is present but `slot` is hollow. Reuse the real
-        // concern portion as the seed; `reason` names the slot.
-        Outcome::Vacuous {
+        // The shape is right but a field is over the bound. No concern seed, hence no
+        // suggestion: the only text to seed one from is the over-length field itself, and the
+        // other two fields already conform — a stub would restate the defect and replace two
+        // good fields with placeholders. The remedy is to shorten the line.
+        Outcome::TooLong {
             line,
             actual,
-            slot,
-            reason,
+            parts,
+            max,
         } => {
-            let seed = annotation::concern_seed(&actual).to_string();
+            let too_long: Vec<TooLong> = parts
+                .into_iter()
+                .map(|(part, length)| TooLong { part, length })
+                .collect();
+            let detail = too_long_detail(&too_long, max);
             Some((
                 line,
-                Category::AnnotationVacuous,
+                Category::AnnotationTooLong,
                 Defect {
                     missing: Vec::new(),
-                    vacuous: vec![slot],
+                    too_long,
+                    max: Some(max),
                 },
                 Some(actual),
-                Some(seed),
-                Some(reason),
+                None,
+                Some(detail),
             ))
         }
     }
+}
+
+/// The human `detail` for an over-length annotation: every offending field named with its
+/// length, then the bound once — `"the Concern field is 240 characters, over the 200 limit"`.
+/// Rendered once here, at construction, so the JSON `detail` and the TEXT message carry
+/// byte-identical prose. The numbers themselves live structurally in `defect.too_long` /
+/// `defect.max`, which is what an agent branches on; this is only their human rendering, and it
+/// borrows [`annotation`]'s clause join and count pluralization so it reads exactly like the
+/// empty-field prose.
+fn too_long_detail(parts: &[TooLong], max: usize) -> String {
+    let clauses: Vec<String> = parts
+        .iter()
+        .map(|t| {
+            format!(
+                "the {} field is {}",
+                annotation::part_label(t.part),
+                annotation::counted(t.length, "character")
+            )
+        })
+        .collect();
+    format!(
+        "{}, over the {max} limit",
+        annotation::join_clauses(&clauses)
+    )
 }
 
 /// Enforce every `.annotation` charter breadcrumb in the tree's directories against the ONE
@@ -633,15 +635,15 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
 /// are exactly those the tree shows (every ancestor of a code file), so render and enforcement
 /// agree on scope. Reuses the same [`AnnotationViolation`] machinery as the per-file lint; a
 /// charter has no comment marker, so `marker` is empty and `example` is the bare exemplar.
-fn charter_violations(root: &Path, files: &[PathBuf]) -> Vec<AnnotationViolation> {
+fn charter_violations(root: &Path, files: &[PathBuf], config: &Config) -> Vec<AnnotationViolation> {
     let mut out = Vec::new();
     for dir in tree_dirs(root, files) {
         let Some(content) = charter::read_charter_file(&dir) else {
             continue;
         };
-        let Some((line, category, defect, found, seed, detail)) =
-            defect_parts(annotation::analyze_charter(&content))
-        else {
+        let Some((line, category, defect, found, seed, detail)) = defect_parts(
+            annotation::analyze_charter(&content, config.rules.max_annotation_length),
+        ) else {
             continue;
         };
         let dir_rel = crate::util::to_unix_path(dir.strip_prefix(root).unwrap_or(&dir));
@@ -652,15 +654,18 @@ fn charter_violations(root: &Path, files: &[PathBuf]) -> Vec<AnnotationViolation
         };
         // A charter is a bare line, so the suggestion is marker-less (the leading space a
         // marker would add is trimmed); its concern seed comes from whatever the breadcrumb
-        // already carried, falling back to the directory name.
+        // already carried, falling back to the directory name. An over-length charter gets no
+        // stub, for the same reason a file annotation does not — see `defect_parts`.
         let seed = seed.as_deref().filter(|s| !s.is_empty());
         let dir_name = dir
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let suggestion = tailored_suggestion("", &dir_name, seed)
-            .trim_start()
-            .to_string();
+        let suggestion = (!matches!(category, Category::AnnotationTooLong)).then(|| {
+            tailored_suggestion("", &dir_name, seed)
+                .trim_start()
+                .to_string()
+        });
         out.push(AnnotationViolation {
             path,
             line,
@@ -694,90 +699,6 @@ fn tree_dirs(root: &Path, files: &[PathBuf]) -> BTreeSet<PathBuf> {
     dirs
 }
 
-/// The always-on cross-file advisory that connects the tool's two halves — annotations and
-/// the dependency graph. For every package the graph shows ORPHANED (reusing the ONE
-/// [`rules::orphan_packages`] definition, never a fork) that also carries annotated files,
-/// emit one NON-FATAL warning: annotating a dead package misleads agents into treating it as
-/// live infrastructure, so the nudge points at the SoC "should we just delete it?" lens.
-///
-/// Three guards keep this from firing on legitimate orphans (the reason `forbid_orphans` is
-/// opt-in): (1) only orphans whose ECOSYSTEM has real internal structure — at least one
-/// resolved internal edge among its packages — are surfaced, so a lone entry-point binary or
-/// a single-package repo (whose sole package is trivially edgeless) stays silent; (2) only a
-/// package that actually OWNS an annotated file warns (a file is attributed to its deepest
-/// containing package, so a file in a nested live package never counts toward an outer
-/// orphan); (3) a package whose directory IS the scan root is a top-level deliverable (a
-/// scan-root package / distribution wrapper) that is depended-on-by-nothing BY DESIGN — the
-/// "charter" case — and is never flagged. Never fails the check or changes the exit code.
-fn orphan_annotation_warnings(
-    graph: &graph::Graph,
-    root_canon: &Path,
-    annotated_files: &[String],
-) -> Vec<AnnotationWarning> {
-    use std::collections::HashSet;
-
-    use crate::manifest::Ecosystem;
-
-    if annotated_files.is_empty() {
-        return Vec::new();
-    }
-    // Guard 1: ecosystems that actually have internal dependency structure. Only inside one
-    // of these is an orphan anomalous rather than simply "the only package here".
-    let structured: HashSet<Ecosystem> = graph
-        .packages
-        .iter()
-        .filter(|p| p.internal.iter().any(|d| d.resolved))
-        .map(|p| p.ecosystem)
-        .collect();
-    if structured.is_empty() {
-        return Vec::new();
-    }
-    let orphans: Vec<&graph::PackageEdges> = rules::orphan_packages(&graph.packages)
-        .into_iter()
-        .filter(|p| structured.contains(&p.ecosystem))
-        .collect();
-    if orphans.is_empty() {
-        return Vec::new();
-    }
-
-    // Guard 2: keep only orphan packages that actually OWN an annotated file (deepest-ancestor
-    // attribution). The owned-package set is the shared input the require_package_charter rule
-    // also consumes, so "which package owns this annotation" is defined once.
-    let owned = packages_owning_annotations(graph, root_canon, annotated_files);
-
-    let mut warnings: Vec<AnnotationWarning> = orphans
-        .iter()
-        .filter_map(|o| {
-            let dir_rel = rel_dir(&o.dir, root_canon);
-            // Guard 3 (charter carve-out): a package whose directory IS the scan root is a
-            // TOP-LEVEL deliverable — a scan-root package or distribution wrapper — that is
-            // depended-on-by-nothing BY DESIGN, not by accident (the "charter" case). An
-            // empty root-relative dir means `o.dir == root_canon`, so never flag it as an
-            // orphan; only genuinely disconnected INNER packages are anomalous here.
-            if dir_rel.is_empty() {
-                return None;
-            }
-            if !owned.contains(dir_rel.as_str()) {
-                return None;
-            }
-            Some(AnnotationWarning {
-                code: crate::exit::code::ANNOTATION_ON_ORPHAN,
-                path: dir_rel,
-                message: format!(
-                    "package '{}' appears orphaned — nothing in the dependency graph imports \
-                     it and it imports nothing internal — yet its files carry annotations. \
-                     Annotating a dead package misleads agents into treating it as live \
-                     infrastructure; weigh whether it should be deleted rather than annotated \
-                     (SoC: should we just delete it?). Advisory; does not fail the check.",
-                    o.name
-                ),
-            })
-        })
-        .collect();
-    warnings.sort_by(|a, b| a.path.cmp(&b.path));
-    warnings
-}
-
 /// A package directory relative to the checked root, unix slashes — the same relativization
 /// rule-violation `path`s use, so package dirs and annotation `path`s live in one coordinate
 /// space. Falls back to the full canonical dir if it lies outside the root.
@@ -807,8 +728,8 @@ fn dir_contains(dir_rel: &str, file_rel: &str) -> bool {
 }
 
 /// The root-relative dirs of packages that OWN at least one annotated file (deepest-ancestor
-/// attribution), the shared input to BOTH the `annotation_on_orphan` advisory and the
-/// `require_package_charter` rule — so "which package owns this annotation" is defined once.
+/// attribution) — the input to the `require_package_charter` rule, so "which package owns
+/// this annotation" is defined in one place rather than at each consumer.
 fn packages_owning_annotations(
     graph: &graph::Graph,
     root_canon: &Path,
@@ -866,10 +787,12 @@ fn package_charter_violations(
 
 /// Build a FILE-TAILORED suggestion: whatever descriptive text the file already carries
 /// (`seed`, from [`annotation::concern_seed`]) or its stem seeds the `Concern:` field, then
-/// the judgment fields are scaffolded as VACUOUS placeholder slots. Because the
-/// `annotation_vacuous` gate rejects `<…>` placeholders (and placeholder IO operands), the
-/// returned stub is a *failing* annotation until an agent replaces the slots — it scaffolds
-/// the shape without letting the stub be submitted unthought.
+/// the judgment fields are scaffolded as `<…>` placeholder slots. The check is form-only, so
+/// the stub is well-formed: applying it fixes the form defect instead of stacking a second one.
+/// It is not a finished annotation — the `<…>` slots are the two judgments (the boundary and
+/// the contract) an agent still has to write out, and a configured `max_annotation_length`
+/// applies to the stub like any other line (`<concern owned elsewhere>` alone is 25
+/// characters, and a reused `seed` carries whatever length the file already had).
 fn tailored_suggestion(marker: &str, path: &str, seed: Option<&str>) -> String {
     let concern = match seed {
         Some(s) => s.to_string(),

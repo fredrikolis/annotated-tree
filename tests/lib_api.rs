@@ -1,4 +1,4 @@
-// Concern: locks the public library surface — that a consumer can compose config + the walk + marker-based and marker-agnostic annotation extraction, AND assemble a CodebaseMap by hand and render it, without the whole-tool run() | Non-concern: the render glyph details (other suites cover that) | IO: (temp tree / hand-built map, public API) -> asserted values
+// Concern: end-to-end tests for the public library surface — composing config, the walk, both annotation extractors, and a hand-built map through render | Non-concern: render glyph details | IO: (temp tree, public API) -> asserted values
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -108,10 +108,7 @@ fn a_hand_built_map_renders_through_the_exposed_renderer() {
                     "Concern: a hand-built node | Non-concern: the walk | IO: none".into(),
                 ),
                 age_secs: None,
-                tokens: None,
-                symbols: Vec::new(),
             }],
-            tokens: None,
             elided_dirs: 0,
             elided_files: 0,
         }],

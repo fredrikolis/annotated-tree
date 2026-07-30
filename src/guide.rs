@@ -1,4 +1,4 @@
-// Concern: embeds the canonical annotation-writing guide and renders it (with the enforced template/example substituted) for --help and a failing --strict-check | Non-concern: enforcing the format (strict.rs owns the grader) | IO: none
+// Concern: embeds the canonical annotation-writing guide and renders it for --help and --strict-check | Non-concern: enforcing the format | IO: none
 
 use crate::config;
 use crate::strict;
@@ -13,7 +13,7 @@ const GUIDE: &str = include_str!("../docs/annotation-guide.md");
 const MORE_MARKER: &str = "<!-- more -->\n";
 
 /// The guide body with its own first-line annotation stripped and the `{TEMPLATE}` /
-/// `{EXAMPLE}` placeholders replaced by the ENFORCED contract — so the guide and the grader
+/// `{EXAMPLE}` placeholders replaced by the ENFORCED contract — so the guide and the checker
 /// can never advertise a different shape (the same no-drift discipline `--help`/`--strict-check`
 /// already share via [`strict::EXPECTED`]).
 ///
