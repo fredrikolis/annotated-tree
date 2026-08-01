@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for --since/--changed — the changed files, their blast radius, and a git failure as an explicit error | Non-concern: unit-level logic | IO: (temp git repo) -> asserted (stdout, code)
+// Concern: end-to-end tests for --since/--changed — the changed files, their blast radius, and a git failure as an explicit error | Non-concern: unit-level logic | IO: (git repo) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

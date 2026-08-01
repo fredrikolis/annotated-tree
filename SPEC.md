@@ -1,4 +1,4 @@
-<!-- Concern: the invariants annotated-tree must always satisfy, and the vocabulary they quantify over | Non-concern: how any of them is implemented (src/ owns that), why one was adopted or retired (git history owns that), and how to author a good annotation (docs/annotation-guide.md owns that) | IO: none -->
+<!-- Concern: the invariants annotated-tree must always satisfy, and the vocabulary they quantify over | Non-concern: how any is implemented, why one was adopted, or how to author an annotation | IO: none -->
 # SPEC — annotated-tree
 
 The register of decisions annotated-tree is willing to freeze: a vocabulary of product

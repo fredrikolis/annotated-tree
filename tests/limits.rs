@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the runaway-scope cap — over the cap aborts with exit 3, empty stdout, and the override named; --no-limit completes | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, stderr, code)
+// Concern: end-to-end tests for the runaway-scope cap — exceeding it exits 3, empty stdout, the override named; --no-limit completes | Non-concern: unit-level logic | IO: (temp tree) -> asserted output
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

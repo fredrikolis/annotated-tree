@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the per-directory display cap — --max-per-node shows N entries plus one overflow marker, --full expands everything | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, code, json)
+// Concern: end-to-end tests for the per-directory cap — --max-per-node shows N entries plus one overflow marker, --full expands all | Non-concern: unit-level logic | IO: (temp tree) -> asserted output
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

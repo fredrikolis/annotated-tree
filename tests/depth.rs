@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the -L depth cap — what the capped walk visits, counts against --max-files, lists as a row, and feeds to the dependency graph, and that --strict-check stays uncapped | Non-concern: unit-level logic | IO: (temp fixtures) -> asserted (stdout, code)
+// Concern: end-to-end tests for the -L cap — what a capped walk visits, counts, lists and graphs, and that --strict-check ignores it | Non-concern: unit-level logic | IO: (fixtures) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

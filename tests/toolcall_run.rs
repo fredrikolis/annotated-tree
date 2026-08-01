@@ -1,4 +1,4 @@
-// Concern: freezes annotated-bash-wrapper's contract with the tool it wraps — every input line yields exactly one output line, and a file's annotation is appended to the line its path appeared on | Non-concern: which commands get rewritten (toolcall_inject.rs) and the hook wire format (toolcall_hook.rs) | IO: (temp fixture, spawned binary) -> asserted stdout
+// Concern: freezes annotated-bash-wrapper's contract — one line in, one line out, each contract on its path's line | Non-concern: eligibility or the hook wire format | IO: (fixture) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

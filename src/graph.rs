@@ -1,4 +1,4 @@
-// Concern: cross-references every manifest into per-directory dependency edges (internal, external, reverse "used by") | Non-concern: parsing manifest syntax or rendering | IO: (roots, depth cap) -> map<dir, DirDeps>
+// Concern: cross-references every manifest into per-directory dependency edges — internal, external and reverse | Non-concern: parsing manifest syntax or rendering | IO: (roots) -> map<dir, DirDeps>
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};

@@ -1,4 +1,4 @@
-// Concern: read a tool's output on stdin and append each printed path's contract to the line it appeared on, once per path | Non-concern: running the tool (the shell does that) and deciding a command is eligible (inject.rs) | IO: (producer argv, stdin) -> the same bytes with contracts appended
+// Concern: appends each printed path's contract to the line it appeared on, once per path | Non-concern: running the tool, or command eligibility | IO: (producer argv, stdin) -> those bytes, annotated
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;

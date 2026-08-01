@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Concern: resolves the platform-specific prebuilt annotated-tree binary and forwards argv, stdio, and its exit code | Non-concern: the tool's behaviour (adds none — a thin shim) | IO: (process.argv, host platform/arch/libc) -> spawned binary's stdout/stderr + exit code
+// Concern: resolves the prebuilt annotated-tree binary for the host and forwards argv, stdio and its exit code | Non-concern: the tool's behaviour | IO: (argv, platform) -> the binary's stdio + code
 "use strict";
 
 const path = require("path");

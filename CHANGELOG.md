@@ -49,6 +49,21 @@ to [Semantic Versioning](https://semver.org/).
   `Charter` was already exported with no way to obtain one.
 
 ### Changed
+- **BREAKING.** `[rules] max_annotation_length` / `--max-length <N>` now bounds the WHOLE
+  annotation, not each field. The bound is on the line an agent ingests: three fields each
+  under a per-field bound could still add up to a line nobody wants in a map read a hundred
+  times a session. A repo that passes today at 200 per-field will fail — this one did, in 51
+  files, every one of which shortened without losing anything it said. The guide now states
+  the diagnosis: a line that will not fit is an architecture defect, not a compression
+  problem. Do not raise the bound; it is the detector.
+- **BREAKING (JSON).** `defect.too_long` (an array naming each over-length field) is replaced
+  by `defect.length` (the annotation's own length). `defect.max` is unchanged.
+- The maximal-span measurement is gone with it. It existed only because a per-field bound was
+  evadable — prose quoting ` | Non-concern:` split the line early and every measured part came
+  in under the limit. A whole-line count cannot be evaded that way, so the machinery was
+  deleted rather than carried forward.
+- The annotation guide gains a FOLDER CHARTERS section: a `.annotation` states the directory's
+  one job one altitude above its files, and never restates them.
 - `-L LEVEL` caps the **walk**, not just the render (#15). The traversal stops at the deepest
   level the output can show, so `annotated-tree -L 1 ~` no longer walks an entire home directory
   to print one level (measured on one: 2.4 s warm and 253k directory reads, down to 17 ms and

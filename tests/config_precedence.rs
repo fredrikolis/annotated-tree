@@ -1,4 +1,4 @@
-// Concern: end-to-end tests that the runaway-scope cap resolves CLI > env > repo config, and that a garbage env value fails fast | Non-concern: rendering | IO: (env, temp repo, argv) -> asserted (exit code, stderr)
+// Concern: end-to-end tests that the runaway-scope cap resolves CLI > env > repo config, and that a garbage env value fails fast | Non-concern: rendering | IO: (env, argv) -> asserted (code, stderr)
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

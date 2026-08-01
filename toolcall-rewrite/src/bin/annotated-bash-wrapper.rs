@@ -1,4 +1,4 @@
-// Concern: the annotated-bash-wrapper entry point — read a tool's output on stdin, hand it and the producer's argv to the annotator, and translate the result to a process exit | Non-concern: any logic | IO: (argv, stdin) -> annotated stdout + process exit
+// Concern: the entry point — hands stdin and the producer's argv to the annotator, and its result to a process exit | Non-concern: any logic | IO: (argv, stdin) -> annotated stdout + exit
 
 use std::ffi::OsString;
 

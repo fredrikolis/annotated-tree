@@ -1,4 +1,4 @@
-// Concern: end-to-end tests freezing the tool's stdout for the text, JSON, Markdown, strict-check, and guide surfaces — by golden file or structural assertion | Non-concern: unit-level logic | IO: (sample tree, temp fixtures) -> asserted output
+// Concern: end-to-end tests freezing the tool's stdout for the text, JSON, Markdown, strict-check and guide surfaces | Non-concern: unit-level logic | IO: (sample tree, fixtures) -> asserted output
 
 use std::path::PathBuf;
 

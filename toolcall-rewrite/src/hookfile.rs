@@ -1,4 +1,4 @@
-// Concern: add or remove this tool's PreToolUse entry in a Claude Code settings file, leaving every other key in it untouched | Non-concern: deciding what to rewrite (inject.rs) and the hook event format (the binary's stdin path) | IO: (settings path) -> the file with one entry added or removed, and what happened
+// Concern: adds or removes the PreToolUse entry in a settings file, keeping every other key | Non-concern: what to rewrite, or the hook event format | IO: (settings path) -> edited file, outcome
 
 use std::path::{Path, PathBuf};
 

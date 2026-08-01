@@ -1,4 +1,4 @@
-// Concern: the set of files changed since a git ref, as absolute canonical paths, and every git invocation behind it | Non-concern: filtering the tree, or the blast radius of a change | IO: (root, ref) -> Result<set<abs file paths>>
+// Concern: the files changed since a git ref as absolute canonical paths, and every git call behind it | Non-concern: filtering the tree, or a change's blast radius | IO: (root, ref) -> Result<paths>
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

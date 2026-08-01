@@ -1,4 +1,4 @@
-// Concern: end-to-end tests that --config <FILE> replaces config discovery, and that each root of a multi-root run uses its own discovered config | Non-concern: rendering glyphs | IO: (temp trees, flags) -> asserted stdout
+// Concern: end-to-end tests that --config <FILE> replaces discovery, and that each root of a multi-root run uses its own config | Non-concern: rendering glyphs | IO: (temp trees) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

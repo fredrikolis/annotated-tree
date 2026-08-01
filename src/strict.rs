@@ -1,4 +1,4 @@
-// Concern: lint mode — reports every file, charter and sidecar whose annotation is absent, malformed, or over the length bound, plus every sidecar that annotates nothing | Non-concern: the tree view | IO: (files, Config) -> (report, exit_code)
+// Concern: reports each file, charter or sidecar whose annotation is absent, malformed or over the bound, plus dangling sidecars | Non-concern: the tree view | IO: (files, Config) -> (report, exit_code)
 
 //! # Strict-check JSON schema (`--strict-check --format json` and MCP `strict_check`)
 //!
@@ -14,7 +14,7 @@
 //!
 //! `category` maps `Outcome::Missing` -> `missing_annotation`, `Outcome::Malformed` ->
 //! `malformed_annotation` (a keyed field is absent or empty, or the ` | ` structure is
-//! broken), and `Outcome::TooLong` -> `annotation_too_long` (a field is longer than the
+//! broken), and `Outcome::TooLong` -> `annotation_too_long` (the annotation is longer than the
 //! configured bound). `found` carries the raw landing line even for ordinary code (so no
 //! misleading "unrecognized token" category is needed). Every category FAILS the check.
 
@@ -93,27 +93,22 @@ pub(crate) const EXPECTED: Expected = Expected {
 };
 
 /// The machine-coded delta between the required shape and what `found` carries: which named
-/// parts are ABSENT-OR-EMPTY (`missing`) and which are OVER the configured length bound
-/// (`too_long`, with the bound itself in `max`). An agent branches on these stable part
-/// tokens (`concern` | `non_concern` | `io`), never on `message` prose. Each list is omitted
-/// when empty and `max` when absent, per the schema's absent-key convention.
+/// parts are ABSENT-OR-EMPTY (`missing`), and how long the annotation is when it exceeds the
+/// configured bound (`length`, with the bound itself in `max`). An agent branches on the stable
+/// part tokens (`concern` | `non_concern` | `io`) and on these numbers, never on `message` prose.
+/// The list is omitted when empty and each number when absent, per the schema's absent-key
+/// convention.
 #[derive(Debug, Clone, Serialize)]
 pub struct Defect {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub missing: Vec<&'static str>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub too_long: Vec<TooLong>,
+    /// The annotation's length in characters — present only on `annotation_too_long`, where the
+    /// whole line breached the bound. It is not a per-field measurement: the bound is on the line
+    /// an agent ingests.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max: Option<usize>,
-}
-
-/// One over-length annotation part: the stable part token and its length in Unicode scalar
-/// values. The bound it breached lives once per violation in [`Defect::max`], never repeated
-/// per entry.
-#[derive(Debug, Clone, Serialize)]
-pub struct TooLong {
-    pub part: &'static str,
-    pub length: usize,
 }
 
 /// One structured annotation violation. The default TEXT report is one rendering over
@@ -623,7 +618,7 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
                     annotation::PART_NON_CONCERN,
                     annotation::PART_IO,
                 ],
-                too_long: Vec::new(),
+                length: None,
                 max: None,
             },
             raw.map(|r| r.trim().to_string()),
@@ -645,7 +640,7 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
                 Category::MalformedAnnotation,
                 Defect {
                     missing,
-                    too_long: Vec::new(),
+                    length: None,
                     max: None,
                 },
                 Some(actual),
@@ -660,20 +655,16 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
         Outcome::TooLong {
             line,
             actual,
-            parts,
+            length,
             max,
         } => {
-            let too_long: Vec<TooLong> = parts
-                .into_iter()
-                .map(|(part, length)| TooLong { part, length })
-                .collect();
-            let detail = too_long_detail(&too_long, max);
+            let detail = too_long_detail(length, max);
             Some((
                 line,
                 Category::AnnotationTooLong,
                 Defect {
                     missing: Vec::new(),
-                    too_long,
+                    length: Some(length),
                     max: Some(max),
                 },
                 Some(actual),
@@ -684,27 +675,17 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
     }
 }
 
-/// The human `detail` for an over-length annotation: every offending field named with its
-/// length, then the bound once — `"the Concern field is 240 characters, over the 200 limit"`.
+/// The human `detail` for an over-length annotation — `"the annotation is 240 characters, over
+/// the 200 limit"`.
 /// Rendered once here, at construction, so the JSON `detail` and the TEXT message carry
 /// byte-identical prose. The numbers themselves live structurally in `defect.too_long` /
 /// `defect.max`, which is what an agent branches on; this is only their human rendering, and it
 /// borrows [`annotation`]'s clause join and count pluralization so it reads exactly like the
 /// empty-field prose.
-fn too_long_detail(parts: &[TooLong], max: usize) -> String {
-    let clauses: Vec<String> = parts
-        .iter()
-        .map(|t| {
-            format!(
-                "the {} field is {}",
-                annotation::part_label(t.part),
-                annotation::counted(t.length, "character")
-            )
-        })
-        .collect();
+fn too_long_detail(length: usize, max: usize) -> String {
     format!(
-        "{}, over the {max} limit",
-        annotation::join_clauses(&clauses)
+        "the annotation is {}, over the {max} limit",
+        annotation::counted(length, "character")
     )
 }
 

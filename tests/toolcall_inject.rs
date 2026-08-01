@@ -1,4 +1,4 @@
-// Concern: the injector's whole decision surface as one table — every command form it rewrites and every form it leaves alone, checked in a single run that reports all mismatches at once | Non-concern: the annotated output itself (toolcall_run.rs) and the hook wire format (toolcall_hook.rs) | IO: (command strings via --check) -> asserted rewrite or refusal
+// Concern: every command form the injector rewrites and every form it leaves alone, as one table | Non-concern: the annotated output, or the hook wire format | IO: (commands) -> rewrite or refusal
 
 use std::process::Command;
 

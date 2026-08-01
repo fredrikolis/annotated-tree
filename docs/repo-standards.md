@@ -1,4 +1,4 @@
-<!-- Concern: the repo-wide, language-agnostic engineering principles — KISS, YAGNI, SoC, dependency inversion, minimal API, DbC, DRY, fail fast, agent UX, file size | Non-concern: the annotation format, commit-gate mechanics, and prose style (sibling docs own each), plus language- and interface-specific grammar | IO: none -->
+<!-- Concern: the repo-wide, language-agnostic engineering principles every change is judged against | Non-concern: the annotation format, commit gates, prose style, or language-specific rules | IO: none -->
 # Repo Standards
 
 Universal principles. All languages. All paradigms.

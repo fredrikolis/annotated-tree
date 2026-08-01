@@ -1,4 +1,4 @@
-// Concern: what a walk of a root visits: every directory down to the -L cap (manifests one deeper), plus recognized, --include-matched and sidecar-carrying files, less gitignored, hidden, vendor, test, excluded | Non-concern: annotations or graph | IO: (root, Config, excludes, include, depth cap) -> [dir paths] + [file paths]
+// Concern: what a walk of a root visits — directories to the -L cap, plus recognized, opted-in and sidecar-carrying files | Non-concern: annotations or the graph | IO: (root, Config) -> dirs + files
 
 use std::path::{Path, PathBuf};
 

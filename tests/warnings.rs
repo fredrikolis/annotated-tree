@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for manifest parse-error reporting — the stderr warning, --ignore-parsing-errors, and a package-less manifest | Non-concern: unit-level logic | IO: (temp tree) -> asserted (stdout, stderr, code)
+// Concern: end-to-end tests for manifest parse errors — the stderr warning, --ignore-parsing-errors, and a package-less manifest | Non-concern: unit-level logic | IO: (temp tree) -> asserted output
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

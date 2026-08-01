@@ -1,4 +1,4 @@
-<!-- Concern: what toolcall-rewrite does and exactly how to switch it on | Non-concern: the annotation format (docs/annotation-guide.md owns it) and the invariants governing annotated-tree itself (SPEC.md) | IO: none -->
+<!-- Concern: what toolcall-rewrite does and how to switch it on | Non-concern: the annotation format (docs/annotation-guide.md owns it) or annotated-tree's own invariants | IO: none -->
 # toolcall-rewrite
 
 Your agent starts every task by searching. What comes back is a list of paths that says

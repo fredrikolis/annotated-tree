@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the folder-charter contract — resolution, the rendered and JSON surfaces, .annotation form, and the require_package_charter gate | Non-concern: the resolution units, or the annotation grammar | IO: (charter fixtures) -> asserted (stdout, code)
+// Concern: end-to-end tests for the folder charter — resolution, render, JSON, and the require_package_charter gate | Non-concern: the resolution units or the grammar | IO: (fixtures) -> asserted output
 
 use std::path::PathBuf;
 

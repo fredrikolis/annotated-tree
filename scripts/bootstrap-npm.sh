@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Concern: one-time npm bootstrap that publishes an initial placeholder package so later CI releases can authenticate | Non-concern: normal release publishing (RELEASING.md owns that) | IO: (npm credentials) -> published placeholder package
+# Concern: one-time npm bootstrap that publishes the initial placeholder packages | Non-concern: normal release publishing (RELEASING.md owns it) | IO: (npm credentials) -> published placeholders
 # exist before a trusted publisher can be attached — so the 6 packages must be
 # published once by hand. This stages them from a published GitHub Release's binaries
 # and publishes them under your logged-in npm account (`npm login` first; npm will

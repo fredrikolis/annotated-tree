@@ -1,4 +1,4 @@
-// Concern: the PreToolUse entry point — read one hook event and emit an updatedInput rewriting a mapped tool call, or emit nothing; and answer --check for one command | Non-concern: deciding what is eligible (inject.rs owns that) | IO: (hook JSON on stdin | --check ARGV) -> hook JSON, or the rewrite as plain text, always exit 0
+// Concern: the PreToolUse entry point — one hook event in, an updatedInput or nothing out — plus the --check and install verbs | Non-concern: eligibility | IO: (stdin, argv) -> hook JSON, always exit 0
 
 use std::io::{IsTerminal, Read};
 

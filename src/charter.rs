@@ -1,4 +1,4 @@
-// Concern: resolves and represents a directory's concern charter — the three-field line on its render row | Non-concern: locating a file's first comment or checking a line's form (annotation.rs) | IO: (dir, Config) -> Option<Charter>
+// Concern: resolves and represents a directory's concern charter — the three-field line on its render row | Non-concern: a file's first comment, or a line's form | IO: (dir, Config) -> Option<Charter>
 
 use std::path::Path;
 

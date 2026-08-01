@@ -1,4 +1,4 @@
-// Concern: the canonical in-memory codebase map and every filesystem read behind it — a sorted directory/file tree carrying each file's annotation and mtime | Non-concern: output formatting | IO: (root, files, dirs, graph, Config) -> CodebaseMap
+// Concern: the canonical in-memory map and every filesystem read behind it — a sorted tree of each file's annotation and mtime | Non-concern: rendering | IO: (paths, graph, Config) -> CodebaseMap
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};

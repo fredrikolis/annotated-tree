@@ -1,4 +1,4 @@
-// Concern: decide whether a Bash command contains a pipeline that runs a mapped tool and whose stdout the model reads, and if so append the annotator to that pipeline | Non-concern: lexing (lex.rs), which tools are mapped (map.rs), and annotating a line (run.rs) | IO: (command string) -> the rewritten command and the tools it annotates, or None
+// Concern: appends the annotator to a Bash pipeline whose stdout the model reads | Non-concern: lexing, the tool table, or annotating a line | IO: (command) -> rewrite + tools, or None
 
 use crate::lex::{lex, Kind, Token};
 use crate::map::shape_of;

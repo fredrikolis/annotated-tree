@@ -1,4 +1,4 @@
-// Concern: split a Bash command into words and operators, resolving quoting and recording each token's byte span in the original string | Non-concern: deciding what any token means (inject.rs owns that) | IO: (command string) -> tokens + the constructs that make a command unmodellable
+// Concern: splits a Bash command into words and operators, resolving quoting and recording each token's byte span | Non-concern: what any token means | IO: (command) -> tokens + unmodellable constructs
 
 /// A token's role. Words carry their text with quoting resolved; operators carry it verbatim.
 #[derive(Debug, Clone, PartialEq)]

@@ -1,4 +1,4 @@
-// Concern: the one property every rewritten command must hold — same bytes and same exit code as the command the agent actually wrote, except for contracts APPENDED to the end of a line | Non-concern: which commands are eligible (toolcall_inject.rs) and which file a line is about (toolcall_run.rs) | IO: (command strings, fixture tree) -> asserted equivalence against the unrewritten command
+// Concern: asserts a rewrite's bytes and exit code match the original command's, bar appended contracts | Non-concern: eligibility, or which file a line names | IO: (commands, tree) -> asserted equality
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

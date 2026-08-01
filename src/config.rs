@@ -86,7 +86,7 @@ pub struct CliOverrides {
     /// `max_files`: `None` = CLI silent (use config/default); `Some(None)` =
     /// `--full` (cap disabled); `Some(Some(n))` = `--max-per-node n`.
     pub max_per_node: Option<Option<usize>>,
-    /// `--max-length <N>`: the per-part annotation length bound. A plain `Option<usize>` —
+    /// `--max-length <N>`: the whole-annotation length bound. A plain `Option<usize>` —
     /// `None` is "the CLI said nothing; fall through to the config layers". There is no
     /// `--full`-style sentinel; `--max-length 0` is how you turn the shipped bound off,
     /// since 0 normalizes to "no bound" (the same normalization `--max-per-node 0` uses).

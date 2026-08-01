@@ -1,4 +1,4 @@
-// Concern: the MCP stdio server — the crate's one async surface — exposing the map, graph, and strict-check builders as tools | Non-concern: any builder logic | IO: (Cli) -> stdio JSON-RPC server -> exit code
+// Concern: the MCP stdio server — the crate's one async surface — exposing the map, graph and strict builders as tools | Non-concern: any builder logic | IO: (Cli) -> JSON-RPC over stdio + exit code
 //
 // This is the ONLY async module, gated behind the `mcp` cargo feature so the default
 // build links no tokio/rmcp and stays sync (see the `lib.rs` header).

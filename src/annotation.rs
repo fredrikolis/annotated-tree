@@ -1,4 +1,4 @@
-// Concern: extracts a file's first-line annotation and checks its three-field Concern/Non-concern/IO form and per-part length | Non-concern: which files to visit, or what a part means | IO: (file head, Language?, length bound) -> Outcome
+// Concern: extracts a file's first-line annotation and checks its three-field form and total length | Non-concern: which files to visit, or what a field means | IO: (head, Language?, bound) -> Outcome
 
 use std::path::Path;
 
@@ -278,18 +278,22 @@ pub enum Outcome {
         missing: Vec<&'static str>,
         detail: Option<String>,
     },
-    /// All three fields are present and non-empty, but at least one is longer than the bound
-    /// the caller supplied. `parts` names each offending field with its length in Unicode
-    /// scalar values; `max` is the bound it breached.
+    /// All three fields are present and non-empty, but the annotation as a whole is longer than
+    /// the bound the caller supplied. `length` is its size in Unicode scalar values and `max` the
+    /// bound it breached.
+    ///
+    /// The bound is on the WHOLE line, not on each field. What an agent pays for is the line it
+    /// ingests, so that is what is measured — three fields each under a per-field bound could
+    /// still add up to a line no one wants in a map read a hundred times a session.
     TooLong {
         line: usize,
         actual: String,
-        parts: Vec<(&'static str, usize)>,
+        length: usize,
         max: usize,
     },
 }
 
-/// Diagnose `text` against the one annotation format, bounding each part at `max_len`
+/// Diagnose `text` against the one annotation format, bounding the WHOLE annotation at `max_len`
 /// characters when a bound is supplied (`None` raises no length issue at any length). The
 /// strict layer turns this into a message; [`extract`]/[`extract_from`] stay unchanged for
 /// the tree renderer.
@@ -327,12 +331,12 @@ fn check_found(text: String, line: usize, max_len: Option<usize>) -> Outcome {
                 };
             }
             if let Some(max) = max_len {
-                let parts = over_length_parts(&text, max);
-                if !parts.is_empty() {
+                let length = text.trim().chars().count();
+                if length > max {
                     return Outcome::TooLong {
                         line,
                         actual: text,
-                        parts,
+                        length,
                         max,
                     };
                 }
@@ -519,17 +523,6 @@ fn parse_fields(text: &str) -> Option<Fields<'_>> {
 /// on a line that quotes a separator every span grows, so the bound over-measures and fails
 /// LOUDLY. A bound that over-measures annoys an author; one that under-measures lies to them.
 ///
-/// `None` only when the text is not the format at all — the same three tests [`parse_fields`]
-/// makes, so a text it accepted yields spans here.
-fn measured_spans(text: &str) -> Option<[(&str, &'static str); 3]> {
-    let rest = text.strip_prefix(CONCERN_KEY)?;
-    let concern = rest[..rest.rfind(NON_CONCERN_SEP)?].trim();
-    let after_nc = &rest[rest.find(NON_CONCERN_SEP)? + NON_CONCERN_SEP.len()..];
-    let non_concern = after_nc[..after_nc.rfind(IO_SEP)?].trim();
-    let io = after_nc[after_nc.find(IO_SEP)? + IO_SEP.len()..].trim();
-    Some(paired(concern, non_concern, io))
-}
-
 /// Which of the three keyed fields are absent from a comment that failed to parse, by
 /// presence of the key TEXT (this path never sees a field value, so it cannot judge
 /// emptiness — [`empty_parts`] owns that). Case-sensitive: the keys are exact, and `Concern:`
@@ -567,18 +560,6 @@ fn empty_parts(f: &Fields) -> Vec<&'static str> {
 ///
 /// Takes the annotation TEXT, not the parsed [`Fields`]: a field's length is measured over its
 /// maximal extent, which the values a single split produced cannot express (see
-/// [`measured_spans`]).
-fn over_length_parts(text: &str, max: usize) -> Vec<(&'static str, usize)> {
-    measured_spans(text)
-        .expect("over_length_parts: only called on text parse_fields accepted")
-        .into_iter()
-        .filter_map(|(value, part)| {
-            let len = value.trim().chars().count();
-            (len > max).then_some((part, len))
-        })
-        .collect()
-}
-
 /// The three parsed values paired with their stable part tokens, in the format's own order.
 fn part_values<'a>(f: &Fields<'a>) -> [(&'a str, &'static str); 3] {
     paired(f.concern, f.non_concern, f.io)
@@ -914,29 +895,33 @@ mod tests {
     }
 
     #[test]
-    fn a_part_over_the_bound_is_too_long() {
-        // Length is per part, in Unicode scalar values, over the trimmed maximal SPAN. Exactly at
-        // the bound passes; only strictly longer fails; an absent bound never fails.
+    fn an_annotation_over_the_bound_is_too_long() {
+        // The bound is on the WHOLE annotation, in Unicode scalar values. Exactly at the bound
+        // passes; only strictly longer fails; an absent bound never fails at any length.
         let l = lang(Some("//"), None, &[]);
-        let at = "x".repeat(10);
-        let over = "é".repeat(11);
-        let line_at = format!("// Concern: {at} | Non-concern: b | IO: c\n");
-        let line_over = format!("// Concern: {over} | Non-concern: b | IO: c\n");
+        let at = "Concern: aaaa | Non-concern: b | IO: c";
+        let over = "Concern: éééééé | Non-concern: b | IO: c";
+        let bound = at.chars().count();
         assert_eq!(
-            analyze(&line_at, &l, Some(10)),
+            analyze(&format!("// {at}\n"), &l, Some(bound)),
             Outcome::Ok,
-            "a part exactly at the bound passes"
+            "an annotation exactly at the bound passes"
         );
         assert_eq!(
-            analyze(&line_over, &l, None),
+            analyze(&format!("// {over}\n"), &l, None),
             Outcome::Ok,
             "no bound raises no length issue at any length"
         );
-        match analyze(&line_over, &l, Some(10)) {
-            Outcome::TooLong { parts, max, .. } => {
-                // 11 scalar values, 22 bytes — the count is characters, not bytes.
-                assert_eq!(parts, vec![(PART_CONCERN, 11)]);
-                assert_eq!(max, 10);
+        match analyze(&format!("// {over}\n"), &l, Some(bound)) {
+            Outcome::TooLong { length, max, .. } => {
+                // Counted in scalar values, not bytes: `é` is two bytes and one character, so a
+                // byte count would report more than this and fail a line that fits.
+                assert_eq!(length, over.chars().count());
+                assert!(
+                    over.len() > over.chars().count(),
+                    "the two counts differ here"
+                );
+                assert_eq!(max, bound);
             }
             other => panic!("expected TooLong, got {other:?}"),
         }
@@ -958,137 +943,43 @@ mod tests {
     }
 
     #[test]
-    fn a_separator_quoted_before_the_real_key_reports_the_true_length() {
-        // Bypass A: a `Concern` whose prose quotes BOTH separators, colons and all, ahead of
-        // the real keys. The parser splits at the first occurrence, so the parsed `Concern` is
-        // only the 150 characters before the quote — three fields all under 200, exit 0, while
-        // the field the author actually wrote runs 300. The bound measures the MAXIMAL span
-        // (here: everything up to the LAST ` | Non-concern:`), so the 300 is what is reported.
-        let l = lang(Some("//"), None, &[]);
-        let true_concern = format!(
-            "{}{NON_CONCERN_SEP} {}{IO_SEP} {}",
-            "q".repeat(150),
-            "m".repeat(50),
-            "t".repeat(77),
-        );
-        assert_eq!(true_concern.chars().count(), 300);
-        let line = format!("// Concern: {true_concern} | Non-concern: b | IO: c\n");
-        match analyze(&line, &l, Some(200)) {
-            Outcome::TooLong { parts, max, .. } => {
-                assert_eq!(parts, vec![(PART_CONCERN, 300)]);
-                assert_eq!(max, 200);
-            }
-            other => panic!("expected TooLong with the true Concern length, got {other:?}"),
-        }
-        // Parsing is untouched: still the first occurrence, so the parsed fields are the
-        // quote-truncated ones (150 characters of `Concern`, and an `IO` that swallowed the
-        // real keys), and the seed cuts at exactly the boundary the parser did. Only
-        // MEASUREMENT widened — parse and render behaviour are byte-for-byte as before.
-        let bare = format!("Concern: {true_concern} | Non-concern: b | IO: c");
-        let f = parse_fields(&bare).unwrap();
-        assert_eq!(
-            (f.concern, f.non_concern, f.io),
-            (
-                "q".repeat(150).as_str(),
-                "m".repeat(50).as_str(),
-                format!("{} | Non-concern: b | IO: c", "t".repeat(77)).as_str(),
-            )
-        );
-        assert_eq!(concern_seed(&bare), "q".repeat(150));
-    }
-
-    #[test]
-    fn a_separator_quoted_after_the_real_key_reports_the_true_length() {
-        // Bypass B, the mirror image: the ` | IO:` separator is quoted a SECOND time, after
-        // the real one. Measuring from the LAST occurrence would attribute 108 characters to
-        // `non_concern` and 100 to `io` — both under 200, exit 0 — while the text the `IO:`
-        // key actually introduces is 207 long. The `io` span runs from the FIRST ` | IO:` to
-        // the end of the line, so the 207 is reported and nothing is redistributed.
-        let l = lang(Some("//"), None, &[]);
-        let true_io = format!("{} | IO: {}", "m".repeat(100), "t".repeat(100));
-        assert_eq!(true_io.chars().count(), 207);
-        let line = format!("// Concern: c1 | Non-concern: b | IO: {true_io}\n");
-        match analyze(&line, &l, Some(200)) {
-            Outcome::TooLong { parts, max, .. } => {
-                assert_eq!(parts, vec![(PART_IO, 207)]);
-                assert_eq!(max, 200);
-            }
-            other => panic!("expected TooLong with the true IO length, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn a_repeated_non_concern_separator_reports_the_widest_span() {
-        // A second ` | Non-concern:` between the real key and the ` | IO:`. Which occurrence
-        // opens the field is unknowable from the string, so the bound takes the widest reading
-        // — first key to last ` | IO:` — and 216 fails. Measuring from the last occurrence
-        // would see 100 and pass.
-        let l = lang(Some("//"), None, &[]);
-        let line = format!(
-            "// Concern: c | Non-concern: {} | Non-concern: {} | IO: z\n",
-            "x".repeat(100),
-            "y".repeat(100),
-        );
-        match analyze(&line, &l, Some(200)) {
-            Outcome::TooLong { parts, max, .. } => {
-                assert_eq!(parts, vec![(PART_NON_CONCERN, 216)]);
-                assert_eq!(max, 200);
-            }
-            other => panic!("expected TooLong naming non_concern, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn a_non_concern_separator_quoted_inside_io_stays_a_length_finding() {
-        // The `IO` field quotes ` | Non-concern:`, so the LAST ` | Non-concern:` of the line
-        // sits inside `IO` and nothing follows it that carries an ` | IO:` key. Splitting at
-        // that last occurrence makes the line unparseable and mis-reports it as malformed;
-        // first-occurrence parsing keeps it a well-formed line whose `IO` is 216 long, and the
-        // bound says exactly that — a length finding, not a structural one.
-        let l = lang(Some("//"), None, &[]);
-        let true_io = format!("{} | Non-concern: {}", "m".repeat(100), "t".repeat(100));
-        assert_eq!(true_io.chars().count(), 216);
-        let line = format!("// Concern: c | Non-concern: b | IO: {true_io}\n");
-        match analyze(&line, &l, Some(200)) {
-            Outcome::TooLong { parts, max, .. } => {
-                assert_eq!(parts, vec![(PART_IO, 216)]);
-                assert_eq!(max, 200);
-            }
-            other => panic!("expected TooLong naming io, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn on_a_conforming_line_every_measured_span_is_the_parsed_field() {
-        // The safety property the maximal spans rest on: a line holding each separator exactly
-        // once has first == last, so all three spans collapse onto the parsed values and the
-        // bound measures precisely what it measured before. Freezes that this fix is a no-op
-        // on every conforming annotation, this repo's own included.
+    fn a_quoted_separator_cannot_hide_length_from_a_whole_line_bound() {
+        // A per-field bound was evadable: prose carrying ` | Non-concern:` or ` | IO:` with the
+        // colons intact split the line early, so each measured part came in under the bound while
+        // the real line was far over it. Fields had to be measured over maximal spans to close
+        // that. A whole-line bound closes it by construction — however the keys divide the line,
+        // every character is still in it — so these once-evasive shapes are ordinary failures.
         let l = lang(Some("//"), None, &[]);
         for text in [
-            OK,
-            "Concern: a | Non-concern: b | IO: none",
-            "Concern: pipes a | b | Non-concern: x || y | IO: (a) -> b",
-            "Concern: holds Non-concern: as prose | Non-concern: IO: bare | IO: c",
+            // a separator quoted BEFORE the real key
+            format!(
+                "Concern: {}{NON_CONCERN_SEP} {}{IO_SEP} {} | Non-concern: b | IO: c",
+                "q".repeat(150),
+                "m".repeat(50),
+                "t".repeat(77)
+            ),
+            // and quoted AFTER it, inside IO
+            format!(
+                "Concern: c1 | Non-concern: b | IO: {} | IO: {}",
+                "m".repeat(100),
+                "t".repeat(100)
+            ),
+            // a repeated Non-concern key
+            format!(
+                "Concern: c | Non-concern: {} | Non-concern: {} | IO: z",
+                "x".repeat(100),
+                "y".repeat(100)
+            ),
         ] {
-            let f = parse_fields(text).unwrap();
-            assert_eq!(
-                measured_spans(text).unwrap(),
-                part_values(&f),
-                "span and parsed field must agree on: {text}"
-            );
-            assert_eq!(
-                analyze(&format!("// {text}\n"), &l, Some(200)),
-                Outcome::Ok,
-                "a conforming line passes the bound: {text}"
-            );
+            let line = format!("// {text}\n");
+            match analyze(&line, &l, Some(200)) {
+                Outcome::TooLong { length, max, .. } => {
+                    assert_eq!(length, text.chars().count(), "counts the line as written");
+                    assert_eq!(max, 200);
+                }
+                other => panic!("expected TooLong on {text:?}, got {other:?}"),
+            }
         }
-        let f = parse_fields(OK).unwrap();
-        assert_eq!(
-            (f.concern, f.non_concern, f.io),
-            ("runs the loop", "transport", "(Job) -> Result")
-        );
-        assert_eq!(concern_seed(OK), "runs the loop");
     }
 
     #[test]

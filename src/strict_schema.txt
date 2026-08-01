@@ -19,8 +19,8 @@ Violation = {
   "example":    string,            // a canonical self-conforming line for this language (a guaranteed-valid concrete instance)
   "defect":     {                  // machine-coded delta — the template parts at fault (branch on THIS, not message)
     "missing":  [ "concern" | "non_concern" | "io", … ],   // absent OR empty — all three if a broken ` | ` structure yields no part;  key omitted when the list is empty
-    "too_long": [ { "part": "concern" | "non_concern" | "io", "length": integer }, … ],  // over-length fields, length in characters;  key omitted when the list is empty
-    "max":      integer            // the per-part bound the too_long fields breached, once per violation;  key omitted when none applies
+    "length":   integer            // the annotation's length in characters, when it breached the bound;  key omitted when none applies
+    "max":      integer            // the bound it breached, once per violation;  key omitted when none applies
   },
   "expected":   {                  // the canonical contract to converge on (identical on every violation)
     "template":    string,         // "Concern: {what it does} | Non-concern: {what it isn't} | IO: (in) -> out  OR  none"
@@ -57,13 +57,11 @@ field. `annotated_count` of `files_checked` is the progress toward full coverage
 footer prints "N of M files annotated"). Three violation categories FAIL the check and set a
 nonzero exit: `missing_annotation` (no conforming comment), `malformed_annotation` (a comment
 that is not the three-field `Concern: … | Non-concern: … | IO: …` shape, or one of whose fields
-is empty after trimming), and `annotation_too_long` (a field longer than the `[rules]
+is empty after trimming), and `annotation_too_long` (an annotation longer than the `[rules]
 max_annotation_length` / `--max-length` bound, which SHIPS AT 200 and is turned off with
-`--max-length 0` — measured in characters over each field's MAXIMAL span: `Concern` up to the
-LAST ` | Non-concern:`, `Non-concern` from the first of those to the LAST ` | IO:`, `IO` from
-the first of those to the end of the line. On a conforming line each separator occurs once, so a
-span is exactly the trimmed field value; an annotation whose prose QUOTES a separator
-over-measures and fails loudly rather than under-measuring. A field exactly at the bound
+`--max-length 0` — measured in characters over the WHOLE annotation, from `Concern:` to the end
+of the line, because what an agent pays for is the line it reads and not any one field. An
+annotation exactly at the bound
 passes). What a field SAYS is never a finding: the check is form only. A bare, marker-less `.annotation`
 line is enforced by the SAME grammar at both scales and, when malformed or over-length, appears
 as a Violation located at the `.annotation` file that HOLDS it: a directory's charter breadcrumb

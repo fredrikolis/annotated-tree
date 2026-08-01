@@ -1,4 +1,4 @@
-// Concern: the single table of which tools print lines that are about files, and where in a line each one names the file | Non-concern: deciding a command is eligible (inject.rs) and reading a path out of a line (run.rs) | IO: (tool name) -> Shape, or None when the tool is not mapped
+// Concern: the table of which tools print lines about files, and where in a line each names the file | Non-concern: command eligibility, or reading a path from a line | IO: (tool name) -> Shape or None
 
 /// Where in its output line a tool names the file that line is about.
 #[derive(Clone, Copy, PartialEq, Debug)]

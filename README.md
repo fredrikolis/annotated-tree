@@ -1,4 +1,4 @@
-<!-- Concern: what annotated-tree is, when and why to use it, and how to adopt it in a project (CLAUDE.md, git hooks, config) | Non-concern: the exhaustive flag reference (annotated-tree --help owns it) or the extended argument | IO: none -->
+<!-- Concern: what annotated-tree is, when and why to use it, and how to adopt it in a project | Non-concern: the exhaustive flag reference (--help owns it) or the extended argument | IO: none -->
 # annotated-tree [![CI](https://github.com/fredrikolis/annotated-tree/actions/workflows/ci.yml/badge.svg)](https://github.com/fredrikolis/annotated-tree/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/annotated-tree.svg)](https://crates.io/crates/annotated-tree) [![npm](https://img.shields.io/npm/v/annotated-tree.svg)](https://www.npmjs.com/package/annotated-tree) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 `annotated-tree` extends Unix `tree`. Alongside the directory structure it renders each

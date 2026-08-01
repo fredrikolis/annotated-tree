@@ -1,4 +1,4 @@
-// Concern: resolves a file's `<name>.annotation` sidecar — which paths are sidecars, which file each annotates, and the bare line it carries | Non-concern: the annotation grammar (annotation.rs) or a directory's charter (charter.rs) | IO: (path, Config) -> Option<path | body>
+// Concern: resolves `<name>.annotation` sidecars — which paths are sidecars, and what each annotates | Non-concern: the grammar or a directory's charter | IO: (path, Config) -> Option<path|body>
 
 use std::path::{Path, PathBuf};
 

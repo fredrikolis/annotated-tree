@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the per-file `<name>.annotation` sidecar — what it lists, what it suppresses, and how a malformed or dangling one is reported | Non-concern: the resolution units (src/sidecar.rs) or the annotation grammar | IO: (temp fixtures) -> asserted (stdout, stderr, code)
+// Concern: end-to-end tests for the `<name>.annotation` sidecar — what it lists, suppresses, and reports as broken | Non-concern: the resolution units or the grammar | IO: (fixtures) -> asserted output
 
 use annotated_tree::Cli;
 use clap::Parser;

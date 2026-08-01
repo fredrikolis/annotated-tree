@@ -1,4 +1,4 @@
-// Concern: declares the resolved `[rules]` table and evaluates its dependency half (denied edges, forbidden cycles/orphans) | Non-concern: computing edges, enforcing the annotation length bound it declares, or formatting the report | IO: (packages, Rules) -> Vec<Violation>
+// Concern: declares the `[rules]` table and evaluates its dependency half — deny, cycles, orphans | Non-concern: computing edges, or enforcing the bound | IO: (packages, Rules) -> Vec<Violation>
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;

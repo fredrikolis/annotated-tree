@@ -1,4 +1,4 @@
-// Concern: end-to-end tests freezing the form-only annotation check and the per-part length bound | Non-concern: the per-part checker units (src/annotation.rs) or the golden report text | IO: (temp fixtures) -> asserted (stdout, code)
+// Concern: end-to-end tests freezing the annotation form check and the whole-line length bound | Non-concern: the checker units or the golden report text | IO: (fixtures) -> asserted (stdout, code)
 
 use annotated_tree::Cli;
 use clap::Parser;
@@ -151,18 +151,32 @@ fn a_broken_structure_with_every_key_reports_all_three() {
 
 #[test]
 fn the_length_bound_fires_only_past_the_limit() {
-    let under = format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(19));
-    let at = format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(20));
-    let over = format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(21));
+    // The bound is on the WHOLE annotation, so these are measured line-length-first.
+    let body = |n: usize| format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(n));
+    // "Concern: " + n + " | Non-concern: b | IO: c" is n + 34 characters.
+    let under = body(5); // 39
+    let at = body(6); // 40
+    let over = body(7); // 41
 
     let (out, code) = check(
         "len-pass",
-        &["--no-guide", "--max-length", "20"],
+        &["--no-guide", "--max-length", "40"],
         &[("under.rs", &under), ("at.rs", &at)],
     );
     assert_eq!(code, 0, "under and exactly at the bound pass:\n{out}");
 
-    // No flag, no repo config: the built-in layer supplies 200, so a 250-character field fails.
+    let (out, code) = check(
+        "len-over",
+        &["--no-guide", "--max-length", "40"],
+        &[("over.rs", &over)],
+    );
+    assert_eq!(code, 1, "one character past the bound fails:\n{out}");
+    assert!(
+        out.contains("the annotation is 41 characters, over the 40 limit"),
+        "the whole line is counted, and named as such: {out}"
+    );
+
+    // No flag, no repo config: the built-in layer supplies 200.
     let long = format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(250));
     let (out, code) = check("len-default", &["--no-guide"], &[("long.rs", &long)]);
     assert_eq!(
@@ -170,38 +184,15 @@ fn the_length_bound_fires_only_past_the_limit() {
         "the shipped 200 bound applies with no flag:\n{out}"
     );
     assert!(
-        out.contains("the Concern field is 250 characters, over the 200 limit"),
+        out.contains("over the 200 limit"),
         "the default bound is 200: {out}"
-    );
-    assert!(
-        out.contains("`--max-length 0`"),
-        "the report teaches the escape from the shipped bound: {out}"
-    );
-
-    let (out, code) = check(
-        "len-disabled",
-        &["--no-guide", "--max-length", "0"],
-        &[("long.rs", &long), ("over.rs", &over)],
-    );
-    assert_eq!(code, 0, "`--max-length 0` turns the bound off:\n{out}");
-
-    let (out, code) = check(
-        "len-fail",
-        &["--no-guide", "--max-length", "20"],
-        &[("over.rs", &over)],
-    );
-    assert_eq!(code, 1, "one character over the bound fails:\n{out}");
-    assert!(
-        out.contains("annotation is too long")
-            && out.contains("the Concern field is 21 characters, over the 20 limit"),
-        "the message names the field, its length, and the bound: {out}"
     );
 }
 
 #[test]
 fn the_length_bound_is_machine_readable_and_covers_charters() {
     // A `.annotation` charter line is held to the SAME bound as a file annotation, and the
-    // structured surface names the offending part with its length plus the bound once.
+    // structured surface carries the annotation's length plus the bound, as two numbers.
     let long = "z".repeat(30);
     let (json, code) = check(
         "len-json",
@@ -225,9 +216,13 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
     assert_eq!(v["category"], serde_json::json!("annotation_too_long"));
     assert_eq!(v["language"], serde_json::json!("charter"));
     assert_eq!(
-        v["defect"]["too_long"],
-        serde_json::json!([{ "part": "concern", "length": 30 }]),
-        "the offending part and its length: {v}"
+        v["defect"]["length"],
+        serde_json::json!(
+            "Concern: zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz | Non-concern: b | IO: c"
+                .chars()
+                .count()
+        ),
+        "the annotation's own length, not a field's: {v}"
     );
     assert_eq!(
         v["defect"]["max"],
@@ -235,8 +230,8 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
         "the bound is one number per violation: {v}"
     );
     assert!(
-        v.get("suggestion").is_none(),
-        "no stub is emitted for an over-length field — the key is absent, not null: {v}"
+        v["defect"].get("too_long").is_none(),
+        "the retired per-field list is gone: {v}"
     );
 }
 

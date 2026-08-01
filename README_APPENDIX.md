@@ -1,4 +1,4 @@
-<!-- Concern: the extended argument for annotated-tree — the infinite-context objection, related work, and what is unproven — plus its bibliography | Non-concern: what the tool is or how to run it | IO: none -->
+<!-- Concern: the extended argument for annotated-tree — the infinite-context objection, related work, what is unproven — plus its bibliography | Non-concern: what the tool is or how to run it | IO: none -->
 # annotated-tree: the deeper argument
 
 The extended case for [annotated-tree](README.md): read it when the question is "why

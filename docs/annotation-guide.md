@@ -14,12 +14,22 @@ BREVITY — every field states WHAT, never why, how, or when: no mechanism, rati
 conditions in any of them. Naming WHERE an excluded concern lives is OPTIONAL — the tree
 often shows the owner, so add the pointer only when it is not obvious from the map. An
 agent ingests a whole workspace's map in one pass; brevity buys that. `[rules]
-max_annotation_length` (or `--max-length <N>`) bounds each field mechanically — 200
-characters by default; raise it there, or `--max-length 0` to disable.
+max_annotation_length` (or `--max-length <N>`) bounds the whole annotation — 200
+characters by default; `--max-length 0` disables it. Do not raise it — the bound is the
+detector, and a bigger number only hides what it found. A line that will not fit is an
+ARCHITECTURE defect: write it denser AND split the file that owns two jobs.
 
 GOOD   // Concern: memoizes lookups | Non-concern: eviction (LRU owns it) | IO: (Key) -> Value
 FAILS  // Concern: memoizes lookups | IO: (Key) -> Value
 <!-- more -->
+FOLDER CHARTERS — a `.annotation` states the DIRECTORY's one job, one altitude above its files.
+  Never enumerate or restate what the files inside say. The map already shows them.
+  Repeating a file's line means the charter sits too low. Raise it.
+  Two file jobs joined by "and" is the tell. Name the one thing they serve.
+  The charter is what the files have in common, not their sum.
+  A charter that will not fit is restating its files. Raise the altitude first. If it still
+  will not fit at the right altitude, the DIRECTORY owns more than one job. Split it.
+
 HOW TO FIND THE NON-CONCERN
   Ask: what would an agent WRONGLY assume this file does? Negate that. Name where the work
   lives instead only when the owner is not already obvious from the tree.

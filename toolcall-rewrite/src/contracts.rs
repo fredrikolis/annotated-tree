@@ -1,4 +1,4 @@
-// Concern: the per-process cache mapping a path to its first-line annotation, or a directory to its charter | Non-concern: defining or parsing the annotation grammar (the annotated-tree library owns both), and reading a path out of a line (run.rs) | IO: (path) -> annotation text
+// Concern: the per-process cache from a path to its annotation, or a directory to its charter | Non-concern: the annotation grammar, or reading a path out of a line | IO: (path) -> annotation text
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

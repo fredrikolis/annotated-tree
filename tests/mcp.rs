@@ -1,4 +1,4 @@
-// Concern: end-to-end test driving the built --mcp server through one stdio JSON-RPC round-trip — the envelope plus the map and strict tool payloads | Non-concern: re-freezing the sync builders | IO: (fixture tree, JSON-RPC requests) -> asserted responses
+// Concern: end-to-end test driving the --mcp server through a JSON-RPC round-trip — envelope, map and strict payloads | Non-concern: re-freezing the sync builders | IO: (requests) -> asserted responses
 //
 // The round-trip is DETERMINISTIC by construction: it reads line-delimited JSON-RPC
 // responses on a drainer thread and waits for the specific ids it expects, bounded

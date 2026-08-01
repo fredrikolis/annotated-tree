@@ -1,4 +1,4 @@
-// Concern: the library surface — run(), which drives config, the walk, and either tree or strict output, plus the walk/annotation/config/map/render primitives | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code
+// Concern: the library surface — run(), which drives config, the walk and either tree or strict output, plus the reusable primitives | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code
 //
 // This tool is a one-shot batch traversal of the local filesystem, so it is
 // deliberately synchronous: the `ignore` crate parallelizes the walk across a thread

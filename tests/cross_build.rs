@@ -1,4 +1,4 @@
-// Concern: end-to-end test that a binary built without the mcp feature keeps the same CLI surface and fails --mcp with a rebuild message | Non-concern: unit-level logic | IO: (argv) -> asserted (stdout, stderr, code)
+// Concern: end-to-end test that a binary built without the mcp feature keeps the same CLI surface and fails --mcp with a rebuild message | Non-concern: unit-level logic | IO: (argv) -> asserted output
 
 // The e2e case below is compiled out under an `mcp`-feature build (it is gated on the
 // ABSENCE of the feature), so the helpers are dead code there — gate them to match,

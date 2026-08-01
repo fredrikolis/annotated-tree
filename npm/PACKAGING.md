@@ -1,4 +1,4 @@
-<!-- Concern: how the npm `annotated-tree` channel is structured and published (maintainer internals) | Non-concern: tool usage (see the package README) or release mechanics for other channels (see RELEASING.md) | IO: none -->
+<!-- Concern: how the npm `annotated-tree` channel is structured and published | Non-concern: tool usage, or release mechanics for other channels (RELEASING.md owns them) | IO: none -->
 # npm channel — packaging internals
 
 Maintainer notes for how `npx annotated-tree` is packaged and published. The npmjs.com

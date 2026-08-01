@@ -1,4 +1,4 @@
-// Concern: print one build-time line pointing a Claude Code user at the hook that puts contracts in their agent's own tool results, and only when they would benefit from it | Non-concern: installing anything (`--install-hook` does that, and only when a user runs it) and every other build step | IO: (HOME, Claude settings) -> at most one cargo warning
+// Concern: prints one build-time line pointing a Claude Code user at the toolcall hook | Non-concern: installing it, or any other build step | IO: (HOME, Claude settings) -> at most one cargo warning
 
 use std::path::PathBuf;
 

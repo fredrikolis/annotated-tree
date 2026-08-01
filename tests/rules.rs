@@ -1,4 +1,4 @@
-// Concern: end-to-end tests that the [rules] deny and forbid_cycles flags reach the --strict-check report with exit 1, over dedicated fixtures | Non-concern: the pure rule algorithms | IO: (rules fixtures) -> asserted (stdout, code)
+// Concern: end-to-end tests that the [rules] deny and forbid_cycles flags reach the --strict-check report with exit 1 | Non-concern: the pure rule algorithms | IO: (fixtures) -> asserted (stdout, code)
 
 use std::path::PathBuf;
 

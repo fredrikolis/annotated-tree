@@ -1,4 +1,4 @@
-// Concern: freezes the PreToolUse JSON contract — the shape Claude Code parses, and the exit code it reads — because that consumer cannot be coordinated with a change here | Non-concern: which commands are eligible (toolcall_inject.rs) and what the annotated output looks like (toolcall_run.rs) | IO: (hook event JSON on stdin) -> asserted stdout shape + exit status
+// Concern: freezes the PreToolUse contract — the shape Claude Code parses and the exit code it reads | Non-concern: eligibility, or the annotated output | IO: (hook JSON) -> asserted stdout + code
 
 use std::io::Write;
 use std::process::{Command, Stdio};
