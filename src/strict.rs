@@ -57,8 +57,8 @@ pub enum Category {
     /// | IO: …` fields — a keyed field is absent, a field is empty after trimming, or the
     /// ` | ` structure is broken (`Outcome::Malformed`).
     MalformedAnnotation,
-    /// All three fields are present and non-empty, but at least one is longer than the
-    /// configured `[rules] max_annotation_length` / `--max-length` bound
+    /// All three fields are present and non-empty, but the annotation as a whole is longer
+    /// than the configured `[rules] max_annotation_length` / `--max-length` bound
     /// (`Outcome::TooLong`). Distinct from `MalformedAnnotation` so an agent can tell "not
     /// the shape" from "the shape, but too wordy to ingest".
     AnnotationTooLong,
@@ -73,8 +73,9 @@ pub enum Category {
 /// copies existed when the bound changed from per-field to whole-annotation; five went stale,
 /// including the user-facing help — the same no-drift reason [`EXPECTED`] feeds the guide.
 pub const LENGTH_RULE: &str = "Fail --strict-check when an annotation is longer than N \
-    characters, counted over the whole line rather than any one field. 200 by default; 0 turns \
-    the bound off. Overrides `[rules] max_annotation_length`.";
+    characters, counted over the whole annotation rather than any one field, with the comment \
+    marker excluded. 200 by default; 0 turns the bound off. Overrides \
+    `[rules] max_annotation_length`.";
 
 /// The canonical annotation shape an agent should converge on — the fill-in `template`
 /// plus which named parts are ENFORCED (`required`) vs ADVISED (`recommended`). Every
@@ -115,8 +116,8 @@ pub struct Defect {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub missing: Vec<&'static str>,
     /// The annotation's length in characters — present only on `annotation_too_long`, where the
-    /// whole line breached the bound. It is not a per-field measurement: the bound is on the line
-    /// an agent ingests.
+    /// annotation as a whole breached the bound. It is not a per-field measurement: the bound is
+    /// on the contract an agent ingests, with the comment marker excluded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub length: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -142,8 +143,8 @@ pub struct AnnotationViolation {
     /// per-language exemplar) — a guaranteed-valid concrete instance, distinct from the
     /// abstract `expected.template` and the file-tailored `suggestion`.
     pub example: String,
-    /// The machine-coded delta — which template parts are absent/empty, and which are over
-    /// the length bound. An agent acts on this, not on `message`.
+    /// The machine-coded delta — which template parts are absent/empty, and how long the
+    /// annotation is when it is over the length bound. An agent acts on this, not on `message`.
     pub defect: Defect,
     /// The canonical annotation contract (template + required/recommended parts).
     pub expected: Expected,
@@ -157,12 +158,12 @@ pub struct AnnotationViolation {
     /// stack a second failure — but a configured length bound still applies to it, and the
     /// `<…>` slots are unfilled judgments an agent has to write out. Absent for
     /// `annotation_too_long`: the only text available to seed a stub from is the over-length
-    /// field itself, and the other two fields are already conforming.
+    /// annotation itself, so a stub would restate the defect.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggestion: Option<String>,
     /// Human prose for the cases where the machine fields alone would mislead: which fields are
-    /// present but empty, that the ` | ` structure is broken, or which fields are over the bound
-    /// and by how much. Absent (not null) when the machine fields suffice, per the schema's
+    /// present but empty, that the ` | ` structure is broken, or how far the annotation is over
+    /// the bound. Absent (not null) when the machine fields suffice, per the schema's
     /// key-presence convention.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
@@ -335,8 +336,8 @@ impl StrictReport {
             ));
             // The length bound ships ON, so an adopter can hit it having configured nothing:
             // name the escape in the same output that failed them. Once per report, not per
-            // violation — the remedy is identical for every over-length field, and repeating it
-            // on each line would drown the findings.
+            // violation — the remedy is identical for every over-length annotation, and repeating
+            // it on each line would drown the findings.
             if let Some(max) = self.violations.iter().find_map(|v| v.defect.max) {
                 out.push_str(&format!(
                     "note: the annotation length bound is {max} — change it with `[rules] max_annotation_length = <N>` or `--max-length <N>`, or disable it with `--max-length 0`\n"
@@ -659,10 +660,10 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
                 detail,
             ))
         }
-        // The shape is right but a field is over the bound. No concern seed, hence no
-        // suggestion: the only text to seed one from is the over-length field itself, and the
-        // other two fields already conform — a stub would restate the defect and replace two
-        // good fields with placeholders. The remedy is to shorten the line.
+        // The shape is right but the annotation as a whole is over the bound. No concern seed,
+        // hence no suggestion: the only text to seed one from is the over-length annotation
+        // itself — a stub would restate the defect and replace conforming fields with
+        // placeholders. The remedy is to shorten the line.
         Outcome::TooLong {
             line,
             actual,
@@ -689,10 +690,9 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
 /// The human `detail` for an over-length annotation — `"the annotation is 240 characters, over
 /// the 200 limit"`.
 /// Rendered once here, at construction, so the JSON `detail` and the TEXT message carry
-/// byte-identical prose. The numbers themselves live structurally in `defect.too_long` /
+/// byte-identical prose. The numbers themselves live structurally in `defect.length` /
 /// `defect.max`, which is what an agent branches on; this is only their human rendering, and it
-/// borrows [`annotation`]'s clause join and count pluralization so it reads exactly like the
-/// empty-field prose.
+/// borrows [`annotation`]'s count pluralization so `1 character` never renders as `1 characters`.
 fn too_long_detail(length: usize, max: usize) -> String {
     format!(
         "the annotation is {}, over the {max} limit",

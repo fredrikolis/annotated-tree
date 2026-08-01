@@ -203,14 +203,14 @@ fn strict_check_json_emits_structured_violations() {
         py["example"]
     );
     // The machine-coded delta an agent branches on: the comment carries NONE of the three
-    // keyed fields, so all are missing; `too_long`/`max` are absent when they do not apply.
+    // keyed fields, so all are missing; `length`/`max` are absent when they do not apply.
     assert_eq!(
         py["defect"]["missing"],
         serde_json::json!(["concern", "non_concern", "io"]),
         "defect names the missing fields, not prose"
     );
     assert!(
-        py["defect"].get("too_long").is_none() && py["defect"].get("max").is_none(),
+        py["defect"].get("length").is_none() && py["defect"].get("max").is_none(),
         "empty/absent defect fields are omitted (absent-key convention)"
     );
     // The contract to converge on: the fill-in template plus which fields are enforced.

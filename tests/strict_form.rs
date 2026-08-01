@@ -1,4 +1,4 @@
-// Concern: end-to-end tests freezing the annotation form check and the whole-line length bound | Non-concern: the checker units or the golden report text | IO: (fixtures) -> asserted (stdout, code)
+// Concern: end-to-end tests freezing the annotation form check and whole-annotation length bound | Non-concern: the checker units or the golden report text | IO: (fixtures) -> asserted (stdout, code)
 
 use annotated_tree::Cli;
 use clap::Parser;
@@ -151,7 +151,7 @@ fn a_broken_structure_with_every_key_reports_all_three() {
 
 #[test]
 fn the_length_bound_fires_only_past_the_limit() {
-    // The bound is on the WHOLE annotation, so these are measured line-length-first.
+    // The bound is on the WHOLE annotation, marker excluded, so these are sized by that total.
     let body = |n: usize| format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(n));
     // "Concern: " + n + " | Non-concern: b | IO: c" is n + 34 characters.
     let under = body(5); // 39
@@ -173,7 +173,7 @@ fn the_length_bound_fires_only_past_the_limit() {
     assert_eq!(code, 1, "one character past the bound fails:\n{out}");
     assert!(
         out.contains("the annotation is 41 characters, over the 40 limit"),
-        "the whole line is counted, and named as such: {out}"
+        "the whole annotation is counted, and named as such: {out}"
     );
 
     // No flag, no repo config: the built-in layer supplies 200.
@@ -198,7 +198,8 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
         "len-json",
         &["--format", "json", "--max-length", "20"],
         &[
-            ("ok.rs", "// Concern: a | Non-concern: b | IO: c\n"),
+            // Short fields, but 35 characters of line: over the bound as a whole.
+            ("over.rs", "// Concern: a | Non-concern: b | IO: c\n"),
             (
                 ".annotation",
                 &format!("Concern: {long} | Non-concern: b | IO: c\n"),
@@ -230,8 +231,27 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
         "the bound is one number per violation: {v}"
     );
     assert!(
-        v["defect"].get("too_long").is_none(),
-        "the retired per-field list is gone: {v}"
+        v["defect"]
+            .as_object()
+            .is_some_and(|d| d.len() == 2 && d.contains_key("length") && d.contains_key("max")),
+        "two numbers and nothing else — no per-field list, no empty `missing`: {v}"
+    );
+    assert!(
+        v.get("suggestion").is_none(),
+        "no stub is emitted for an over-length annotation — the key is absent, not null: {v}"
+    );
+    // Charters and file annotations reach that suppression by separate paths, so asserting it on
+    // the charter alone leaves the ordinary case — a commented file — unguarded.
+    let file = doc["violations"]
+        .as_array()
+        .expect("violations array")
+        .iter()
+        .find(|v| v["path"] == serde_json::json!("over.rs"))
+        .expect("the over-length file annotation surfaces as a violation");
+    assert_eq!(file["category"], serde_json::json!("annotation_too_long"));
+    assert!(
+        file.get("suggestion").is_none(),
+        "nor for an over-length FILE annotation — the key is absent, not null: {file}"
     );
 }
 
@@ -257,8 +277,8 @@ fn malformed_outranks_too_long() {
         "structure outranks length: {v}"
     );
     assert!(
-        v["defect"].get("too_long").is_none(),
-        "one violation carries one defect kind: {v}"
+        v["defect"].get("length").is_none() && v["defect"].get("max").is_none(),
+        "one violation carries one defect kind — no length numbers on a malformed line: {v}"
     );
 }
 

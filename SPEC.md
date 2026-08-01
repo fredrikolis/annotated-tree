@@ -30,8 +30,8 @@ an exclusion criterion the Report states and a reader can apply to any path.
 ## CHECK
 
 **CHECK1** — Every issue a Report raises about a file's or directory's Annotation is that one of
-its parts is absent, is empty after trimming whitespace, or is longer than a bound its caller
-gives.
+its parts is absent, that one of its parts is empty after trimming whitespace, or that the whole
+Annotation is longer than a bound its caller gives.
 
 ## CORE
 

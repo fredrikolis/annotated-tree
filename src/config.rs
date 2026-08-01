@@ -24,8 +24,8 @@ struct RawConfig {
 }
 
 /// Lint rules parsed from a `[rules]` table. Declarative and regex-free: `deny` names package
-/// pairs, the flags toggle structural checks, `max_annotation_length` bounds each annotation
-/// part.
+/// pairs, the flags toggle structural checks, `max_annotation_length` bounds the whole
+/// annotation line.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawRules {

@@ -282,9 +282,10 @@ pub enum Outcome {
     /// the bound the caller supplied. `length` is its size in Unicode scalar values and `max` the
     /// bound it breached.
     ///
-    /// The bound is on the WHOLE line, not on each field. What an agent pays for is the line it
-    /// ingests, so that is what is measured — three fields each under a per-field bound could
-    /// still add up to a line no one wants in a map read a hundred times a session.
+    /// The bound is on the WHOLE annotation, not on each field. What an agent pays for is the
+    /// contract it ingests, so that is what is measured — three fields each under a per-field
+    /// bound could still add up to an annotation no one wants in a map read a hundred times a
+    /// session.
     TooLong {
         line: usize,
         actual: String,
@@ -536,22 +537,14 @@ fn empty_parts(f: &Fields) -> Vec<&'static str> {
         .collect()
 }
 
-/// Which of the three fields are longer than `max`, each with its length, in the same
-/// Concern -> Non-concern -> IO order. Measured in Unicode scalar values over each field's
-/// trimmed [`measured_spans`] extent — never the key, the ` | ` separators alone, or the whole
-/// line — so the bound means the same thing in every language. A field exactly at `max` passes;
-/// only longer fails.
-///
-/// Takes the annotation TEXT, not the parsed [`Fields`]: a field's length is measured over its
-/// maximal extent, which the values a single split produced cannot express (see
 /// The three parsed values paired with their stable part tokens, in the format's own order.
 fn part_values<'a>(f: &Fields<'a>) -> [(&'a str, &'static str); 3] {
     paired(f.concern, f.non_concern, f.io)
 }
 
 /// Three field texts paired with their stable part tokens, in the format's own order — the ONE
-/// ordered table every per-part check iterates (the emptiness check over parsed values, the
-/// length check over maximal spans), so they cannot disagree on order.
+/// place that pairing is written down. Every per-part list is built by iterating it (today, the
+/// emptiness check's `missing` names), so a list can never order or label parts its own way.
 fn paired<'a>(concern: &'a str, non_concern: &'a str, io: &'a str) -> [(&'a str, &'static str); 3] {
     [
         (concern, PART_CONCERN),
@@ -575,9 +568,9 @@ fn empty_detail(parts: &[&'static str]) -> String {
     )
 }
 
-/// Join prose fragments as an English list: `A`, `A and B`, `A, B and C`. The ONE joiner every
-/// annotation diagnostic uses — this module's empty-field prose and [`crate::strict`]'s
-/// over-length prose — so two messages about the same three fields cannot punctuate differently.
+/// Join prose fragments as an English list: `A`, `A and B`, `A, B and C`. The ONE joiner the
+/// empty-field prose uses, so two messages about the same three fields cannot punctuate
+/// differently.
 pub(crate) fn join_clauses<S: AsRef<str>>(items: &[S]) -> String {
     match items {
         [] => String::new(),
@@ -591,8 +584,7 @@ pub(crate) fn join_clauses<S: AsRef<str>>(items: &[S]) -> String {
 }
 
 /// A counted noun for prose: `1 character`, `21 characters` — the pluralization the
-/// over-length diagnostic renders a field's length with. Kept beside [`join_clauses`], the
-/// other prose helper the diagnostics share.
+/// over-length diagnostic renders the annotation's length with.
 pub(crate) fn counted(n: usize, noun: &str) -> String {
     if n == 1 {
         format!("{n} {noun}")
