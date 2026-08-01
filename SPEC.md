@@ -15,8 +15,8 @@ the tests — lives with the enforcement, not here.
   it deliberately is not, and its inputs and outputs.
 - **Report** — everything a run emits about a Workspace on any channel a caller can observe,
   its exit status included.
-- **accessory tool** — a program shipped alongside that helps an agent consume Annotations, such
-  as a wrapper that adds them to another program's output. It performs no run and emits no Report,
+- **accessory** — anything annotated-tree offers that helps an agent consume Annotations outside a
+  Report, such as adding them to another program's output. It performs no run and emits no Report,
   so nothing below governs it.
 
 ## TREE

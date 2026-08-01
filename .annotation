@@ -1,1 +1,1 @@
-Concern: gives an agent a map of a workspace it can route from without opening files, and keeps it honest | Non-concern: writing or judging annotations | IO: (root, stdin) -> map or verdict
+Concern: gives an agent a map of a workspace it can route from without opening files, and keeps it honest | Non-concern: writing or judging annotations | IO: (root, stdin) -> annotations or verdict
