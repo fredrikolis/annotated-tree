@@ -43,7 +43,7 @@ pub struct PackageEdges {
 /// failure is surfaced as a located, dispatchable diagnostic — a stable `code`, the
 /// offending `path`, and a human `message` — mirroring [`crate::strict::AnnotationViolation`]
 /// so an agent branches on `code` instead of scraping prose. The CLI prints `message` to
-/// stderr; the `--format json` / MCP `map` envelope carries the whole struct in `warnings`.
+/// stderr; the `--format json` envelope carries the whole struct in `warnings`.
 #[derive(Debug, Clone, Serialize)]
 pub struct Warning {
     pub code: &'static str,
@@ -77,7 +77,7 @@ struct Package {
 /// is therefore exactly "what's shown": a shallow render gives a shallower graph of the same
 /// tree (a package below the cutoff is not a row and contributes no edges), without a
 /// visible row losing the dependency facts it is there to state. `None` scans every depth
-/// (`--strict-check`'s `[rules]` graph and the MCP dependency tools, neither of which is a
+/// (`--strict-check`'s `[rules]` graph, which is not a
 /// rendered view). A multi-root run drives filter and cap from the PRIMARY (first) root's
 /// ignore settings, matching how the primary root's config already governs the shared
 /// render/rules choices.
@@ -295,7 +295,7 @@ fn collect_manifests(
             Ok(parsed) => out.push((parser.ecosystem(), dir.to_path_buf(), parsed)),
             // The `message` embeds the path (via the parser's `with_context`) so stderr
             // reads exactly as before; `path` is the same manifest as a structured field
-            // for the JSON/MCP `warnings` array to dispatch on.
+            // for the JSON `warnings` array to dispatch on.
             Err(err) => warnings.push(Warning {
                 code: crate::exit::code::MANIFEST_PARSE_ERROR,
                 path: path.display().to_string(),

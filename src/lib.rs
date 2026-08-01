@@ -49,7 +49,7 @@
 // `walk`/`annotation`/`config`/`util` primitives a downstream consumer composes, and the map +
 // render DATA surface (`CodebaseMap`/`DirNode`/`FileNode` + the `Renderer`) re-exported below so a
 // consumer can assemble and render its own tree. Every module stays `pub(crate)` — only the
-// curated re-exports are public, so the graph/strict/MCP BUILDER machinery stays internal.
+// curated re-exports are public, so the graph/strict BUILDER machinery stays internal.
 pub mod annotation;
 pub(crate) mod changed;
 pub(crate) mod charter;
@@ -60,7 +60,6 @@ pub(crate) mod githook;
 pub(crate) mod graph;
 pub(crate) mod guide;
 pub(crate) mod manifest;
-pub(crate) mod mcp;
 pub(crate) mod model;
 pub(crate) mod render;
 pub(crate) mod rules;
@@ -101,9 +100,9 @@ use config::{CliOverrides, Config};
 use walk::LimitExceeded;
 
 /// A build-pipeline failure, split so each caller renders it for its own surface and
-/// classifies it into the right dispatch code: `Limit` is the runaway-scope trip (CLI →
-/// exit [`exit::RUNAWAY_SCOPE`] + [`exit::code::SCOPE_EXCEEDED`]; MCP → a tool error that
-/// keeps the server alive), `Git` is a `--since` git failure ([`exit::code::GIT_ERROR`],
+/// classifies it into the right dispatch code: `Limit` is the runaway-scope trip (exit
+/// [`exit::RUNAWAY_SCOPE`] + [`exit::code::SCOPE_EXCEEDED`]), `Git` is a `--since` git
+/// failure ([`exit::code::GIT_ERROR`],
 /// exit [`exit::PRECONDITION`]), and `Other` is any remaining precondition failure (bad
 /// config, I/O → [`exit::code::PRECONDITION`]). Git is split from `Other` only so the two
 /// map to distinct, caller-actionable codes.
@@ -114,7 +113,7 @@ pub(crate) enum BuildError {
 }
 
 /// A classified run failure: its process exit code, a stable string dispatch `code` (from
-/// [`exit::code`] — the JSON-envelope / MCP counterpart to the integer exit code), a human
+/// [`exit::code`] — the JSON-envelope counterpart to the integer exit code), a human
 /// message, and the offending path when known. One object per failure class so an agent
 /// branches on `code`, never on prose — mirroring how [`strict::AnnotationViolation`]
 /// carries a structured, dispatchable diagnostic rather than one opaque string.
@@ -207,15 +206,6 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
         return Ok(exit::SUCCESS);
     }
 
-    // MCP server mode is the one async surface. It owns the whole process (a
-    // long-lived stdio server), so it is handled first, before any tree/strict
-    // path — `mcp::serve` creates its own tokio runtime internally and returns a
-    // sync exit code. On a build without the `mcp` feature the stub returns a
-    // clear "rebuild with --features mcp" error (surfaced to stderr, nonzero exit).
-    if cli.mcp {
-        return mcp::serve(cli);
-    }
-
     // Strict-check accepts a single file as well as a directory (lint the one file you just
     // wrote); the tree render is directory-only, so its resolver stays strict.
     let roots = if cli.strict_check {
@@ -245,7 +235,7 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
         //
         // A directory target's verdict is annotation linting PLUS its own configured
         // architectural `[rules]`, folded by the ONE shared producer
-        // (`strict::check_structured`, also driven by the MCP `strict_check` tool). A single
+        // (`strict::check_structured`). A single
         // FILE target has no package neighbourhood, so it is annotation-lint only
         // (`strict::check_file`, no graph/rules/charter) — those are directory-scale concerns.
         // Both yield the SAME `StrictReport`, so text and JSON render uniformly below.
@@ -329,8 +319,8 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
         return Ok(code);
     }
 
-    // Build via the ONE shared pipeline (also driven by the MCP `map` tool), so a
-    // rendered map is identical whichever surface asks for it. The walk happens up
+    // Build via the ONE shared pipeline, so a rendered map is identical whichever
+    // format asks for it. The walk happens up
     // front inside it: a runaway-scope trip fires before any render or stdout write,
     // which is what makes every output format (including --format json) safe — abort
     // ⇒ empty stdout, for free.
@@ -349,8 +339,8 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
             return Failure::precondition(format!("{e:#}")).dispatch(out, cli.format)
         }
     };
-    // Manifest-parse warnings ride inside `map` (so the `--format json` envelope and the
-    // MCP `map` tool both surface them structurally); the CLI additionally echoes the human
+    // Manifest-parse warnings ride inside `map` (so the `--format json` envelope surfaces
+    // them structurally); the CLI additionally echoes the human
     // `message` to stderr, unless silenced. The JSON envelope carries them regardless — an
     // agent parsing stdout should not have to also scrape stderr to learn the graph is
     // incomplete — so `--ignore-parsing-errors` only governs this stderr echo.
@@ -402,10 +392,10 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
 /// the walk STOPS at the deepest level the render can show, so nothing below it is visited,
 /// counted, or graphed), optionally
 /// filter down to the `--since` change set plus its blast radius, build the
-/// dependency graph, and assemble the canonical `CodebaseMap`. Both `run`
-/// (text/json/md) and the MCP `map` tool go through here, so the map is byte-for-byte
-/// the same on either surface. Returns the map — which now CARRIES the manifest-parse
-/// warnings (so the JSON envelope and MCP `map` surface them, and the CLI reads them off
+/// dependency graph, and assemble the canonical `CodebaseMap`. Every `run`
+/// render (text/json/md) goes through here, so the map is byte-for-byte the same on
+/// each. Returns the map — which now CARRIES the manifest-parse
+/// warnings (so the JSON envelope surfaces them, and the CLI reads them off
 /// `map.warnings` to echo to stderr) — and the primary (first root's) resolved `ascii`
 /// glyph choice, handed back so the render path reuses the config this pipeline already
 /// loaded instead of re-loading (re-parse + regex recompile) it.
@@ -495,8 +485,9 @@ pub(crate) fn build_codebase_map(
                 )
             })
             .collect(),
-        // The graph's manifest-parse warnings travel WITH the map so every render surface
-        // (JSON envelope, MCP `map`) can emit them, and the CLI can echo them to stderr.
+        // The graph's manifest-parse warnings travel WITH the map so the render surface
+        // that can carry them (the JSON envelope) emits them, and the CLI can echo them
+        // to stderr.
         warnings: graph.warnings,
     };
     Ok((map, ascii))
@@ -506,8 +497,7 @@ pub(crate) fn build_codebase_map(
 /// partial tree either way. Under `--format json` the abort is emitted as the structured
 /// error envelope on stdout (code [`exit::code::SCOPE_EXCEEDED`]), so an agent parsing
 /// stdout still gets a dispatch key; otherwise the human note goes to `err` ONLY (stdout
-/// stays empty — no half-written JSON). The `--mcp` surface instead catches
-/// `LimitExceeded` and returns a structured tool error, keeping the server alive.
+/// stays empty — no half-written JSON).
 fn report_limit_exceeded(
     out: &mut impl Write,
     err: &mut impl Write,
@@ -534,8 +524,8 @@ fn report_limit_exceeded(
     } else {
         writeln!(
             err,
-            "annotated-tree: aborting — '{}' has more than {} files (limit --max-files {}); \
-             nothing written. Raise with --max-files <N> or disable with --no-limit.",
+            "annotated-tree: aborting — '{}' has more than {} code files (limit --max-files \
+             {}); nothing written. Raise with --max-files <N> or disable with --no-limit.",
             e.root.display(),
             e.limit,
             e.limit,

@@ -38,9 +38,9 @@ pub const RUNAWAY_SCOPE: i32 = 3;
 /// fixing the environment, not by re-issuing a differently-flagged command.
 pub const PRECONDITION: i32 = 4;
 
-/// Stable string dispatch codes — the JSON-error-envelope (`--format json`) and MCP
-/// tool-error counterpart to the integer exit codes above. Same taxonomy, string form:
-/// an agent parsing stdout JSON (or an MCP tool result) branches on `error.code` exactly
+/// Stable string dispatch codes — the JSON-error-envelope (`--format json`) counterpart
+/// to the integer exit codes above. Same taxonomy, string form: an agent parsing stdout
+/// JSON branches on `error.code` exactly
 /// as a shell branches on `$?`. Prose messages drift; these codes are the API. Finer than
 /// the integer codes (several precondition classes share [`PRECONDITION`]), so a caller
 /// can tell a git failure from a bad directory. Every string a fallible surface emits is
@@ -58,9 +58,6 @@ pub mod code {
     /// Any other precondition/environment failure (bad config, invalid `-I` glob, I/O).
     /// Pairs with [`super::PRECONDITION`].
     pub const PRECONDITION: &str = "precondition";
-    /// (MCP only) No package by that name in the scanned roots. No exit-code pairing —
-    /// MCP tools never process-exit.
-    pub const UNKNOWN_PACKAGE: &str = "unknown_package";
     /// A package manifest (`Cargo.toml`, `package.json`, …) could not be read or parsed.
     /// NON-FATAL and so has no exit-code pairing: the map is still produced (the run exits
     /// [`super::SUCCESS`]), but the offending package contributes no edges, so this rides

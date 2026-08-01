@@ -8,16 +8,15 @@
 #   <comment> Concern: <what it does> | Non-concern: <what it deliberately isn't> | IO: <(in) -> out  OR  none>
 # All three fields are required and must be non-empty after trimming (`IO: none` is the
 # usual value for config, data, and docs). `--strict-check` checks presence, non-emptiness,
-# and each field's length against the bound below (200 by default); it never checks what a
-# field says.
+# and the annotation's length against the bound below; it never checks what a field says.
 # This is enforced in code, not by a regex here, so the only per-LANGUAGE knob is the
-# comment MARKER (below). One knob constrains field LENGTH rather than shape, globally
-# rather than per language: `[rules] max_annotation_length`.
+# comment MARKER (below). One knob constrains LENGTH rather than shape, globally rather
+# than per language: `[rules] max_annotation_length`.
 # The advertised `example` shown in `--help` and `--strict-check` is DERIVED from that
 # marker plus the fixed format, never configured.
 
 [limits]
-# Runaway-scope safety valve. Aborts (exit 2, nothing written) once a root exceeds
+# Runaway-scope safety valve. Aborts (exit 3, nothing written) once a root exceeds
 # this many code files, before any model/graph/render work. Raise with --max-files
 # <N>, disable with --no-limit, or set ANNOTATED_TREE_MAX_FILES. Peak memory scales
 # with FILE COUNT (per file we read only a 64 KB annotation head + metadata().len(),
@@ -32,14 +31,9 @@ deny = []              # e.g. [["web", "core"]] forbids package `web` depending 
 forbid_cycles = false  # flag any dependency cycle among internal packages
 forbid_orphans = false # flag internal packages with no dependency edge in or out
 require_package_charter = false # fail a manifest-bearing package that has annotated files but resolves no concern charter (a .annotation breadcrumb, else its entry file's annotation)
-# Annotation length bound, ON by default: fail any field (Concern/Non-concern/IO) longer than N
-# characters, measured over each field's maximal span: Concern up to the last " | Non-concern:",
-# Non-concern from the first of those to the last " | IO:", IO from the first of those to the end
-# of the line. On a conforming line a span is exactly the trimmed value; prose that quotes a
-# separator over-measures and fails loudly rather than under-measuring. 200 is the brevity the
-# annotation guide teaches; shipped ON because a bound nobody enables catches nothing, and
-# unbounded agents wrote 500-1600 character fields. Override it here, in a repo
-# .annotated-tree.toml, or per run with --max-length <N>; 0 means "no bound" and turns it off.
+# Annotation length bound, ON by default (see `--max-length` in --help for what it measures).
+# Shipped ON because a bound nobody enables catches nothing: unbounded agents wrote 500-1600
+# character fields. Override it here, in a repo .annotated-tree.toml, or per run.
 max_annotation_length = 200
 
 [display]

@@ -8,10 +8,9 @@ use annotated_tree::exit;
 fn main() -> ExitCode {
     let cli = annotated_tree::parse_cli();
     // Wrap `io::stdout()` (which locks per write) rather than holding a persistent
-    // `stdout.lock()` guard across the whole run: `--mcp` hands stdout to an rmcp
-    // stdio server whose tokio writer locks std stdout from a blocking-pool thread,
-    // which would deadlock against a guard held on this thread. BufWriter still
-    // batches, so normal runs pay no extra locking.
+    // `stdout.lock()` guard across the whole run: the run writes through the BufWriter,
+    // so the lock is taken once per flushed block, not once per formatted fragment —
+    // and nothing else in the process needs stdout, so a held guard would buy nothing.
     let mut handle = io::BufWriter::new(io::stdout());
     let mut errout = io::stderr();
 

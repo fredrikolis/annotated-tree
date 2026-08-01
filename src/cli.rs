@@ -26,29 +26,22 @@ pub struct Cli {
     pub paths: Vec<PathBuf>,
 
     /// Exit non-zero if any code file lacks a conforming first-line annotation. Each PATH
-    /// may be a directory (lint every code file under it) or a single file (lint just that
-    /// file — the natural unit for a pre-commit hook or checking the file you just wrote).
+    /// may be a directory (lint every code file under it) or a single file.
     #[arg(long)]
     pub strict_check: bool,
 
-    /// Suppress the annotation-writing guide that a failing --strict-check prints by
-    /// default after the violations (for a caller that already knows the format). The
-    /// violations, counts, and exit code are unaffected.
+    /// Suppress the annotation-writing guide a failing --strict-check prints after the
+    /// violations. Violations, counts, and exit code are unaffected.
     #[arg(long)]
     pub no_guide: bool,
 
-    /// Fail --strict-check when any annotation field (Concern, Non-concern, IO) is longer
-    /// than N characters. 200 by default; 0 means no bound, so it turns the shipped or a
-    /// repo-configured one off. Overrides `[rules] max_annotation_length`.
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", help = crate::strict::LENGTH_RULE)]
     pub max_length: Option<usize>,
 
     /// Descend at most LEVEL directories deep. Caps the WALK, not just the output: nothing
-    /// below the cutoff is visited or counted against --max-files. Every directory shown
-    /// still states its own dependency facts (its manifest is read one level deeper), but a
-    /// package below the cutoff is not shown and contributes no edges, so a shallow render
-    /// gives a shallower graph of the same tree. --strict-check is a gate, not a view, and
-    /// is not capped.
+    /// below the cutoff is visited, counted against --max-files, or contributes graph
+    /// edges, so a shallow render gives a shallower graph. Every directory shown still
+    /// states its own dependency facts. Does not cap --strict-check.
     #[arg(short = 'L', long, value_name = "LEVEL")]
     pub max_depth: Option<usize>,
 
@@ -77,8 +70,9 @@ pub struct Cli {
     pub ignore: Vec<String>,
 
     /// Also show files matching GLOB even when their extension maps to no known language
-    /// (repeatable; pipe-separated allowed). The positive counterpart of --ignore: an included
-    /// file's annotation is read marker-agnostically. `--include '*'` shows every file.
+    /// (repeatable; pipe-separated allowed). An included file's annotation is read
+    /// marker-agnostically. `--include '*'` shows every file. View only: --strict-check
+    /// never lints what this opts in.
     #[arg(long = "include", value_name = "GLOB")]
     pub include: Vec<String>,
 
@@ -117,20 +111,13 @@ pub struct Cli {
     #[arg(long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
-    /// Serve over stdio as an MCP server exposing the map, dependency, and
-    /// strict-check tools (requires a build with --features mcp).
-    #[arg(long)]
-    pub mcp: bool,
-
-    /// Print the JSON output schema (map document, strict-check report, and the error
-    /// and warning shapes) to stdout and exit, so an agent can fetch the wire contract
-    /// programmatically without a human.
+    /// Print the JSON wire contract to stdout and exit: the map document, the strict-check
+    /// report, and the error and warning shapes.
     #[arg(long)]
     pub schema: bool,
 
-    /// Print the guide for reproducing the repo's local enforcement git hooks (the
-    /// pre-commit --strict-check gate and the commit-msg neutral-review attestation) to
-    /// stdout and exit, so an agent can set enforcement up without a human.
+    /// Print the setup guide for this repo's local enforcement git hooks to stdout and
+    /// exit: the pre-commit --strict-check gate and the commit-msg review attestation.
     #[arg(long)]
     pub githook_guide: bool,
 }

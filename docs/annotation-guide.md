@@ -11,13 +11,12 @@ Example:  {EXAMPLE}
   IO           (inputs) -> outputs, OR the literal `none` (config, data, docs).
 
 BREVITY — every field states WHAT, never why, how, or when: no mechanism, rationale, or
-conditions in any of them. Naming WHERE an excluded concern lives is OPTIONAL — the tree
-often shows the owner, so add the pointer only when it is not obvious from the map. An
-agent ingests a whole workspace's map in one pass; brevity buys that. `[rules]
-max_annotation_length` (or `--max-length <N>`) bounds the whole annotation — 200
-characters by default; `--max-length 0` disables it. Do not raise it — the bound is the
-detector, and a bigger number only hides what it found. A line that will not fit is an
-ARCHITECTURE defect: write it denser AND split the file that owns two jobs.
+conditions in any of them. Naming WHERE an excluded concern lives is OPTIONAL — add the
+pointer only when the tree does not already show the owner. An agent ingests a whole
+workspace's map in one pass; brevity buys that. Never raise the length bound to fit a
+line — the bound is the detector, and a bigger number only hides what it found. A line
+that will not fit is an ARCHITECTURE defect: write it denser AND split the file that
+owns two jobs.
 
 GOOD   // Concern: memoizes lookups | Non-concern: eviction (LRU owns it) | IO: (Key) -> Value
 FAILS  // Concern: memoizes lookups | IO: (Key) -> Value

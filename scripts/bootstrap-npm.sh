@@ -15,24 +15,19 @@ version="${tag#v}"
 repo="fredrikolis/annotated-tree"
 cd "$(dirname "$0")/.."
 
-targets="x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin x86_64-pc-windows-msvc"
+targets="x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin"
 for target in $targets; do
   mkdir -p "dist/${target}"
-  case "$target" in *windows*) ext=zip ;; *) ext=tar.gz ;; esac
-  archive="annotated-tree-${target}.${ext}"
+  archive="annotated-tree-${target}.tar.gz"
   gh release download "$tag" -R "$repo" -p "$archive" -O "$archive" --clobber
-  if [ "$ext" = zip ]; then
-    unzip -o "$archive" -d "dist/${target}"
-  else
-    tar -xzf "$archive" -C "dist/${target}"
-  fi
+  tar -xzf "$archive" -C "dist/${target}"
   rm -f "$archive"
 done
 
 node npm/scripts/build-npm.mjs "$version" dist
 
-echo ">> Publishing 6 packages (npm will prompt for your 2FA OTP each time)…"
-for plat in linux-x64-musl linux-arm64-musl darwin-x64 darwin-arm64 win32-x64; do
+echo ">> Publishing 5 packages (npm will prompt for your 2FA OTP each time)…"
+for plat in linux-x64-musl linux-arm64-musl darwin-x64 darwin-arm64; do
   npm publish "./npm/platforms/${plat}"
 done
 # Leading ./ is REQUIRED: `npm publish npm` treats `npm` as the package spec (and
@@ -41,7 +36,7 @@ npm publish ./npm
 
 cat <<'EOF'
 >> Bootstrap publish complete.
-   Next (one-time): add a Trusted Publisher to each of the 6 packages on npmjs.com
+   Next (one-time): add a Trusted Publisher to each of the 5 packages on npmjs.com
    (GitHub Actions provider — org: fredrikolis, repo: annotated-tree, workflow:
    release.yml). After that, all future releases publish via OIDC with no token.
 EOF

@@ -13,12 +13,7 @@ const PLATFORM_PACKAGES = {
   "linux-arm64": "annotated-tree-linux-arm64-musl",
   "darwin-x64": "annotated-tree-darwin-x64",
   "darwin-arm64": "annotated-tree-darwin-arm64",
-  "win32-x64": "annotated-tree-win32-x64",
 };
-
-function binaryName() {
-  return process.platform === "win32" ? "annotated-tree.exe" : "annotated-tree";
-}
 
 // Resolve the absolute path to the binary shipped by the matching platform
 // package. Returns { pkg, bin } where `pkg` is null for an unsupported
@@ -31,7 +26,7 @@ function resolveBinary() {
   }
   try {
     const pkgDir = path.dirname(require.resolve(`${pkg}/package.json`));
-    return { key, pkg, bin: path.join(pkgDir, binaryName()) };
+    return { key, pkg, bin: path.join(pkgDir, "annotated-tree") };
   } catch (_err) {
     return { key, pkg, bin: null };
   }

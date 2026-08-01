@@ -95,6 +95,25 @@ to [Semantic Versioning](https://semver.org/).
   helps an agent consume Annotations performs no run, emits no Report, and is therefore
   governed by none of the invariants.
 
+### Removed
+- **The MCP server.** `--mcp`, the `mcp` Cargo feature, and its `rmcp` + `tokio` optional
+  dependencies are gone; `--mcp` is now an unknown flag (exit 2). It only ever served the
+  MAP — the same document `--format json` emits, byte-for-byte — to clients that cannot
+  shell out to a binary, and the tool's core value now arrives through the Claude Code
+  `PreToolUse` hook, which needs a shell. Replace an `annotated-tree --mcp` server entry
+  with `annotated-tree --format json` (the map) or `annotated-tree --strict-check
+  --format json` (the report); the `dependencies` / `dependents` tools have no CLI
+  equivalent and are gone with it, along with the `unknown_package` dispatch code that
+  only they emitted. The crate now links no async runtime at all and has no Cargo
+  features.
+- **Windows builds.** The `x86_64-pc-windows-msvc` release target, the Windows CI leg, and
+  the `annotated-tree-win32-x64` npm package are no longer built or published. Already-published
+  Windows artifacts stay on their channels — install a prior release, or build from source with
+  `cargo install annotated-tree` (the code contains no `cfg(windows)`; nothing was made
+  Windows-incompatible, it is simply no longer built or tested). Windows hosts now fall
+  through the shell installer's generic "unsupported operating system" path, and `npx
+  annotated-tree` on Windows reports an unsupported platform.
+
 ### Fixed
 - `--max-files` aborted runs over files that would never have been shown (#15). `-L 1
   --max-files 5` on a tree holding 41 files three levels down exited 3 with nothing written,

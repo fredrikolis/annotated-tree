@@ -161,7 +161,7 @@ only the opener; Markdown and HTML need both, e.g.
 `<!-- Concern: ... | Non-concern: ... | IO: ... -->`.
 
 - **Form.** All three fields must be present and non-empty. `--strict-check`
-  enforces that, plus a per-field length bound of 200 characters by default, and
+  enforces that, plus a 200-character bound on the whole annotation by default, and
   it **never checks what a field says**.
 - **Content.** Every field states WHAT, never why, how, or when. No mechanism,
   no rationale, no conditions. That one is a writing rule, not a check.
@@ -287,8 +287,8 @@ beside the others, and shipped, never learning that `planner.py` already routes 
 job through a cost-based optimizer. The map surfaces it and the real task changes
 shape: register with the optimizer, do not sit next to it. *Outcome: you reuse what
 exists instead of rebuilding a worse copy in the wrong place.* (To hand the map to
-another tool instead of reading it yourself, `--format json` or the built-in MCP
-server serve the same thing as structured data.)
+another tool instead of reading it yourself, `--format json` serves the same thing as
+structured data.)
 
 **Review and impact.** `--changed` shows what a branch touched plus its
 reverse-dependency blast radius, the things downstream that could break. *Outcome: you
@@ -333,9 +333,8 @@ Same prebuilt binary on every channel.
 | Annotated tree + dependency graph | *(default)* |
 | Structured output for tooling and agents | `--format json` (versioned schema), `md` |
 | Only what changed, plus blast radius | `--changed`, `--since <ref>` |
-| Serve to agents and editors as MCP tools | `--mcp` *(build with `--features mcp`)* |
 | Lint annotations + architectural rules (git hook or CI) | `--strict-check` |
-| Bound each annotation field's length *(200 by default)* | `--max-length <N>`, `0` to disable |
+| Bound the whole annotation's length *(200 by default)* | `--max-length <N>`, `0` to disable |
 | Cap entries shown per directory (big corpora) | `--max-per-node <N>`, `--full` |
 | Runaway-scope guard | `--max-files <N>` |
 
@@ -348,12 +347,12 @@ The commands themselves run exactly as written:
 
 ```
 $ grep -rl "Renderer" src
-src/render/mod.rs  # Concern: the renderer seam — the `Renderer` trait, the format -> renderer factory | …
-src/render/text.rs  # Concern: formats the canonical map as a `tree`-style text view | Non-concern: filesystem reads | …
+src/render/mod.rs  # Concern: the renderer seam — the `Renderer` trait, the format -> renderer factory, and the shared el …
+src/render/text.rs  # Concern: formats the canonical map as a `tree`-style text view | Non-concern: filesystem reads | IO: …
 ```
 
 Same command, same files, one line each, and your agent types nothing different. (Two of the
-seven result lines are shown, sorted and abridged for width here; the wrapper itself does
+six result lines are shown, sorted and abridged for width here; the wrapper itself does
 neither.) The binaries install with `cargo install`, since every other channel ships one
 prebuilt binary. See [toolcall-rewrite/README.md](toolcall-rewrite/README.md).
 

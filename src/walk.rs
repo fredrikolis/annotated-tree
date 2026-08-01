@@ -31,9 +31,9 @@ pub const ANNOTATION_FILE_CRITERION: &str =
 
 /// The walk was aborted because a root exceeded its `max_files` cap. A typed
 /// boundary error (Fail-Fast): the walk stops before any model/graph/render work,
-/// and the caller decides how to surface it (`lib::run` exits 2; the `--mcp` surface
-/// returns a structured tool error). Carries the `limit` and offending `root` — all
-/// either surface needs to phrase its diagnostic.
+/// and the caller decides how to surface it (`lib::run` exits with `exit::RUNAWAY_SCOPE`,
+/// on `--format json` after emitting the structured error envelope). Carries the `limit`
+/// and offending `root` — all a caller needs to phrase its diagnostic.
 #[derive(Debug, Clone)]
 pub struct LimitExceeded {
     pub limit: usize,

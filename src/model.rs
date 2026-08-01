@@ -18,8 +18,8 @@ pub struct CodebaseMap {
     pub roots: Vec<DirNode>,
     /// Non-fatal manifest-parse warnings from the graph walk. NOT part of the tree — the
     /// model builder never sets it; the shared `build_codebase_map` pipeline attaches the
-    /// graph's warnings here so the JSON renderer (and the MCP `map` tool, which renders
-    /// the same map) can surface them in the envelope's `warnings` array. The text/md
+    /// graph's warnings here so the JSON renderer can surface them in the envelope's
+    /// `warnings` array. The text/md
     /// renderers ignore it (they iterate `roots` only), so their output is unchanged.
     pub warnings: Vec<crate::graph::Warning>,
 }

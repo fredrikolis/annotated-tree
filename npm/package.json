@@ -15,7 +15,6 @@
     "url": "git+https://github.com/fredrikolis/annotated-tree.git"
   },
   "license": "MIT",
-  "mcpName": "io.github.fredrikolis/annotated-tree",
   "bin": {
     "annotated-tree": "bin/annotated-tree.js"
   },
@@ -29,7 +28,6 @@
     "annotated-tree-linux-x64-musl": "0.1.0",
     "annotated-tree-linux-arm64-musl": "0.1.0",
     "annotated-tree-darwin-x64": "0.1.0",
-    "annotated-tree-darwin-arm64": "0.1.0",
-    "annotated-tree-win32-x64": "0.1.0"
+    "annotated-tree-darwin-arm64": "0.1.0"
   }
 }

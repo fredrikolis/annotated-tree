@@ -15,7 +15,7 @@ PRE-COMMIT — mechanical, deterministic (presence + form only)
 
   The second exists because a directory named `tests` is pruned unless `--include-tests`, so
   without it `tests/` is invisible to the check and a bare test file still reports all files
-  passed. `--max-length 200` is the per-field length bound; `-I`/`--ignore` any fixture dir whose
+  passed. `--max-length 200` bounds the whole annotation; `-I`/`--ignore` any fixture dir whose
   annotations are deliberately loose. Prefer a built binary (`target/release`, then
   `target/debug`), fall back to `cargo run --quiet --` so a fresh clone still gates. On a nonzero
   exit, print what failed and exit 1. This checks that an annotation EXISTS and PARSES, never

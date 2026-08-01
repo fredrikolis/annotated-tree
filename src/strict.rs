@@ -1,11 +1,11 @@
 // Concern: reports each file, charter or sidecar whose annotation is absent, malformed or over the bound, plus dangling sidecars | Non-concern: the tree view | IO: (files, Config) -> (report, exit_code)
 
-//! # Strict-check JSON schema (`--strict-check --format json` and MCP `strict_check`)
+//! # Strict-check JSON schema (`--strict-check --format json`)
 //!
 //! The structured verdict is a machine-consumable contract (the counterpart to the
 //! default human TEXT report), so its shape is documented here — mirroring the schema
-//! note in `render/json.rs`. Both the CLI's `--format json` and the MCP `strict_check`
-//! tool serialize the SAME [`StrictReport`], so they are byte-for-byte identical. The
+//! note in `render/json.rs`. It serializes the SAME [`StrictReport`] the TEXT report
+//! renders, so the two can never disagree on a verdict. The
 //! exact same text is exposed at runtime via `--schema` and defined ONCE in
 //! [`SCHEMA_DOC`] (an embedded file), so this rustdoc and the `--schema` output can never
 //! drift apart:
@@ -64,6 +64,18 @@ pub enum Category {
     AnnotationTooLong,
 }
 
+/// What `--max-length` / `[rules] max_annotation_length` measures. The flag's `--help` renders
+/// this rather than restating it.
+///
+/// It is not the only statement of the bound, and claiming otherwise here was itself wrong: the
+/// `note:` line carries the LIVE value (correct by construction), and the guide, config and
+/// README point at the rule for their own readers. What this owns is the DEFINITION. Seven
+/// copies existed when the bound changed from per-field to whole-annotation; five went stale,
+/// including the user-facing help — the same no-drift reason [`EXPECTED`] feeds the guide.
+pub const LENGTH_RULE: &str = "Fail --strict-check when an annotation is longer than N \
+    characters, counted over the whole line rather than any one field. 200 by default; 0 turns \
+    the bound off. Overrides `[rules] max_annotation_length`.";
+
 /// The canonical annotation shape an agent should converge on — the fill-in `template`
 /// plus which named parts are ENFORCED (`required`) vs ADVISED (`recommended`). Every
 /// violation carries this so an agent reads the contract off the finding instead of
@@ -112,7 +124,7 @@ pub struct Defect {
 }
 
 /// One structured annotation violation. The default TEXT report is one rendering over
-/// these ([`AnnotationViolation::message`]); `--format json` and MCP serialize them.
+/// these ([`AnnotationViolation::message`]); `--format json` serializes them.
 #[derive(Debug, Clone, Serialize)]
 pub struct AnnotationViolation {
     /// Path relative to the checked root, unix slashes.
@@ -256,9 +268,8 @@ pub struct OrphanSidecar {
 
 /// The whole structured `--strict-check` verdict for one root: annotation violations,
 /// dangling sidecars, PLUS architectural `[rules]` findings. This is the ONE producer every
-/// surface drives — the CLI's TEXT report ([`StrictReport::to_text`]), `--format json`
-/// ([`StrictReport::to_json`]), and the MCP `strict_check` tool — so no two surfaces
-/// can drift.
+/// surface drives — the CLI's TEXT report ([`StrictReport::to_text`]) and `--format json`
+/// ([`StrictReport::to_json`]) — so no two surfaces can drift.
 #[derive(Debug, Clone, Serialize)]
 pub struct StrictReport {
     /// True iff there are no annotation violations, no dangling sidecars, and no rule
@@ -375,9 +386,9 @@ impl StrictReport {
         (out, code)
     }
 
-    /// Serialize to the structured JSON document (see the schema note above). Both the
-    /// CLI's `--format json` and MCP `strict_check` call THIS, so they are byte-for-byte
-    /// identical for the same inputs.
+    /// Serialize to the structured JSON document (see the schema note above). Every
+    /// caller that emits the machine-readable verdict calls THIS, so the document is
+    /// byte-for-byte identical for the same inputs.
     pub fn to_json(&self) -> String {
         // Plain owned data with derived `Serialize` — serialization cannot fail (DbC).
         serde_json::to_string_pretty(self).expect("strict report serializes to JSON")
@@ -412,8 +423,8 @@ fn push_capped<T>(
 
 /// The structured verdict for one root: annotation linting AND (when the root's config
 /// configures any `[rules]`) architectural dependency rules, folded into ONE report.
-/// This is the single composition every surface drives — the CLI's TEXT/JSON strict
-/// paths and the MCP `strict_check` tool — so a verdict is identical whichever asks.
+/// This is the single composition every surface drives — the CLI's TEXT and JSON strict
+/// paths — so a verdict is identical whichever asks.
 /// Building the graph is skipped entirely when no rule is active (a repo with no
 /// `[rules]` does zero extra work).
 pub(crate) fn check_structured(

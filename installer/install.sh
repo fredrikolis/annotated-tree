@@ -54,9 +54,6 @@ detect_target() {
                 *) err "unsupported macOS architecture: $arch" ;;
             esac
             ;;
-        MINGW* | MSYS* | CYGWIN* | Windows_NT)
-            err "Windows is not supported by this installer; use 'cargo install annotated-tree', 'cargo binstall annotated-tree', or download the x86_64-pc-windows-msvc archive from the releases page"
-            ;;
         *)
             err "unsupported operating system: $os"
             ;;

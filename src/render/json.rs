@@ -87,7 +87,7 @@ impl Renderer for JsonRenderer {
 
 /// The failure counterpart to [`Document`]: the same versioned envelope carrying an
 /// `error` object instead of `roots`. Emitted to stdout on a failed `--format json` run
-/// (and reused as the MCP tool-error payload) so an agent parses one dispatch `code`
+/// so an agent parses one dispatch `code`
 /// rather than scraping prose off stderr. `path` is omitted (not null) when unknown,
 /// consistent with the success schema's key-presence convention.
 #[derive(Serialize)]
@@ -106,8 +106,8 @@ struct ErrorBody<'a> {
 
 /// Serialize a structured error envelope (schema-1) for a failed run. `code` is a stable
 /// key from [`crate::exit::code`]; `message` is human detail; `path` names the offender
-/// when known. Both the CLI's `--format json` failure path and the MCP tool-error payload
-/// call this, so the wire error shape lives in ONE place.
+/// when known. Every failure path that emits `--format json` calls this, so the wire
+/// error shape lives in ONE place.
 pub fn render_error(code: &str, message: &str, path: Option<&str>) -> String {
     let document = ErrorDocument {
         schema: SCHEMA_VERSION,

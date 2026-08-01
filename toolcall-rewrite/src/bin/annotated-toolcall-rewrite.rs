@@ -53,6 +53,20 @@ fn main() {
         }
     }
 
+    // A hook invocation passes NO arguments, so any unrecognised leading flag is a person
+    // mistyping one. Falling through to the stdin path made a typo indistinguishable from a
+    // successful run: no output, exit 0.
+    if let Some(unknown) = args.first().filter(|a| a.starts_with('-')).filter(|a| {
+        !matches!(
+            a.as_str(),
+            "--check" | "--help" | "-h" | "--install-hook" | "--uninstall-hook"
+        )
+    }) {
+        eprintln!("annotated-toolcall-rewrite: unknown flag {unknown}");
+        eprintln!("usage: annotated-toolcall-rewrite [--check CMD… | --install-hook [F] | --uninstall-hook [F]]");
+        std::process::exit(2);
+    }
+
     if args.first().map(String::as_str) == Some("--check") {
         // Offline surface: show what each command would become, substituting nothing.
         for cmd in &args[1..] {
@@ -80,7 +94,9 @@ fn main() {
         println!("annotated-bash-wrapper. Otherwise emits nothing. Always exits 0.");
         println!();
         println!("usage: annotated-toolcall-rewrite                    (as a hook, JSON on stdin)");
-        println!("       annotated-toolcall-rewrite --check CMD…       (what CMD would become)");
+        println!(
+            "       annotated-toolcall-rewrite --check 'CMD' …    (what each quoted CMD becomes)"
+        );
         println!("       annotated-toolcall-rewrite --install-hook [F] (switch it on)");
         println!("       annotated-toolcall-rewrite --uninstall-hook [F] (switch it off)");
         println!();
@@ -122,7 +138,7 @@ fn main() {
                 "hookEventName": "PreToolUse",
                 "updatedInput": serde_json::Value::Object(updated),
                 "additionalContext": format!(
-                    "`{}` runs exactly as written; its output is piped through \
+                    "`{}`: each runs exactly as written, with its output piped through \
                      `annotated-bash-wrapper`, which appends each file's Concern/Non-concern/IO \
                      contract to the line that file's path appeared on.",
                     swapped.join("`, `")

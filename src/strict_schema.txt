@@ -1,4 +1,4 @@
-Strict-check report — `--strict-check --format json` and MCP `strict_check`
+Strict-check report — `--strict-check --format json`
 
 {
   "passed":         bool,          // true iff no annotation violations AND no rule violations
@@ -45,32 +45,39 @@ RuleViolation = {
   "path":     string               // offending package dir, relative to the root (unix slashes); absent when none applies
 }
 
-An agent dispatches on `category`/`code` (stable) and the structured fields, never on
-`message`/`detail` prose. On a violation, `defect` is the machine delta (which of the three
-fields are absent or empty, and which are over the length bound), `expected` is the contract to
-converge on, and `suggestion` is a file-tailored stub whose judgment slots are left as `<…>`
-placeholders. That stub is well formed, so applying it clears the form defect instead of
-trading it for a second one. It is not a finished annotation: each `<…>` slot is a judgment an
-agent still has to write out, and a configured length bound applies to the stub like any other
-line. No `suggestion` is emitted for `annotation_too_long`, whose remedy is to shorten the
-field. `annotated_count` of `files_checked` is the progress toward full coverage (the TEXT
-footer prints "N of M files annotated"). Three violation categories FAIL the check and set a
-nonzero exit: `missing_annotation` (no conforming comment), `malformed_annotation` (a comment
-that is not the three-field `Concern: … | Non-concern: … | IO: …` shape, or one of whose fields
-is empty after trimming), and `annotation_too_long` (an annotation longer than the `[rules]
-max_annotation_length` / `--max-length` bound, which SHIPS AT 200 and is turned off with
-`--max-length 0` — measured in characters over the WHOLE annotation, from `Concern:` to the end
-of the line, because what an agent pays for is the line it reads and not any one field. An
-annotation exactly at the bound
-passes). What a field SAYS is never a finding: the check is form only. A bare, marker-less `.annotation`
-line is enforced by the SAME grammar at both scales and, when malformed or over-length, appears
-as a Violation located at the `.annotation` file that HOLDS it: a directory's charter breadcrumb
-with `language: "charter"` and `path: "<dir>/.annotation"`, and a file's sidecar with
-`language: "sidecar"` and `path: "<dir>/<name>.annotation"`. A sidecar carries the contract of a
-file that maps to no comment marker (a CSV, a dataset) and listing it is that file's opt-in; one
-whose named file does not exist annotates nothing and is reported in `orphan_sidecars` — a
-dangling PATH, not an issue about an Annotation — which also FAILS the check.
-The opt-in `[rules] require_package_charter` gate adds a `missing_package_charter`
-RuleViolation for a manifest-bearing package that owns annotated files yet resolves no charter
-(off by default). `path` on a RuleViolation is absent (not null) when no single directory
-applies — a cycle spanning many packages, or a deny rule naming an absent package.
+Dispatch on `category` / `code` and the structured fields. Never parse `message` / `detail`.
+
+Every category below FAILS the check and sets a nonzero exit. The check is form only: what a
+field SAYS is never a finding.
+
+  missing_annotation    no conforming comment on the landing line
+  malformed_annotation  not the three-field `Concern: … | Non-concern: … | IO: …` shape, or a
+                        field empty after trimming
+  annotation_too_long   longer than the `[rules] max_annotation_length` / `--max-length` bound,
+                        counted over the WHOLE annotation rather than any one field; a line
+                        exactly at the bound passes
+
+Per violation:
+
+  defect      the machine delta — which fields are absent or empty, plus `length` vs `max`
+  expected    the contract to converge on; identical on every violation
+  suggestion  a file-tailored stub, well formed as printed, so applying it clears the form
+              defect rather than trading it for a second one. Not a finished annotation: each
+              `<…>` slot is a judgment to write out, and the length bound applies to the stub
+              like any other line. Omitted for `annotation_too_long` — shorten the line instead.
+
+`annotated_count` of `files_checked` is coverage progress (the TEXT footer prints "N of M
+files annotated").
+
+Bare, marker-less `.annotation` bodies are enforced by the SAME grammar at both scales and
+reported as a Violation located at the file that HOLDS the line: a directory charter as
+`language: "charter"`, `path: "<dir>/.annotation"`; a file sidecar as `language: "sidecar"`,
+`path: "<dir>/<name>.annotation"`. A sidecar carries the contract of a file that maps to no
+comment marker (a CSV, a dataset), and writing it is that file's opt-in. A sidecar naming a
+file that does not exist lands in `orphan_sidecars` — a dangling PATH, not an issue about an
+Annotation — and also FAILS the check.
+
+`missing_package_charter` fires only under the opt-in `[rules] require_package_charter`: a
+manifest-bearing package that owns annotated files yet resolves no charter. A RuleViolation's
+`path` is absent (not null) when no single directory applies — a cycle spanning many packages,
+or a deny rule naming an absent package.

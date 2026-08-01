@@ -17,8 +17,8 @@ viable batteries-included alternative (see the end of this doc).
 | Shell installer | `curl … annotated-tree-installer.sh \| sh` | `create-release` (uploads `installer/install.sh`) |
 | npm | `npx annotated-tree` | `publish-npm` job (reuses `upload-assets` binaries) |
 
-Target matrix: linux `{x86_64,aarch64} × {gnu,musl}`, macOS `{x86_64,aarch64}`,
-Windows `x86_64-msvc`. The linux cross targets build with `cargo-zigbuild`.
+Target matrix: linux `{x86_64,aarch64} × {gnu,musl}`, macOS `{x86_64,aarch64}`.
+The linux cross targets build with `cargo-zigbuild`.
 
 ## Validate locally FIRST
 
@@ -49,7 +49,7 @@ require pushing.
   ```sh
   act -W .github/workflows/release.yml push --dryrun
   ```
-  `act` cannot exercise the macOS/Windows matrix legs or real asset upload/OIDC —
+  `act` cannot exercise the macOS matrix legs or real asset upload/OIDC —
   validate those with the zig builds above and the binary smoke test.
 - **Shell installer** (`installer/install.sh`) — validate the download → verify →
   install path against a local file server before trusting it in a release:
@@ -93,7 +93,7 @@ require pushing.
 - `CARGO_REGISTRY_TOKEN` — crates.io API token (`publish-crate`).
 
 The npm channel (`publish-npm`) uses **OIDC trusted publishing** — no stored token.
-Each of the 6 packages (`annotated-tree` + the five `annotated-tree-*` platform
+Each of the 5 packages (`annotated-tree` + the four `annotated-tree-*` platform
 packages) needs a GitHub Actions trusted publisher configured once on npmjs.com
 (org `fredrikolis`, repo `annotated-tree`, workflow `release.yml`); see
 `scripts/bootstrap-npm.sh` for the one-time bootstrap.
@@ -104,7 +104,7 @@ Packaging is documented in [`npm/PACKAGING.md`](npm/PACKAGING.md); the `publish-
 the release. The design is `optionalDependencies` + a thin JS shim (no
 `postinstall` downloader — works under `--ignore-scripts`): the main package
 `annotated-tree` depends on per-platform packages
-`annotated-tree-{linux-x64-musl,linux-arm64-musl,darwin-x64,darwin-arm64,win32-x64}`,
+`annotated-tree-{linux-x64-musl,linux-arm64-musl,darwin-x64,darwin-arm64}`,
 each carrying one prebuilt binary with `os`/`cpu`/`libc` fields so npm installs
 exactly one. `npm/bin/annotated-tree.js` resolves that binary and forwards
 argv/stdio/exit code (missing binary → explicit nonzero error, never a silent

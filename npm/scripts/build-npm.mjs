@@ -3,7 +3,7 @@
 // Usage:  node npm/scripts/build-npm.mjs <version> <binaries-dir>
 //
 // <binaries-dir> holds one extracted binary per release target, at
-//   <binaries-dir>/<rust-target>/annotated-tree        (annotated-tree.exe on win32)
+//   <binaries-dir>/<rust-target>/annotated-tree
 // exactly as the GitHub-release tarballs (`annotated-tree-<rust-target>.tar.gz`)
 // unpack. CI extracts those tarballs, then runs this once, then publishes each
 // printed directory. Binaries are NEVER committed — they are injected here.
@@ -18,7 +18,6 @@ const MATRIX = [
   { plat: "linux-arm64-musl", target: "aarch64-unknown-linux-musl", bin: "annotated-tree" },
   { plat: "darwin-x64", target: "x86_64-apple-darwin", bin: "annotated-tree" },
   { plat: "darwin-arm64", target: "aarch64-apple-darwin", bin: "annotated-tree" },
-  { plat: "win32-x64", target: "x86_64-pc-windows-msvc", bin: "annotated-tree.exe" },
 ];
 
 const [version, binariesDir] = process.argv.slice(2);

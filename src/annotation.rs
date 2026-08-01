@@ -309,7 +309,7 @@ pub fn analyze(text: &str, lang: &Language, max_len: Option<usize>) -> Outcome {
 }
 
 /// Check an already-located annotation body against the three-field format and the optional
-/// per-part bound `max_len` — the shared tail of both [`analyze`] (which locates a file's
+/// whole-annotation bound `max_len` — the shared tail of both [`analyze`] (which locates a file's
 /// first comment first) and [`analyze_charter`] (whose whole input IS the body, no comment to
 /// locate). ONE checker, so a marker-bearing comment and a bare `.annotation` line are held
 /// to the exact same shape and can never drift. Structure outranks length: at most one
@@ -507,22 +507,6 @@ fn parse_fields(text: &str) -> Option<Fields<'_>> {
     })
 }
 
-/// The MAXIMAL extent of each field, for the length bound ALONE — never for parse or render.
-/// Each span runs from where its value can first begin to where it can last end, so it is the
-/// widest text the line's grammar allows that field to hold:
-/// `concern` reaches the LAST ` | Non-concern:`, `non_concern` runs from the FIRST one to the
-/// LAST ` | IO:` after it, and `io` runs from the FIRST ` | IO:` after that to the end.
-///
-/// Why measure over spans rather than over [`parse_fields`]' values: the three values always
-/// partition the line minus its separators, so the total measured length is fixed and picking a
-/// different occurrence only MOVES length between fields — first-occurrence under-measures a
-/// field whose prose quotes a separator ahead of the real key, last-occurrence under-measures one
-/// that quotes it after, and which is right depends on the field the quote sits in, which the
-/// string does not say. Spans OVERLAP instead: on a conforming line each separator occurs once,
-/// first and last are the same occurrence and all three spans equal the parsed values exactly;
-/// on a line that quotes a separator every span grows, so the bound over-measures and fails
-/// LOUDLY. A bound that over-measures annoys an author; one that under-measures lies to them.
-///
 /// Which of the three keyed fields are absent from a comment that failed to parse, by
 /// presence of the key TEXT (this path never sees a field value, so it cannot judge
 /// emptiness — [`empty_parts`] owns that). Case-sensitive: the keys are exact, and `Concern:`
@@ -624,7 +608,14 @@ pub(crate) fn counted(n: usize, noun: &str) -> String {
 /// seed is exactly the `Concern` the checker parsed: a bare ` | ` is prose, not a boundary, and
 /// never cuts here.
 pub(crate) fn concern_seed(text: &str) -> &str {
-    let head = match text.find(NON_CONCERN_SEP) {
+    // Cut at whichever KEY comes first, not at `Non-concern` alone. A line missing that key
+    // (`Concern: x | IO: none`) otherwise seeded the whole remainder, and the suggestion came
+    // back carrying a second `IO:` — a stub that passes the checker while saying nothing.
+    let head = match [text.find(NON_CONCERN_SEP), text.find(IO_SEP)]
+        .into_iter()
+        .flatten()
+        .min()
+    {
         Some(at) => &text[..at],
         None => text,
     };
