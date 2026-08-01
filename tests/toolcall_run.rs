@@ -573,15 +573,14 @@ const SHAPES: &[Shape] = &[
     },
     Shape {
         args: &["ls", "-d", "noisy"],
-        must: &["NOISY-CHARTER"],
-        must_not: &["STRAY-PROSE"],
-        why: "THE contract text is pasted onto the line unexamined, and a directory's charter is \
-              parsed out of the WHOLE `.annotation` file rather than its first line — so anything \
-              written under the charter lands in the `IO:` field, newline and all, and one input \
-              line leaves as TWO. That breaks the invariant every downstream stage rests on: `| \
-              head -20` loses a path, `| wc -l` over-counts, and the injected line is not even a \
-              path. The tool's own `--strict-check` passes such a file, so a repo that satisfies \
-              the product still corrupts the agent's pipeline",
+        must: &[],
+        must_not: &["NOISY-CHARTER", "STRAY-PROSE"],
+        why: "an `.annotation` holding more than its one line resolves to NO charter, so there is \
+              nothing to paste and the line leaves exactly as it arrived. The fixture is the shape \
+              a maintainer writes when the charter needs a note; it used to yield a contract with \
+              a newline inside it, and one input line left as TWO — `| head -20` lost a path and \
+              `| wc -l` over-counted. Both halves are asserted: the stray prose never appears, and \
+              neither does the charter line it was attached to",
     },
     Shape {
         args: &["ls", "--format", "across"],
@@ -692,8 +691,8 @@ fn every_printed_shape_names_the_file_its_line_is_about() {
     .unwrap();
     std::fs::write(dir.join("plain.rs"), ann("PLAIN")).unwrap();
     // A directory whose `.annotation` carries the charter line AND a line of prose under it —
-    // the shape a maintainer writes when the charter needs a note, and one `--strict-check`
-    // accepts without complaint.
+    // the shape a maintainer writes when the charter needs a note. It resolves to no charter at
+    // all, so no contract reaches the line.
     std::fs::create_dir_all(dir.join("noisy")).unwrap();
     std::fs::write(
         dir.join("noisy/.annotation"),

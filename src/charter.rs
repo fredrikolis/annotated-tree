@@ -50,6 +50,18 @@ pub fn from_line(text: &str) -> Option<Charter> {
     })
 }
 
+/// A [`Charter`] from the WHOLE body of an `.annotation` file, or `None` when the file holds
+/// anything but whitespace past its first line. `.annotation` is ONE bare line, so a body with
+/// prose under it resolves to NO charter and the directory row stays silent — "render, don't
+/// reason", with `--strict-check` reporting the file. This is the file-scale twin of
+/// [`from_line`], which stays the line-scale entry the entry-file promotion path uses.
+pub fn from_file_body(body: &str) -> Option<Charter> {
+    annotation::content_past_first_line(body)
+        .is_none()
+        .then(|| from_line(body))
+        .flatten()
+}
+
 /// Entry-file basenames (under `src/`) for a Rust crate whose charter is its `lib.rs` (else
 /// `main.rs`) annotation. Applies only when the directory holds a `Cargo.toml`. Bare basenames
 /// are the single source of truth — the filesystem resolver joins them under `src/`, the model
@@ -86,7 +98,7 @@ pub fn resolve_from_fs(dir: &Path, config: &Config) -> Option<Charter> {
     // 1. `.annotation` breadcrumb — its mere presence is the resolution (a malformed body
     //    yields `None` here and is flagged by `--strict-check`; it never falls through).
     if let Some(content) = read_charter_file(dir) {
-        return from_line(&content);
+        return from_file_body(&content);
     }
     // 2. Rust crate: promote src/lib.rs (else src/main.rs), only for a manifest-bearing crate.
     if dir.join("Cargo.toml").is_file() {

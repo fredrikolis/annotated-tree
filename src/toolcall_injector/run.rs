@@ -523,10 +523,10 @@ impl Annotator {
         out.write_all(content)?;
         if let Some(c) = contract {
             // ONE LINE IN, ONE LINE OUT is this tool's cardinal invariant, and it must hold even
-            // when the contract itself is not one line. A directory's charter is read from a whole
-            // `.annotation` file, so prose written under the charter line lands inside the `IO`
-            // field, newline and all — and pasting that verbatim split one output line into two,
-            // silently costing `| head -20` a path and `| wc -l` its count.
+            // if a contract ever reaches here as more than one line. `annotated-tree` resolves no
+            // charter from an `.annotation` holding more than its one line, so nothing multi-line
+            // should arrive — this is the boundary guard that keeps that a property of THIS tool
+            // rather than a bet on the library's current behaviour.
             let c = c.split(['\n', '\r']).next().unwrap_or_default();
             if !c.is_empty() {
                 write!(out, "  # {c}")?;

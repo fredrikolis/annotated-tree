@@ -1,4 +1,4 @@
-// Concern: extracts a file's first-line annotation and checks its three-field form and total length | Non-concern: which files to visit, or what a field means | IO: (head, Language?, bound) -> Outcome
+// Concern: extracts a file's first-line annotation, checks its form and length, and whether an `.annotation` holds more | Non-concern: which files to visit | IO: (head, Language?, bound) -> Outcome
 
 use std::path::Path;
 
@@ -400,6 +400,29 @@ pub fn analyze_charter(text: &str, max_len: Option<usize>) -> Outcome {
         missing,
         detail,
     }
+}
+
+/// The 1-based line of the first non-whitespace content BELOW the annotation an `.annotation`
+/// artifact holds, or `None` when it holds that one line and nothing else. A directory charter
+/// and a `<name>.annotation` sidecar are the only artifacts whose WHOLE body is the annotation,
+/// so anything below it has no reading: it is neither part of the annotation (the grammar is
+/// one line) nor outside it (the file has no other contents).
+///
+/// The annotation is located by [`first_meaningful_line`], the same scanner every other read in
+/// this module uses — so "the one line an `.annotation` IS" means the same line crate-wide. A
+/// body opening with blank lines is conforming and always has been; keying on line 1 instead
+/// would locate the annotation's own line and tell an author to delete it.
+///
+/// The rule is "nothing but whitespace below that line", never "the body contains a newline".
+/// Every editor terminates a file with one, so a newline test would fail every real adopter's
+/// charter on the day it shipped — including this repo's own root `.annotation`.
+pub(crate) fn content_past_first_line(body: &str) -> Option<usize> {
+    let (annotation_line, _) = first_meaningful_line(body)?;
+    body.lines()
+        .enumerate()
+        .skip(annotation_line)
+        .find(|(_, line)| !line.trim().is_empty())
+        .map(|(index, _)| index + 1)
 }
 
 /// A bare annotation line someone wrapped in a comment marker: the marker to remove, and the
@@ -1112,6 +1135,35 @@ mod tests {
                 missing: vec![PART_CONCERN, PART_NON_CONCERN, PART_IO],
                 detail: None,
             },
+        );
+    }
+
+    #[test]
+    fn content_past_first_line_ignores_trailing_whitespace_but_not_prose() {
+        // The trap: a trailing newline is what every editor writes, and blank lines below it are
+        // still whitespace — neither is content. Real prose is, and it is located at its own line.
+        for clean in [
+            "",
+            "Concern: a | Non-concern: b | IO: none",
+            "one line\n",
+            "one line\n\n\n  \n",
+        ] {
+            assert_eq!(
+                content_past_first_line(clean),
+                None,
+                "clean body: {clean:?}"
+            );
+        }
+        assert_eq!(content_past_first_line("one line\nprose"), Some(2));
+        // A body opening with blank lines is conforming — `first_meaningful_line` locates the
+        // annotation on line 3, and keying on line 1 would report line 3 as stray content and
+        // tell the author to delete their own annotation.
+        assert_eq!(content_past_first_line("\n\nConcern: a | IO: b\n"), None);
+        assert_eq!(content_past_first_line("\n \tone line\n\nprose"), Some(4));
+        assert_eq!(content_past_first_line("one line\n\nprose"), Some(3));
+        assert_eq!(
+            content_past_first_line("one line\n\n\nprose\nmore"),
+            Some(4)
         );
     }
 }

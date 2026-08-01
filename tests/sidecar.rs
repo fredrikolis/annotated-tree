@@ -276,3 +276,69 @@ fn a_directory_charter_is_never_read_as_a_sidecar() {
         "a directory charter is not a dangling sidecar:\n{strict}"
     );
 }
+
+#[test]
+fn a_sidecar_with_prose_below_its_line_gives_the_row_no_contract_and_fails() {
+    // The same rule at file scale. The CSV is still LISTED — writing the sidecar IS the opt-in,
+    // and that does not depend on the body being valid — but it carries NO contract rather than
+    // one with a newline in it, and the finding lands on the sidecar, the file an author edits.
+    let files = &[
+        ("trials.csv", "a,b\n1,2\n"),
+        (
+            "trials.csv.annotation",
+            "Concern: raw measurements | Non-concern: interpretation | IO: none\n\
+             STRAY-SIDECAR-PROSE\n",
+        ),
+        (
+            "main.rs",
+            "// Concern: the entry point | Non-concern: parsing | IO: none\n",
+        ),
+    ];
+
+    let (out, _err, code) = run("trailing-render", &[], files);
+    assert_eq!(code, 0, "rendering still exits 0:\n{out}");
+    let row = out
+        .lines()
+        .find(|l| l.contains("trials.csv"))
+        .expect("the CSV is still listed — the sidecar's presence is the opt-in");
+    assert!(!row.contains('#'), "the row carries no contract: {row}");
+    assert!(
+        !out.contains("STRAY-SIDECAR-PROSE"),
+        "no stray text anywhere in the map:\n{out}"
+    );
+
+    let (json, _err, _) = run("trailing-json", &["--format", "json"], files);
+    let doc: serde_json::Value = serde_json::from_str(&json).expect("map json parses");
+    let csv = doc["roots"][0]["files"]
+        .as_array()
+        .expect("files array")
+        .iter()
+        .find(|f| f["name"] == serde_json::json!("trials.csv"))
+        .expect("the CSV is a node");
+    assert!(
+        csv.get("annotation").is_none(),
+        "no annotation on the node: {csv}"
+    );
+    assert!(
+        csv.get("sidecar").is_none(),
+        "and no `sidecar: true` with nothing behind it: {csv}"
+    );
+
+    let (strict, _err, code) = run("trailing-strict", &["--strict-check", "--no-guide"], files);
+    assert_eq!(
+        code, 1,
+        "a sidecar with prose below its line fails:\n{strict}"
+    );
+    assert!(
+        strict.contains("trials.csv.annotation:2: holds more than the one line"),
+        "located at the sidecar, at the first stray line:\n{strict}"
+    );
+    assert!(
+        strict.contains("Found 1 annotation file(s) with trailing content"),
+        "{strict}"
+    );
+    assert!(
+        !strict.contains("STRAY-SIDECAR-PROSE"),
+        "never echoed into the report:\n{strict}"
+    );
+}

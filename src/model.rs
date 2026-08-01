@@ -233,7 +233,7 @@ fn convert(
         // as the subtree is unexpanded — so only the explicit override can surface here.
         return DirNode {
             name,
-            charter: charter::read_charter_file(abs_dir).and_then(|c| charter::from_line(&c)),
+            charter: charter::read_charter_file(abs_dir).and_then(|c| charter::from_file_body(&c)),
             deps,
             dirs: Vec::new(),
             files: Vec::new(),
@@ -301,7 +301,7 @@ fn convert(
 /// `charter`, so the model and the strict-check filesystem resolver share both.
 fn resolve_charter(abs_dir: &Path, dirs: &[DirNode], files: &[FileNode]) -> Option<Charter> {
     if let Some(content) = charter::read_charter_file(abs_dir) {
-        return charter::from_line(&content);
+        return charter::from_file_body(&content);
     }
     if abs_dir.join("Cargo.toml").is_file() {
         if let Some(src) = dirs.iter().find(|d| d.name == "src") {
@@ -357,6 +357,10 @@ fn file_annotation(abs: &Path, config: &Config) -> (Option<String>, bool) {
     // entry-file line. Without a sidecar the file is here only because `--include` opted it
     // in, so fall back to reading its head with no marker known.
     let body = sidecar::body(abs)
+        // A sidecar carrying prose past its one line resolves to NO annotation, exactly as a
+        // directory charter does: the row stays silent rather than carrying a newline into it,
+        // and `--strict-check` reports the file.
+        .filter(|text| annotation::content_past_first_line(text).is_none())
         .map(|text| text.trim().to_string())
         .filter(|text| !text.is_empty());
     match body {

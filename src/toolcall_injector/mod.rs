@@ -1,4 +1,4 @@
-// Concern: routes each toolcall-injector verb to its module, and owns the PreToolUse wire format | Non-concern: eligibility, or what an annotation means | IO: (args, stdin) -> output + exit code
+// Concern: routes each toolcall-injector verb to its module, and owns the hook wire format | Non-concern: eligibility, or what an annotation means | IO: (args, stdin) -> output + exit code
 
 //! What gets rewritten, and why it is safe to leave on.
 //!
@@ -75,7 +75,7 @@ const VERBS: &[(&str, &str)] = &[
     ),
     (
         "--rewrite-tool-call",
-        "hook entry point: one PreToolUse event on stdin",
+        "hook entry point: one PreToolUse or SessionStart event on stdin",
     ),
     (
         "--annotate-tool-output CMD…",
@@ -224,7 +224,23 @@ fn check(args: &ToolcallInjector, out: &mut impl Write) -> Result<i32> {
     Ok(exit::SUCCESS)
 }
 
-/// The Claude Code PreToolUse entry point: one hook event on stdin, an `updatedInput` or nothing.
+/// Said once, at the start of a session, instead of on every rewritten call.
+///
+/// The reader is an agent that is about to see `# Concern: …` trailing lines it did not ask for.
+/// The whole job of this text is that it recognises them and does not go debugging its own tools;
+/// everything else it might want to know is in `--help` and the README.
+const SESSION_ANNOUNCEMENT: &str = concat!(
+    "ls, find and grep output in this session carries each file's contract:\n",
+    "  src/render/text.rs  # Concern: … | Non-concern: … | IO: …\n",
+    "Only output returned directly to your context is annotated (i.e. `ls -la > out.txt` is ",
+    "unaffected).",
+);
+
+/// The Claude Code hook entry point: one hook event on stdin, one JSON object out, or nothing.
+///
+/// Two events are answered. `SessionStart` gets the announcement above — ONCE, which is why no
+/// rewritten call carries one; `PreToolUse` gets an `updatedInput` when it names an eligible Bash
+/// command. Anything else is not ours and gets silence.
 ///
 /// ALWAYS [`exit::SUCCESS`]. A PreToolUse hook's exit 2 BLOCKS the tool call; other nonzero codes
 /// surface as errors. Neither is an acceptable way to say "nothing to do here".
@@ -235,7 +251,7 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
         writeln!(
             err,
             "annotated-tree toolcall-injector --rewrite-tool-call: reads one Claude Code \
-             PreToolUse event on stdin; a terminal will never send one."
+             PreToolUse or SessionStart event on stdin; a terminal will never send one."
         )?;
         return Ok(exit::SUCCESS);
     }
@@ -247,6 +263,21 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
     let Ok(payload) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return Ok(exit::SUCCESS);
     };
+    // Claude Code stamps the event name on every payload. Matched before `tool_name` because a
+    // SessionStart event carries no tool at all.
+    if payload.get("hook_event_name").and_then(|v| v.as_str()) == Some("SessionStart") {
+        writeln!(
+            out,
+            "{}",
+            serde_json::json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": SESSION_ANNOUNCEMENT,
+                }
+            })
+        )?;
+        return Ok(exit::SUCCESS);
+    }
     if payload.get("tool_name").and_then(|v| v.as_str()) != Some("Bash") {
         return Ok(exit::SUCCESS);
     }
@@ -254,7 +285,7 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
         return Ok(exit::SUCCESS);
     };
     let command = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
-    let Some((rewritten, swapped)) = inject::rewrite(command) else {
+    let Some((rewritten, _swapped)) = inject::rewrite(command) else {
         return Ok(exit::SUCCESS);
     };
 
@@ -262,6 +293,11 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
     updated.insert("command".into(), serde_json::Value::String(rewritten));
     // No `permissionDecision`: "allow" would SKIP PERMISSION CHECKS for the whole Bash command,
     // including anything `&&`-joined to the eligible stage. `updatedInput` needs no decision.
+    //
+    // And no `additionalContext`. PreToolUse fires BEFORE the command runs, so an explanation
+    // attached here is repeated on every eligible call and is often about contracts that never
+    // appear — a `grep` over unannotated files would carry the whole speech and annotate nothing.
+    // SESSION_ANNOUNCEMENT says it once instead.
     writeln!(
         out,
         "{}",
@@ -269,13 +305,6 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "updatedInput": serde_json::Value::Object(updated),
-                "additionalContext": format!(
-                    "`{}`: each runs exactly as written, with its output piped through \
-                     `annotated-tree toolcall-injector --annotate-tool-output`, which appends each \
-                     file's Concern/Non-concern/IO contract to the line that file's path appeared \
-                     on.",
-                    swapped.join("`, `")
-                ),
             }
         })
     )?;

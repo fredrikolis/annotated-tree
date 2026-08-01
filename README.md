@@ -254,7 +254,9 @@ its own `Concern | Non-concern | IO` line, promoted onto the folder's row in the
 (you saw one on `core/` at the top). Give it one with a `.annotation` file in the
 folder, or let its entry file stand in for free (`lib.rs`/`main.rs`, `mod.rs`,
 `__init__.py`, an `index.*`, a `doc.go`); the opt-in `require_package_charter` rule
-can require every package with a manifest to have one.
+can require every package with a manifest to have one. An `.annotation` carries the
+charter line and no prose under it. `--strict-check` fails a note written below (blank
+lines are fine); put the note in a README.
 
 ### How an agent uses it
 

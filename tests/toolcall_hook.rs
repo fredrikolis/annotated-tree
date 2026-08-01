@@ -1,4 +1,4 @@
-// Concern: freezes the PreToolUse contract — the shape Claude Code parses and the exit code it reads | Non-concern: eligibility, or the annotated output | IO: (hook JSON) -> asserted stdout + code
+// Concern: freezes the hook wire contract — the JSON Claude Code parses and the exit code it reads | Non-concern: eligibility, or the annotated output | IO: (hook JSON) -> asserted stdout + code
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -58,10 +58,46 @@ fn a_rewrite_is_returned_in_the_shape_the_harness_reads() {
         wraps(&hook_out["updatedInput"]["command"], "ls src"),
         "unexpected rewrite: {hook_out}"
     );
+    // No `additionalContext` here. PreToolUse fires before the command runs, so an explanation
+    // attached to a rewrite is repeated on every eligible call and describes contracts that may
+    // never be printed. SessionStart carries it once instead.
     assert!(
-        hook_out["additionalContext"].is_string(),
-        "the model is told what was substituted"
+        hook_out.get("additionalContext").is_none(),
+        "the per-call explanation is back: {hook_out}"
     );
+}
+
+#[test]
+fn a_session_start_event_is_answered_with_the_announcement_once() {
+    let (out, code) = hook(
+        r#"{"hook_event_name":"SessionStart","session_id":"abc","source":"startup","cwd":"/tmp"}"#,
+    );
+    assert_eq!(code, 0);
+    let hook_out = &json(&out)["hookSpecificOutput"];
+    assert_eq!(hook_out["hookEventName"], "SessionStart");
+    // The wire contract is that SOMETHING is said, not what. The wording is prose and will keep
+    // improving; freezing it here only breaks this test every time it does.
+    assert!(
+        hook_out["additionalContext"]
+            .as_str()
+            .is_some_and(|c| !c.is_empty()),
+        "no announcement: {out}"
+    );
+    // No rewrite is proposed for an event that names no tool.
+    assert!(hook_out.get("updatedInput").is_none(), "{out}");
+}
+
+#[test]
+fn a_session_start_event_never_reaches_the_rewriter() {
+    // `hook_event_name` is matched first, so a SessionStart payload that also happened to carry a
+    // `tool_name` is still answered as a SessionStart.
+    let (out, code) = hook(
+        r#"{"hook_event_name":"SessionStart","source":"compact","tool_name":"Bash","tool_input":{"command":"ls src"}}"#,
+    );
+    assert_eq!(code, 0);
+    let hook_out = &json(&out)["hookSpecificOutput"];
+    assert_eq!(hook_out["hookEventName"], "SessionStart");
+    assert!(hook_out.get("updatedInput").is_none(), "{out}");
 }
 
 #[test]
@@ -104,6 +140,8 @@ fn silence_means_no_opinion() {
         r#"{"tool_name":"Bash","tool_input":{"command":"cat file.txt"}}"#,
         r#"{"tool_name":"Bash","tool_input":{"command":"ls > out.txt"}}"#,
         r#"{"tool_name":"Read","tool_input":{"file_path":"/tmp/x"}}"#,
+        // Some other event this hook was never installed for.
+        r#"{"hook_event_name":"SessionEnd","reason":"clear"}"#,
     ] {
         let (out, code) = hook(event);
         assert_eq!(out, "", "expected silence for {event}");

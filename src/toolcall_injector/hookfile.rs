@@ -1,4 +1,4 @@
-// Concern: adds or removes the PreToolUse entry in a settings file, keeping every other key | Non-concern: what to rewrite, or the hook event format | IO: (settings path) -> edited file, outcome
+// Concern: adds or removes our hook entries in a settings file, keeping every other key | Non-concern: what to rewrite, or the hook event format | IO: (settings path) -> edited file, outcome
 
 use std::path::{Path, PathBuf};
 
@@ -10,6 +10,17 @@ use serde_json::{json, Map, Value};
 /// name that failed to resolve made the producer take SIGPIPE. Here the harness runs the command
 /// directly, so there is no pipe to break and the reinstall-proof spelling wins.)
 const HOOK_COMMAND: &str = "annotated-tree toolcall-injector --rewrite-tool-call";
+
+/// The entries we install, as `(hook event, matcher)`. Both run the SAME command — the injector
+/// branches on the event name it is handed — so `is_ours` recognises either one.
+///
+/// `SessionStart` names every source Claude Code has, alternation and all, because the announcement
+/// is worth exactly one telling per context: `compact` is the one that matters, since a session
+/// long enough to be compacted would otherwise lose it and never hear it again.
+const ENTRIES: &[(&str, &str)] = &[
+    ("PreToolUse", "Bash"),
+    ("SessionStart", "startup|resume|clear|compact|fork"),
+];
 
 /// What a call did. Distinguishing "already there" from "added" is what makes running this twice
 /// safe to suggest in a README.
@@ -102,50 +113,71 @@ fn write(path: &Path, root: &Map<String, Value>) -> Result<(), String> {
     std::fs::rename(&tmp, path).map_err(|e| format!("cannot replace {}: {e}", path.display()))
 }
 
-/// Add the PreToolUse entry, keeping every other key. Running it again changes nothing.
+/// Add every entry in [`ENTRIES`], keeping every other key. Running it again changes nothing.
+///
+/// Each event is considered on its own, so an adopter who installed when there was only a
+/// `PreToolUse` entry gains the `SessionStart` one on a re-install rather than being told the hook
+/// is already present. The file is written only if something was actually added.
 pub fn install(path: &Path) -> Result<Outcome, String> {
     let mut root = read(path)?;
-    let hooks = root
-        .entry("hooks")
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .ok_or_else(|| format!("`hooks` in {} is not an object", path.display()))?;
-    let list = hooks
-        .entry("PreToolUse")
-        .or_insert_with(|| json!([]))
-        .as_array_mut()
-        .ok_or_else(|| format!("`hooks.PreToolUse` in {} is not an array", path.display()))?;
-
-    if list.iter().any(is_ours) {
+    let mut added = false;
+    for (event, matcher) in ENTRIES {
+        let hooks = root
+            .entry("hooks")
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .ok_or_else(|| format!("`hooks` in {} is not an object", path.display()))?;
+        let list = hooks
+            .entry(*event)
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .ok_or_else(|| format!("`hooks.{event}` in {} is not an array", path.display()))?;
+        if list.iter().any(is_ours) {
+            continue;
+        }
+        list.push(json!({
+            "matcher": matcher,
+            "hooks": [{ "type": "command", "command": HOOK_COMMAND }],
+        }));
+        added = true;
+    }
+    if !added {
         return Ok(Outcome::AlreadyPresent);
     }
-    list.push(json!({
-        "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": HOOK_COMMAND }],
-    }));
     write(path, &root)?;
     Ok(Outcome::Added)
 }
 
-/// Remove our entry and nothing else, pruning the containers we would have created so the file
+/// Remove our entries and nothing else, pruning the containers we would have created so the file
 /// returns to the shape it had before `install`.
 pub fn uninstall(path: &Path) -> Result<Outcome, String> {
     let mut root = read(path)?;
-    let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) else {
-        return Ok(Outcome::NotPresent);
+    let mut removed = false;
+    // A block, so the borrow of `root` ends before the last container is pruned off `root` itself.
+    let hooks_empty = {
+        let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) else {
+            return Ok(Outcome::NotPresent);
+        };
+        for (event, _) in ENTRIES {
+            let Some(list) = hooks.get_mut(*event).and_then(Value::as_array_mut) else {
+                continue;
+            };
+            let before = list.len();
+            list.retain(|e| !is_ours(e));
+            if list.len() == before {
+                continue;
+            }
+            removed = true;
+            if list.is_empty() {
+                hooks.remove(*event);
+            }
+        }
+        hooks.is_empty()
     };
-    let Some(list) = hooks.get_mut("PreToolUse").and_then(Value::as_array_mut) else {
-        return Ok(Outcome::NotPresent);
-    };
-    let before = list.len();
-    list.retain(|e| !is_ours(e));
-    if list.len() == before {
+    if !removed {
         return Ok(Outcome::NotPresent);
     }
-    if list.is_empty() {
-        hooks.remove("PreToolUse");
-    }
-    if hooks.is_empty() {
+    if hooks_empty {
         root.remove("hooks");
     }
     write(path, &root)?;
@@ -164,12 +196,47 @@ mod tests {
     }
 
     #[test]
-    fn installing_twice_adds_one_entry() {
+    fn installing_twice_adds_one_entry_per_event() {
         let p = tmp("twice");
         assert_eq!(install(&p).unwrap(), Outcome::Added);
         assert_eq!(install(&p).unwrap(), Outcome::AlreadyPresent);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        for (event, matcher) in ENTRIES {
+            let list = v["hooks"][event].as_array().unwrap();
+            assert_eq!(list.len(), 1, "{event} was duplicated");
+            assert_eq!(list[0]["matcher"], *matcher);
+            assert_eq!(list[0]["hooks"][0]["command"], HOOK_COMMAND);
+        }
+    }
+
+    #[test]
+    fn re_installing_over_a_pretooluse_only_file_adds_the_sessionstart_entry() {
+        // What an adopter of the first release has on disk. Re-running install must not report
+        // "already present" and leave them without the once-per-session announcement.
+        let p = tmp("upgrade");
+        std::fs::write(
+            &p,
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"annotated-tree toolcall-injector --rewrite-tool-call"}]}]}}"#,
+        )
+        .unwrap();
+        assert_eq!(install(&p).unwrap(), Outcome::Added);
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
+        assert_eq!(v["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn both_entries_round_trip() {
+        let p = tmp("roundtrip");
+        std::fs::write(&p, "{\n  \"permissions\": {}\n}\n").unwrap();
+        assert_eq!(install(&p).unwrap(), Outcome::Added);
+        assert_eq!(uninstall(&p).unwrap(), Outcome::Removed);
+        assert_eq!(uninstall(&p).unwrap(), Outcome::NotPresent);
+        // Byte-for-byte the file install was handed: no `hooks`, no empty event arrays.
+        assert_eq!(
+            std::fs::read_to_string(&p).unwrap(),
+            "{\n  \"permissions\": {}\n}\n"
+        );
     }
 
     #[test]
@@ -192,6 +259,8 @@ mod tests {
         // Someone else's PreToolUse entry is not ours to remove.
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
         assert_eq!(v["hooks"]["PreToolUse"][0]["matcher"], "Read");
+        // Ours was the only SessionStart entry, so that container went with it.
+        assert!(v["hooks"].get("SessionStart").is_none());
     }
 
     #[test]
@@ -216,8 +285,14 @@ mod tests {
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"/home/x/.cargo/bin/annotated-tree toolcall-injector --rewrite-tool-call"}]}]}}"#,
         )
         .unwrap();
-        assert_eq!(install(&p).unwrap(), Outcome::AlreadyPresent);
+        // The SessionStart half is still added, but the recognised PreToolUse entry is not
+        // duplicated — and uninstall takes the absolute-path spelling away with it.
+        assert_eq!(install(&p).unwrap(), Outcome::Added);
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
         assert_eq!(uninstall(&p).unwrap(), Outcome::Removed);
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        assert!(v.get("hooks").is_none());
     }
 
     #[test]
@@ -241,11 +316,15 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_file_is_created_with_only_our_entry() {
+    fn a_missing_file_is_created_with_only_our_entries() {
         let p = tmp("fresh");
         assert_eq!(install(&p).unwrap(), Outcome::Added);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(v["hooks"]["PreToolUse"][0]["matcher"], "Bash");
+        assert!(v["hooks"]["SessionStart"][0]["matcher"]
+            .as_str()
+            .is_some_and(|m| m.contains("compact")));
         assert_eq!(v.as_object().unwrap().len(), 1);
+        assert_eq!(v["hooks"].as_object().unwrap().len(), 2);
     }
 }

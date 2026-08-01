@@ -168,3 +168,115 @@ fn require_package_charter_serializes_with_a_stable_code() {
     assert_eq!(rv["packages"], serde_json::json!(["nocharter"]));
     assert_eq!(rv["path"], serde_json::json!("packages/nocharter"));
 }
+
+#[test]
+fn the_trailing_whitespace_guard_cannot_be_silently_disarmed() {
+    // THE TRAP, anchored. Every editor terminates a file with a newline, so a rule keyed on "the
+    // body contains a newline" would have failed every real adopter on day one — this repo's own
+    // root `.annotation` included — while the hand-crafted fixtures, which had NO trailing
+    // newline, sailed through and kept the suite green.
+    //
+    // `annotation_breadcrumb_charters_a_grouping_folder` and
+    // `charter_surfaces_as_a_keyed_object_in_json` are what prove such a charter still resolves
+    // and renders. They prove it ONLY while this fixture ends in whitespace, and neither says so,
+    // so a tidy-up that stripped it would disarm both without failing anything. This asserts the
+    // byte fact they rest on.
+    let body = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/charter/grouping/.annotation"),
+    )
+    .expect("the grouping charter fixture is readable");
+    assert!(
+        body.ends_with("\n\n"),
+        "the fixture must end in a trailing newline AND a blank line, or the two tests that rest \
+         on it stop testing the trap: {body:?}"
+    );
+    assert_eq!(
+        body.lines().filter(|l| !l.trim().is_empty()).count(),
+        1,
+        "and it must still hold exactly ONE line of content: {body:?}"
+    );
+}
+
+#[test]
+fn a_charter_with_prose_below_its_line_resolves_to_no_charter() {
+    // TREE1: a Report shows no other text in an Annotation's place. A `.annotation` holding more
+    // than its one line resolves to NOTHING — the directory row carries no charter rather than a
+    // charter with a newline inside it — and the stray prose reaches no surface at all.
+    let (out, code) = run(&[], "charter_noisy");
+    assert_eq!(code, 0, "rendering still exits 0:\n{out}");
+    let line = dir_line(&out, "noisy").expect("noisy/ dir row is present");
+    assert!(
+        !line.contains('#'),
+        "the directory row carries no charter: {line}"
+    );
+    assert!(
+        !out.contains("STRAY-PROSE") && !out.contains("NOISY-CHARTER"),
+        "neither the stray prose nor the line it was attached to reaches the map:\n{out}"
+    );
+    // One line per rendered path — noisy/, noisy/inner.rs, top.rs — which is the property the
+    // whole plan exists to restore. Counted over the tree rows themselves, not over stdout
+    // lines, so a footer note added later cannot fail this spuriously.
+    assert_eq!(
+        out.lines().filter(|l| l.contains("── ")).count(),
+        3,
+        "one row per path:\n{out}"
+    );
+
+    let (json, _) = run(&["--format", "json"], "charter_noisy");
+    let doc: serde_json::Value = serde_json::from_str(&json).expect("json parses");
+    let noisy = doc["roots"][0]["dirs"]
+        .as_array()
+        .expect("dirs array")
+        .iter()
+        .find(|d| d["name"] == serde_json::json!("noisy"))
+        .expect("noisy dir node");
+    assert!(
+        noisy.get("charter").is_none(),
+        "and the machine contract carries no charter either: {noisy}"
+    );
+}
+
+#[test]
+fn a_charter_with_prose_below_its_line_fails_strict_check_alone() {
+    // The gate that could not see this before. It FAILS, it is located at the file an author
+    // edits and at the first stray line, and it is reported ALONE: `violations` stays empty,
+    // because which line is the annotation is exactly what this file has not settled.
+    let (out, code) = run(&["--strict-check", "--no-guide"], "charter_noisy");
+    assert_eq!(code, 1, "a multi-line charter now fails:\n{out}");
+    assert!(
+        out.contains("noisy/.annotation:2: holds more than the one line"),
+        "located at the charter, at the first stray line:\n{out}"
+    );
+    assert!(
+        out.contains("Found 1 annotation file(s) with trailing content"),
+        "with its own count, kept out of the annotation error count:\n{out}"
+    );
+    assert!(
+        !out.contains("STRAY-PROSE"),
+        "the stray prose is never echoed into the report:\n{out}"
+    );
+
+    let (json, code) = run(&["--strict-check", "--format", "json"], "charter_noisy");
+    assert_eq!(code, 1);
+    let doc: serde_json::Value = serde_json::from_str(&json).expect("strict json parses");
+    assert_eq!(doc["passed"], serde_json::json!(false));
+    assert_eq!(
+        doc["error_count"],
+        serde_json::json!(0),
+        "not an annotation error — the parts were never judged: {json}"
+    );
+    assert!(
+        doc["violations"]
+            .as_array()
+            .expect("violations array")
+            .is_empty(),
+        "the part diagnosis is suppressed, not stacked: {json}"
+    );
+    let trailing = doc["trailing_content"]
+        .as_array()
+        .expect("trailing_content array");
+    assert_eq!(trailing.len(), 1, "{json}");
+    assert_eq!(trailing[0]["path"], serde_json::json!("noisy/.annotation"));
+    assert_eq!(trailing[0]["line"], serde_json::json!(2));
+}

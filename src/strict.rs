@@ -1,4 +1,4 @@
-// Concern: reports each file, charter or sidecar whose annotation is absent, malformed or over the bound, plus dangling sidecars | Non-concern: the tree view | IO: (files, Config) -> (report, exit_code)
+// Concern: reports each annotation absent, malformed or over the bound, and each dangling or overfull `.annotation` file | Non-concern: the tree view | IO: (files, Config) -> (report, exit_code)
 
 //! # Strict-check JSON schema (`--strict-check --format json`)
 //!
@@ -267,14 +267,31 @@ pub struct OrphanSidecar {
     pub message: String,
 }
 
+/// One `.annotation` artifact — a directory charter or a `<name>.annotation` sidecar — with
+/// content below its first line. Its own list, not an [`AnnotationViolation`], because it is not
+/// an issue about an Annotation: every part may be present and non-empty, and the whole
+/// annotation inside the bound, and the defect is still that the FILE holds more than the one
+/// line it IS. The same non-Annotation class as [`OrphanSidecar`], located and dual-rendered the
+/// same way.
+#[derive(Debug, Clone, Serialize)]
+pub struct TrailingContent {
+    /// The `.annotation` file, relative to the checked root (unix slashes).
+    pub path: String,
+    /// 1-based line of the first content past line 1 — where to start deleting.
+    pub line: usize,
+    /// The finding as one human line (the TEXT report emits `path:line: message`).
+    pub message: String,
+}
+
 /// The whole structured `--strict-check` verdict for one root: annotation violations,
-/// dangling sidecars, PLUS architectural `[rules]` findings. This is the ONE producer every
+/// dangling sidecars, `.annotation` files with trailing content, PLUS architectural `[rules]`
+/// findings. This is the ONE producer every
 /// surface drives — the CLI's TEXT report ([`StrictReport::to_text`]) and `--format json`
 /// ([`StrictReport::to_json`]) — so no two surfaces can drift.
 #[derive(Debug, Clone, Serialize)]
 pub struct StrictReport {
-    /// True iff there are no annotation violations, no dangling sidecars, and no rule
-    /// violations.
+    /// True iff there are no annotation violations, no dangling sidecars, no `.annotation` file
+    /// with content past its one line, and no rule violations.
     pub passed: bool,
     /// Number of annotation violations (matches the TEXT "Found N error(s)").
     pub error_count: usize,
@@ -286,6 +303,7 @@ pub struct StrictReport {
     pub annotated_count: usize,
     pub violations: Vec<AnnotationViolation>,
     pub orphan_sidecars: Vec<OrphanSidecar>,
+    pub trailing_content: Vec<TrailingContent>,
     pub rule_violations: Vec<RuleViolation>,
 }
 
@@ -300,6 +318,7 @@ impl StrictReport {
             annotated_count: 0,
             violations: Vec::new(),
             orphan_sidecars: Vec::new(),
+            trailing_content: Vec::new(),
             rule_violations: Vec::new(),
         }
     }
@@ -313,6 +332,7 @@ impl StrictReport {
         self.annotated_count += other.annotated_count;
         self.violations.extend(other.violations);
         self.orphan_sidecars.extend(other.orphan_sidecars);
+        self.trailing_content.extend(other.trailing_content);
         self.rule_violations.extend(other.rule_violations);
     }
 
@@ -365,6 +385,23 @@ impl StrictReport {
             out.push_str(&format!(
                 "\nFound {} orphan sidecar(s)\n",
                 self.orphan_sidecars.len()
+            ));
+            code = crate::exit::STRICT_FAILURE;
+        }
+        // Content past line 1 is a defect of the FILE, not of any Annotation part, so it gets its
+        // own located lines beside the dangling sidecars rather than being folded into the
+        // violation list an agent reads as "fix this annotation".
+        if !self.trailing_content.is_empty() {
+            push_capped(
+                &mut out,
+                &self.trailing_content,
+                max_per_node,
+                "trailing-content finding",
+                |t| format!("{}:{}: {}", t.path, t.line, t.message),
+            );
+            out.push_str(&format!(
+                "\nFound {} annotation file(s) with trailing content\n",
+                self.trailing_content.len()
             ));
             code = crate::exit::STRICT_FAILURE;
         }
@@ -436,6 +473,7 @@ pub(crate) fn check_structured(
 ) -> StrictReport {
     let (violations, annotated_count, annotated_files) = check_annotations(root, files, config);
     let orphan_sidecars = orphan_sidecars(root, files);
+    let trailing_content = trailing_contents(root, files, config);
     let mut rule_violations = Vec::new();
     // The dependency graph feeds ONE signal: the architectural `[rules]` findings. No rule
     // configured, no graph build — a repo with no `[rules]` does zero extra work.
@@ -482,12 +520,16 @@ pub(crate) fn check_structured(
         }
     }
     StrictReport {
-        passed: violations.is_empty() && orphan_sidecars.is_empty() && rule_violations.is_empty(),
+        passed: violations.is_empty()
+            && orphan_sidecars.is_empty()
+            && trailing_content.is_empty()
+            && rule_violations.is_empty(),
         error_count: violations.len(),
         files_checked: files.len(),
         annotated_count,
         violations,
         orphan_sidecars,
+        trailing_content,
         rule_violations,
     }
 }
@@ -508,6 +550,7 @@ pub(crate) fn check_file(root: &Path, files: &[PathBuf], config: &Config) -> Str
         annotated_count,
         violations,
         orphan_sidecars: Vec::new(),
+        trailing_content: Vec::new(),
         rule_violations: Vec::new(),
     }
 }
@@ -537,6 +580,10 @@ fn check_annotations(
             // in the set only because `--include` opted it in, and its grammar is unknown.
             if let Some(body) = sidecar::body(path) {
                 annotated_files.push(rel.clone());
+                // Same precedence as a directory charter — reported once, by `trailing_contents`.
+                if annotation::content_past_first_line(&body).is_some() {
+                    continue;
+                }
                 match defect_parts(annotation::analyze_charter(
                     &body,
                     config.rules.max_annotation_length,
@@ -711,18 +758,19 @@ fn charter_violations(root: &Path, files: &[PathBuf], config: &Config) -> Vec<An
         let Some(content) = charter::read_charter_file(&dir) else {
             continue;
         };
+        // Content past line 1 is reported ONCE, by `trailing_contents`, and suppresses the part
+        // diagnosis: `found:` and `suggestion:` would otherwise carry the stray line into a
+        // report whose contract is one finding per line.
+        if annotation::content_past_first_line(&content).is_some() {
+            continue;
+        }
         let Some(parts) = defect_parts(annotation::analyze_charter(
             &content,
             config.rules.max_annotation_length,
         )) else {
             continue;
         };
-        let dir_rel = rel_of(root, &dir);
-        let path = if dir_rel.is_empty() {
-            CHARTER_FILE.to_string()
-        } else {
-            format!("{dir_rel}/{CHARTER_FILE}")
-        };
+        let path = charter_rel(root, &dir);
         let dir_name = dir
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -804,6 +852,74 @@ fn orphan_sidecars(root: &Path, files: &[PathBuf]) -> Vec<OrphanSidecar> {
     }
     out.sort_by(|a, b| a.path.cmp(&b.path));
     out
+}
+
+/// Every `<name>.annotation` sidecar of a checked file that carries content past its one line.
+/// Driven off the FILE set, not a directory scan, so `check_file` covers exactly the named file's
+/// sidecar. A file that maps to a comment marker owns its own first line and takes no sidecar
+/// ([`sidecar::target_of`]'s rule), so it is skipped here for the same reason.
+fn sidecar_trailing_contents(
+    root: &Path,
+    files: &[PathBuf],
+    config: &Config,
+) -> Vec<TrailingContent> {
+    let mut out = Vec::new();
+    for file in files {
+        if config.language_for_path(file).is_some() {
+            continue;
+        }
+        let Some(body) = sidecar::body(file) else {
+            continue;
+        };
+        if let Some(line) = annotation::content_past_first_line(&body) {
+            out.push(trailing_content(
+                rel_of(root, &sidecar::path_for(file)),
+                line,
+            ));
+        }
+    }
+    out
+}
+
+/// Every `.annotation` artifact in the tree carrying content past its one line — file sidecars
+/// plus each directory's charter, over the SAME directory census `charter_violations` enforces,
+/// so render and enforcement agree on scope. Deterministic (sorted by path).
+fn trailing_contents(root: &Path, files: &[PathBuf], config: &Config) -> Vec<TrailingContent> {
+    let mut out = sidecar_trailing_contents(root, files, config);
+    for dir in tree_dirs(root, files) {
+        let Some(body) = charter::read_charter_file(&dir) else {
+            continue;
+        };
+        if let Some(line) = annotation::content_past_first_line(&body) {
+            out.push(trailing_content(charter_rel(root, &dir), line));
+        }
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    out
+}
+
+/// The finding for an `.annotation` artifact with content past line 1. ONE builder for both
+/// scales, so a charter and a sidecar cannot drift on the remedy they state.
+fn trailing_content(path: String, line: usize) -> TrailingContent {
+    TrailingContent {
+        message: "holds more than the one line an `.annotation` file is — a trailing newline and \
+                  trailing blank lines are fine, prose is not. Delete everything from this line \
+                  down"
+            .to_string(),
+        path,
+        line,
+    }
+}
+
+/// A directory's `.annotation` path, relative to the checked root (unix slashes) — the root's own
+/// charter is the bare name, with no leading slash.
+fn charter_rel(root: &Path, dir: &Path) -> String {
+    let dir_rel = rel_of(root, dir);
+    if dir_rel.is_empty() {
+        CHARTER_FILE.to_string()
+    } else {
+        format!("{dir_rel}/{CHARTER_FILE}")
+    }
 }
 
 /// A path relative to the checked root, unix slashes — the one coordinate space every finding

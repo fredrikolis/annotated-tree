@@ -366,3 +366,70 @@ fn yaml_frontmatter_keeps_line_one_and_the_annotation_still_counts() {
         "the skill counts toward coverage:\n{out}"
     );
 }
+
+#[test]
+fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
+    // An `.annotation`'s stray lines reach no report surface, on any of the three shapes that
+    // produce them — and the malformed-first-line cases prove the precedence rule: without it,
+    // `found:` and `suggestion:` echo the stray line and ONE finding prints as THREE lines.
+    let files = &[
+        ("main.rs", "// Concern: a | Non-concern: b | IO: none\n"),
+        (
+            "noisy/.annotation",
+            "Concern: NOISY | Non-concern: n | IO: none\nSTRAY-VALID-FIRST-LINE\n",
+        ),
+        (
+            "noisy/inner.rs",
+            "// Concern: c | Non-concern: d | IO: none\n",
+        ),
+        (
+            "broken/.annotation",
+            "not a charter line\nSTRAY-MALFORMED-FIRST-LINE\n",
+        ),
+        (
+            "broken/inner.rs",
+            "// Concern: e | Non-concern: f | IO: none\n",
+        ),
+        ("trials.csv", "a,b\n"),
+        (
+            "trials.csv.annotation",
+            "not even a charter line\nSTRAY-SIDECAR\n",
+        ),
+    ];
+    let (out, code) = check("no-stray-text", &["--no-guide"], files);
+    assert_eq!(code, 1, "{out}");
+
+    for stray in [
+        "STRAY-VALID-FIRST-LINE",
+        "STRAY-MALFORMED-FIRST-LINE",
+        "STRAY-SIDECAR",
+    ] {
+        assert!(!out.contains(stray), "{stray} reached the report:\n{out}");
+    }
+
+    // Three artifacts, three findings, each located and each on ONE line. Sorted by path, so the
+    // report is deterministic regardless of walk order.
+    for located in [
+        "broken/.annotation:2: holds more than the one line",
+        "noisy/.annotation:2: holds more than the one line",
+        "trials.csv.annotation:2: holds more than the one line",
+    ] {
+        assert!(out.contains(located), "missing {located:?}:\n{out}");
+    }
+    assert!(
+        out.contains("Found 3 annotation file(s) with trailing content"),
+        "{out}"
+    );
+
+    // And NOTHING was diagnosed about any of their parts — including the two whose first line is
+    // malformed, which is the whole point of the precedence rule.
+    assert!(
+        out.contains("All 4 files passed"),
+        "no annotation violation: main.rs, noisy/inner.rs, broken/inner.rs and trials.csv are the \
+         four checked files:\n{out}"
+    );
+    assert!(
+        out.contains("3 of 4 files annotated"),
+        "the CSV's contract does not conform, so it is not counted as annotated:\n{out}"
+    );
+}

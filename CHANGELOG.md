@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `trailing_content` on the `--strict-check` report (its own list, like `orphan_sidecars`: content
+  past line 1 is a defect of the FILE, not an issue about an Annotation, so `CHECK1` is untouched).
+  **BREAKING** for a consumer that builds a `StrictReport` by struct literal.
 - Per-file `.annotation` **sidecars** (#1). A file that maps to no comment marker — a CSV, a
   dataset, a binary — carries its contract in a `<name>.annotation` file beside it, holding the
   same bare three-field line a folder's `.annotation` holds. Three consequences:
@@ -39,15 +42,33 @@ to [Semantic Versioning](https://semver.org/).
 - `annotated-tree toolcall-injector --install-claude-hook [FILE]` and
   `--uninstall-claude-hook [FILE]`. Cargo has no post-install or pre-uninstall step — the only
   code it runs is `build.rs`, at build time — so switching the hook on is an explicit command.
-  It MERGES one `PreToolUse` entry into the settings file, keeping every other key: that file
+  It MERGES its entries into the settings file, keeping every other key: that file
   holds the permissions a user has accepted, and a setup step that overwrote it would cost them
   all of them. Defaults to `~/.claude/settings.json`; pass `.claude/settings.local.json` for a
   single repo. Idempotent, writes atomically, refuses a file that does not parse rather than
-  replacing it, and `--uninstall-claude-hook` removes only the entry it added.
+  replacing it, and `--uninstall-claude-hook` removes only the entries it added.
+- `toolcall-injector` says what it does ONCE, in a `SessionStart` entry `--install-claude-hook`
+  now writes beside the `PreToolUse` one, instead of an `additionalContext` on every rewritten
+  call — `PreToolUse` fires before the command runs, so that text was repeated per call and often
+  described contracts nothing printed. Already installed the hook? Re-run `--install-claude-hook`:
+  it adds the missing `SessionStart` entry and leaves the `PreToolUse` one alone.
 - `annotated_tree::resolve_charter` — resolve a directory's charter through the public API.
   `Charter` was already exported with no way to obtain one.
 
 ### Changed
+- **BREAKING (gate).** An `.annotation` file — a directory charter or a `<name>.annotation`
+  sidecar — must hold ONE bare annotation line and nothing but whitespace after it.
+  `--strict-check` now FAILS a body with prose below line 1, reporting it in a new
+  `trailing_content` list; the map shows such a directory or file WITHOUT a contract rather than
+  with one. Before this, the stray text landed inside the `IO` field newline and all, and one
+  render row printed as two — a `tree` view whose line count was wrong, a JSON string with a `\n`
+  in it, and a strict-check finding spanning three lines with an unpasteable `suggestion`. The
+  rule is "nothing but whitespace after the first line", never "contains a newline": every editor
+  writes a trailing one, so a charter that ends with a newline (or with blank lines) is ordinary
+  and passes.
+- The `trailing_content` finding is reported ALONE for an offending file: its parts are not
+  diagnosed until it is one line again, because echoing the offending text into `found` and
+  `suggestion` is what split the report line in the first place.
 - **BREAKING.** `[rules] max_annotation_length` / `--max-length <N>` now bounds the WHOLE
   annotation, not each field. The bound is on the line an agent ingests: three fields each
   under a per-field bound could still add up to a line nobody wants in a map read a hundred

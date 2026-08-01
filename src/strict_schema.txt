@@ -1,12 +1,13 @@
 Strict-check report — `--strict-check --format json`
 
 {
-  "passed":         bool,          // true iff no annotation violations AND no rule violations
+  "passed":         bool,          // true iff no annotation violations, no dangling sidecars, no trailing content AND no rule violations
   "error_count":    integer,       // number of annotation violations
   "files_checked":  integer,       // code files examined
   "annotated_count":integer,       // how many of files_checked already carry a conforming annotation (convergence numerator)
   "violations":     [ Violation, … ],
   "orphan_sidecars":[ OrphanSidecar, … ],
+  "trailing_content":[ TrailingContent, … ],
   "rule_violations":[ RuleViolation, … ]
 }
 
@@ -36,6 +37,12 @@ OrphanSidecar = {
   "path":     string,              // the <name>.annotation sidecar, relative to the root (unix slashes)
   "target":   string,              // the sibling file it names, which does not exist
   "message":  string               // human detail (the TEXT report emits "path: message")
+}
+
+TrailingContent = {
+  "path":     string,              // the .annotation file, relative to the root (unix slashes)
+  "line":     integer,             // 1-based line of the first content past line 1 — delete from here down
+  "message":  string               // human detail (the TEXT report emits "path:line: message")
 }
 
 RuleViolation = {
@@ -76,6 +83,14 @@ reported as a Violation located at the file that HOLDS the line: a directory cha
 comment marker (a CSV, a dataset), and writing it is that file's opt-in. A sidecar naming a
 file that does not exist lands in `orphan_sidecars` — a dangling PATH, not an issue about an
 Annotation — and also FAILS the check.
+
+An `.annotation` file holds ONE bare annotation line and nothing but whitespace after it — a
+trailing newline and trailing blank lines are fine, prose is not. A body with content below line
+1 lands in `trailing_content` — a defect of the FILE, not an issue about any Annotation — and
+FAILS the check. It is reported ALONE: the parts are not diagnosed until the file is one line
+again, because the offending text would otherwise be echoed into `found` and `suggestion` and
+split a report line in two. Such a file resolves to NO charter and NO sidecar annotation, so the
+map shows the row without one rather than with a newline in it.
 
 `missing_package_charter` fires only under the opt-in `[rules] require_package_charter`: a
 manifest-bearing package that owns annotated files yet resolves no charter. A RuleViolation's

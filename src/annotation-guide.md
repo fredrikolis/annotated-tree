@@ -28,6 +28,8 @@ FOLDER CHARTERS — a `.annotation` states the DIRECTORY's one job, one altitude
   The charter is what the files have in common, not their sum.
   A charter that will not fit is restating its files. Raise the altitude first. If it still
   will not fit at the right altitude, the DIRECTORY owns more than one job. Split it.
+  An `.annotation` file is ONE line and nothing else. A trailing newline is fine; a note written
+  underneath is not — the charter resolves to nothing and the row goes bare. Put it in a README.
 
 HOW TO FIND THE NON-CONCERN
   Ask: what would an agent WRONGLY assume this file does? Negate that. Name where the work
@@ -39,5 +41,6 @@ HOW TO FIND THE NON-CONCERN
   Marker varies by language: # Python/shell, // Rust/Go/TS, <!-- --> HTML/Markdown, -- SQL.
   A file with NO comment syntax (CSV, data, binaries) takes a `<name>.annotation` sidecar
   beside it holding the line BARE, with no marker — the same shape a folder's `.annotation`
-  holds. Writing one is what lists the file at all. A file that can hold a comment must.
+  holds. One line there too. Writing one is what lists the file at all. A file that can hold a
+  comment must.
   YAML frontmatter, like a shebang, keeps line 1: put the annotation on the line after it.

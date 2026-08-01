@@ -21,7 +21,7 @@ Coverage = {
 
 DirNode  = {
   "name":         string,
-  "charter":      Charter,         // OMITTED unless the dir resolves a concern charter
+  "charter":      Charter,         // OMITTED unless the dir resolves a concern charter — an `.annotation` with content past its one line resolves none
   "dirs":         [ DirNode, … ],  // always present (possibly empty)
   "files":        [ FileNode, … ], // always present (possibly empty)
   "deps":         DirDeps,         // OMITTED unless the dir holds a manifest
@@ -63,6 +63,8 @@ as that directory's `charter`, and a file's `<name>.annotation` sidecar appears 
 `annotation` with `"sidecar": true` beside it. A file with no comment syntax (a CSV, a dataset)
 is listed BECAUSE it carries a sidecar, with no `--include` needed; a file that can hold a
 first-line comment never takes one, so `foo.rs.annotation` is an ordinary file, not a sidecar.
+A sidecar with content past its one line annotates nothing: the row carries no annotation and
+`sidecar` is omitted.
 
 `coverage` follows the same absent-key rule: it is present ONLY when some listed code file
 has no annotation (a file with no annotation is invisible to an agent reading the tree), and
