@@ -1,4 +1,4 @@
-// Concern: lint mode — reports every file and charter whose annotation is absent, malformed, or over the length bound | Non-concern: the tree view | IO: (files, Config) -> (report, exit_code)
+// Concern: lint mode — reports every file, charter and sidecar whose annotation is absent, malformed, or over the length bound, plus every sidecar that annotates nothing | Non-concern: the tree view | IO: (files, Config) -> (report, exit_code)
 
 //! # Strict-check JSON schema (`--strict-check --format json` and MCP `strict_check`)
 //!
@@ -29,7 +29,14 @@ use crate::charter;
 use crate::config::Config;
 use crate::graph;
 use crate::rules;
+use crate::sidecar;
 use crate::walk::CHARTER_FILE;
+
+/// The `language` a bare `.annotation` body is reported under, by scale: a directory's charter
+/// or a file's sidecar. Neither has a comment marker, so neither has a real language — these
+/// name WHAT was checked, and an agent branches on them the way it branches on `python`.
+const CHARTER_LANGUAGE: &str = "charter";
+const SIDECAR_LANGUAGE: &str = "sidecar";
 
 /// The human-readable strict-check report schema as text — the SAME string embedded in
 /// this module's rustdoc above. The `--schema` flag prints it alongside the map schema so
@@ -236,14 +243,31 @@ pub struct RuleViolation {
     pub path: Option<String>,
 }
 
-/// The whole structured `--strict-check` verdict for one root: annotation violations
-/// PLUS architectural `[rules]` findings. This is the ONE producer every surface drives
-/// — the CLI's TEXT report ([`StrictReport::to_text`]), `--format json`
+/// One `<name>.annotation` sidecar that annotates nothing: the file it names is not there.
+/// Its own list, not a [`AnnotationViolation`], because it is not an issue about an Annotation
+/// — a dangling path claims a target that does not exist, which says nothing about any
+/// Annotation's parts — and not a [`RuleViolation`], because no `[rules]` table configures it
+/// and no package participates. Located and dual-rendered like both: `path` is what an agent
+/// acts on, `message` is what a human reads.
+#[derive(Debug, Clone, Serialize)]
+pub struct OrphanSidecar {
+    /// The sidecar, relative to the checked root (unix slashes).
+    pub path: String,
+    /// The sibling file it names, which does not exist. Same coordinate space as `path`.
+    pub target: String,
+    /// The finding as one human line (the TEXT report emits `path: message`).
+    pub message: String,
+}
+
+/// The whole structured `--strict-check` verdict for one root: annotation violations,
+/// dangling sidecars, PLUS architectural `[rules]` findings. This is the ONE producer every
+/// surface drives — the CLI's TEXT report ([`StrictReport::to_text`]), `--format json`
 /// ([`StrictReport::to_json`]), and the MCP `strict_check` tool — so no two surfaces
 /// can drift.
 #[derive(Debug, Clone, Serialize)]
 pub struct StrictReport {
-    /// True iff there are no annotation violations AND no rule violations.
+    /// True iff there are no annotation violations, no dangling sidecars, and no rule
+    /// violations.
     pub passed: bool,
     /// Number of annotation violations (matches the TEXT "Found N error(s)").
     pub error_count: usize,
@@ -254,6 +278,7 @@ pub struct StrictReport {
     /// toward `files_checked` instead of reading only the terminal error count.
     pub annotated_count: usize,
     pub violations: Vec<AnnotationViolation>,
+    pub orphan_sidecars: Vec<OrphanSidecar>,
     pub rule_violations: Vec<RuleViolation>,
 }
 
@@ -267,6 +292,7 @@ impl StrictReport {
             files_checked: 0,
             annotated_count: 0,
             violations: Vec::new(),
+            orphan_sidecars: Vec::new(),
             rule_violations: Vec::new(),
         }
     }
@@ -279,6 +305,7 @@ impl StrictReport {
         self.files_checked += other.files_checked;
         self.annotated_count += other.annotated_count;
         self.violations.extend(other.violations);
+        self.orphan_sidecars.extend(other.orphan_sidecars);
         self.rule_violations.extend(other.rule_violations);
     }
 
@@ -317,6 +344,23 @@ impl StrictReport {
             "{} of {} files annotated\n",
             self.annotated_count, self.files_checked
         ));
+        // A dangling sidecar is a path problem, not an annotation problem, so it gets its own
+        // `path: message` lines rather than being folded into the violation list an agent
+        // reads as "fix this annotation".
+        if !self.orphan_sidecars.is_empty() {
+            push_capped(
+                &mut out,
+                &self.orphan_sidecars,
+                max_per_node,
+                "orphan sidecar",
+                |s| format!("{}: {}", s.path, s.message),
+            );
+            out.push_str(&format!(
+                "\nFound {} orphan sidecar(s)\n",
+                self.orphan_sidecars.len()
+            ));
+            code = crate::exit::STRICT_FAILURE;
+        }
         // Architectural rule findings append as `rule: <message>` lines — line-per-finding,
         // nonzero exit when any exist.
         if !self.rule_violations.is_empty() {
@@ -384,17 +428,21 @@ pub(crate) fn check_structured(
     excludes: &GlobSet,
 ) -> StrictReport {
     let (violations, annotated_count, annotated_files) = check_annotations(root, files, config);
+    let orphan_sidecars = orphan_sidecars(root, files);
     let mut rule_violations = Vec::new();
     // The dependency graph feeds ONE signal: the architectural `[rules]` findings. No rule
     // configured, no graph build — a repo with no `[rules]` does zero extra work.
     if config.rules.is_active() {
         // Same filter as the file walk: the rules graph sees exactly the manifests the
-        // tree would show (gitignore/hidden/`tests`/`-I` honored).
+        // tree would show (gitignore/hidden/`tests`/`-I` honored). UNCAPPED by depth
+        // (`None`), like the file walk feeding this check: `--strict-check` is a gate over
+        // the whole tree, not a rendered view, so `-L` never shrinks what it evaluates.
         let graph = graph::build(
             &[root.to_path_buf()],
             config.display.gitignore,
             config.display.include_tests,
             excludes,
+            None,
         );
         // `PackageEdges::dir` is canonicalized/absolute; canonicalize the root once so
         // the location relativizes to the same unix path shape as annotation `path`s
@@ -427,22 +475,23 @@ pub(crate) fn check_structured(
         }
     }
     StrictReport {
-        passed: violations.is_empty() && rule_violations.is_empty(),
+        passed: violations.is_empty() && orphan_sidecars.is_empty() && rule_violations.is_empty(),
         error_count: violations.len(),
         files_checked: files.len(),
         annotated_count,
         violations,
+        orphan_sidecars,
         rule_violations,
     }
 }
 
 /// The structured verdict for a SINGLE explicitly-named file — annotation linting ONLY. A
 /// lone file has no package neighbourhood, so the directory-scale signals `check_structured`
-/// derives from the dependency graph (`[rules]`, the charter gate) do not apply and no graph
-/// is built. Reuses the ONE per-file analyzer [`check_annotations`], so a file checked this
-/// way is checked byte-identically to the same file checked inside its directory; only the
-/// composition (no graph) differs. `root` is the file's parent, used solely to relativize the
-/// displayed path.
+/// derives from the dependency graph (`[rules]`, the charter gate) and the directory-wide
+/// sidecar census do not apply and no graph is built. Reuses the ONE per-file analyzer
+/// [`check_annotations`], so a file checked this way is checked byte-identically to the same
+/// file checked inside its directory; only the composition (no graph) differs. `root` is the
+/// file's parent, used solely to relativize the displayed path.
 pub(crate) fn check_file(root: &Path, files: &[PathBuf], config: &Config) -> StrictReport {
     let (violations, annotated_count, _annotated_files) = check_annotations(root, files, config);
     StrictReport {
@@ -451,6 +500,7 @@ pub(crate) fn check_file(root: &Path, files: &[PathBuf], config: &Config) -> Str
         files_checked: files.len(),
         annotated_count,
         violations,
+        orphan_sidecars: Vec::new(),
         rule_violations: Vec::new(),
     }
 }
@@ -471,10 +521,30 @@ fn check_annotations(
     // on a package whose files are actually annotated.
     let mut annotated_files: Vec<String> = Vec::new();
     for path in files {
+        let rel = rel_of(root, path);
         let Some(lang) = config.language_for_path(path) else {
+            // No comment marker, so this file's contract lives in a `<name>.annotation`
+            // sidecar when it has one — checked by the same three-field grammar as a
+            // directory charter, and reported at the SIDECAR's path, which is the file an
+            // author edits to fix it. With no sidecar there is nothing to lint: the file is
+            // in the set only because `--include` opted it in, and its grammar is unknown.
+            if let Some(body) = sidecar::body(path) {
+                annotated_files.push(rel.clone());
+                match defect_parts(annotation::analyze_charter(
+                    &body,
+                    config.rules.max_annotation_length,
+                )) {
+                    Some(parts) => violations.push(bare_violation(
+                        rel_of(root, &sidecar::path_for(path)),
+                        SIDECAR_LANGUAGE,
+                        &file_name(&rel),
+                        parts,
+                    )),
+                    None => annotated_count += 1,
+                }
+            }
             continue;
         };
-        let rel = crate::util::to_unix_path(path.strip_prefix(root).unwrap_or(path));
         let mk = marker(lang);
 
         // Per-branch facts, assembled ONCE below (shared `expected`, marker, hint + the
@@ -642,54 +712,117 @@ fn too_long_detail(parts: &[TooLong], max: usize) -> String {
 /// three-field grammar (via [`annotation::analyze_charter`]) — opting in means doing it right,
 /// so a malformed breadcrumb is a fatal violation, not a silent no-op. The directories checked
 /// are exactly those the tree shows (every ancestor of a code file), so render and enforcement
-/// agree on scope. Reuses the same [`AnnotationViolation`] machinery as the per-file lint; a
-/// charter has no comment marker, so `marker` is empty and `example` is the bare exemplar.
+/// agree on scope.
 fn charter_violations(root: &Path, files: &[PathBuf], config: &Config) -> Vec<AnnotationViolation> {
     let mut out = Vec::new();
     for dir in tree_dirs(root, files) {
         let Some(content) = charter::read_charter_file(&dir) else {
             continue;
         };
-        let Some((line, category, defect, found, seed, detail)) = defect_parts(
-            annotation::analyze_charter(&content, config.rules.max_annotation_length),
-        ) else {
+        let Some(parts) = defect_parts(annotation::analyze_charter(
+            &content,
+            config.rules.max_annotation_length,
+        )) else {
             continue;
         };
-        let dir_rel = crate::util::to_unix_path(dir.strip_prefix(root).unwrap_or(&dir));
+        let dir_rel = rel_of(root, &dir);
         let path = if dir_rel.is_empty() {
             CHARTER_FILE.to_string()
         } else {
             format!("{dir_rel}/{CHARTER_FILE}")
         };
-        // A charter is a bare line, so the suggestion is marker-less (the leading space a
-        // marker would add is trimmed); its concern seed comes from whatever the breadcrumb
-        // already carried, falling back to the directory name. An over-length charter gets no
-        // stub, for the same reason a file annotation does not — see `defect_parts`.
-        let seed = seed.as_deref().filter(|s| !s.is_empty());
         let dir_name = dir
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let suggestion = (!matches!(category, Category::AnnotationTooLong)).then(|| {
-            tailored_suggestion("", &dir_name, seed)
-                .trim_start()
-                .to_string()
-        });
-        out.push(AnnotationViolation {
-            path,
-            line,
-            language: "charter".to_string(),
-            category,
-            marker: String::new(),
-            example: charter::EXAMPLE.to_string(),
-            defect,
-            expected: EXPECTED,
-            suggestion,
-            found,
-            detail,
-        });
+        out.push(bare_violation(path, CHARTER_LANGUAGE, &dir_name, parts));
     }
     out
+}
+
+/// One violation for a BARE (marker-less) `.annotation` body — a directory's charter or a
+/// file's sidecar. Both hold the same three-field line with no comment marker, so both report
+/// identically: at the path of the file that HOLDS the line, with `marker` empty, the bare
+/// exemplar as `example`, and a marker-less suggestion (the leading space a marker would add is
+/// trimmed). `subject` names the thing being annotated — a directory or a file — and seeds the
+/// stub when the body carried no reusable text. ONE builder, so the two scales cannot drift.
+fn bare_violation(
+    path: String,
+    language: &str,
+    subject: &str,
+    (line, category, defect, found, seed, detail): DefectParts,
+) -> AnnotationViolation {
+    let seed = seed.as_deref().filter(|s| !s.is_empty());
+    // An over-length body gets no stub, for the same reason a file annotation does not — see
+    // `defect_parts`. A body someone WRAPPED in a comment marker gets the line from inside the
+    // wrapper verbatim: seeding a stub from the wrapped text would embed the marker, which is
+    // the one thing a suggestion must not do when the marker IS the defect.
+    let suggestion = (!matches!(category, Category::AnnotationTooLong)).then(|| {
+        found
+            .as_deref()
+            .and_then(annotation::unwrapped_bare_line)
+            .map(|wrapped| wrapped.bare)
+            .unwrap_or_else(|| {
+                tailored_suggestion("", subject, seed)
+                    .trim_start()
+                    .to_string()
+            })
+    });
+    AnnotationViolation {
+        path,
+        line,
+        language: language.to_string(),
+        category,
+        marker: String::new(),
+        example: charter::EXAMPLE.to_string(),
+        defect,
+        expected: EXPECTED,
+        suggestion,
+        found,
+        detail,
+    }
+}
+
+/// Every `<name>.annotation` sidecar in the tree that annotates nothing — the file it names is
+/// not beside it. Scanned per directory (the same directory set `charter_violations` walks)
+/// rather than over the walked file set, because a dangling sidecar is precisely the one no
+/// listed file points at. A sidecar whose named file EXISTS is never reported here: it either
+/// carries that file's contract (checked with the file, above) or, for a file that can hold its
+/// own first line, is an ordinary file the tree lists like any other.
+fn orphan_sidecars(root: &Path, files: &[PathBuf]) -> Vec<OrphanSidecar> {
+    let mut out = Vec::new();
+    for dir in tree_dirs(root, files) {
+        for path in sidecar::candidates_in(&dir) {
+            let Some(target) = sidecar::named_target(&path) else {
+                continue;
+            };
+            if target.is_file() {
+                continue;
+            }
+            let name = file_name(&crate::util::to_unix_path(&target));
+            out.push(OrphanSidecar {
+                path: rel_of(root, &path),
+                target: rel_of(root, &target),
+                message: format!(
+                    "annotates no file — '{name}' does not exist beside it. Remove the sidecar, \
+                     or create the file it names"
+                ),
+            });
+        }
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    out
+}
+
+/// A path relative to the checked root, unix slashes — the one coordinate space every finding
+/// in this report is located in. Falls back to the full path when it lies outside the root.
+fn rel_of(root: &Path, path: &Path) -> String {
+    crate::util::to_unix_path(path.strip_prefix(root).unwrap_or(path))
+}
+
+/// The base name of a unix-slashed relative path (`a/b/trials.csv` -> `trials.csv`).
+fn file_name(rel: &str) -> String {
+    rel.rsplit('/').next().unwrap_or(rel).to_string()
 }
 
 /// Every directory the tree renders: the root and every ancestor directory of a listed code

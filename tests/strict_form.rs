@@ -287,3 +287,67 @@ fn a_clean_tree_carries_no_warnings_surface() {
         "no advisory block on the TEXT surface: {out}"
     );
 }
+
+#[test]
+fn a_comment_wrapped_charter_names_the_marker_and_suggests_the_bare_line() {
+    // A `.annotation` file is the one place the line is written bare, so wrapping it in the
+    // marker every other annotation carries is the easy mistake. Reporting "the separators
+    // are missing" is the one diagnosis that cannot be true when they are plainly there, and
+    // a stub seeded from the wrapped text embeds the marker, so it cannot be pasted either.
+    let (out, code) = check(
+        "wrapped-charter",
+        &["--no-guide"],
+        &[
+            (
+                ".annotation",
+                "<!-- Concern: demo crate | Non-concern: y | IO: none -->\n",
+            ),
+            ("a.rs", "// Concern: a | Non-concern: b | IO: none\n"),
+        ],
+    );
+    assert_eq!(code, 1, "a wrapped charter is still malformed:\n{out}");
+    assert!(
+        out.contains("remove the `<!--` and `-->`"),
+        "the diagnosis names the marker to delete:\n{out}"
+    );
+    assert!(
+        !out.contains("field separators are missing"),
+        "and never claims the separators are missing when they are there:\n{out}"
+    );
+    assert!(
+        out.contains("suggestion: Concern: demo crate | Non-concern: y | IO: none"),
+        "the suggestion is the line from inside the wrapper — usable as printed:\n{out}"
+    );
+}
+
+#[test]
+fn yaml_frontmatter_keeps_line_one_and_the_annotation_still_counts() {
+    // A Claude Code skill (and any static-site page) must keep its frontmatter at line 1, so
+    // requiring the annotation above it made shipping skills and enforcing --strict-check
+    // mutually exclusive. The block is skipped like a shebang; an unclosed `---` is not a
+    // block, so a document that merely opens with a horizontal rule is unaffected.
+    let (out, code) = check(
+        "frontmatter",
+        &["--no-guide"],
+        &[
+            (
+                "SKILL.md",
+                "---\ndescription: reviews code\n---\n<!-- Concern: the review brief | Non-concern: running it | IO: none -->\n\n# Skill\n",
+            ),
+            ("rule.md", "---\n\nopens with a horizontal rule\n"),
+        ],
+    );
+    assert_eq!(code, 1, "only the rule-opener file fails:\n{out}");
+    assert!(
+        !out.contains("SKILL.md"),
+        "an annotation under frontmatter passes:\n{out}"
+    );
+    assert!(
+        out.contains("rule.md:1: missing annotation"),
+        "an unclosed `---` is a horizontal rule, not a prefix to skip:\n{out}"
+    );
+    assert!(
+        out.contains("1 of 2 files annotated"),
+        "the skill counts toward coverage:\n{out}"
+    );
+}

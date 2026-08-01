@@ -1,4 +1,4 @@
-// Concern: cross-references every manifest into per-directory dependency edges (internal, external, reverse "used by") | Non-concern: parsing manifest syntax or rendering | IO: (roots) -> map<dir, DirDeps>
+// Concern: cross-references every manifest into per-directory dependency edges (internal, external, reverse "used by") | Non-concern: parsing manifest syntax or rendering | IO: (roots, depth cap) -> map<dir, DirDeps>
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -70,25 +70,36 @@ struct Package {
 
 /// Scan `roots` for every known manifest, then resolve the graph. Directories are
 /// keyed by canonicalized absolute path. The manifest walk applies the SAME filter as
-/// the code-file walk (gitignore, hidden, `tests`, `-I` excludes) so that "what's
-/// graphed" equals "what's shown"; a multi-root run drives that filter from the
-/// PRIMARY (first) root's ignore settings, matching how the primary root's config
-/// already governs the shared render/rules choices.
-pub fn build(roots: &[PathBuf], gitignore: bool, include_tests: bool, excludes: &GlobSet) -> Graph {
+/// the code-file walk (gitignore, hidden, `tests`, `-I` excludes), and `max_depth` bounds
+/// it to ONE level below the deepest row that walk can show (`walk::cap_manifest_depth`) —
+/// a package's manifest lives inside the package, one level under the row that names it, so
+/// this reads the manifest of every DISPLAYED directory and of no other. "What's graphed"
+/// is therefore exactly "what's shown": a shallow render gives a shallower graph of the same
+/// tree (a package below the cutoff is not a row and contributes no edges), without a
+/// visible row losing the dependency facts it is there to state. `None` scans every depth
+/// (`--strict-check`'s `[rules]` graph and the MCP dependency tools, neither of which is a
+/// rendered view). A multi-root run drives filter and cap from the PRIMARY (first) root's
+/// ignore settings, matching how the primary root's config already governs the shared
+/// render/rules choices.
+pub fn build(
+    roots: &[PathBuf],
+    gitignore: bool,
+    include_tests: bool,
+    excludes: &GlobSet,
+    max_depth: Option<usize>,
+) -> Graph {
     let parsers = crate::manifest::parsers();
     let mut raw: Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
+    let scope = WalkScope {
+        gitignore,
+        include_tests,
+        excludes,
+        max_depth,
+    };
     for root in roots {
-        collect_manifests(
-            root,
-            gitignore,
-            include_tests,
-            excludes,
-            &parsers,
-            &mut raw,
-            &mut warnings,
-        );
+        collect_manifests(root, &scope, &parsers, &mut raw, &mut warnings);
     }
 
     // Known package names per ecosystem, canonicalized, for internal detection.
@@ -242,11 +253,20 @@ impl Graph {
     }
 }
 
-fn collect_manifests(
-    root: &Path,
+/// How a manifest walk is shaped: the code-file walk's exact filter, plus the render's
+/// `-L LEVEL` (which this walk bounds one level DEEPER than the rows — see
+/// [`crate::walk::cap_manifest_depth`]), carried as one value so the two travel together
+/// and cannot drift apart between roots.
+struct WalkScope<'a> {
     gitignore: bool,
     include_tests: bool,
-    excludes: &GlobSet,
+    excludes: &'a GlobSet,
+    max_depth: Option<usize>,
+}
+
+fn collect_manifests(
+    root: &Path,
+    scope: &WalkScope<'_>,
     parsers: &[Box<dyn ManifestParser>],
     out: &mut Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)>,
     warnings: &mut Vec<Warning>,
@@ -254,10 +274,16 @@ fn collect_manifests(
     // One traversal for every manifest kind: dispatch each entry to the parser
     // whose filename it matches. (Previously one full walk per parser.) Shares the
     // code-file walk's exact directory filter (`configured_walk`), so gitignored/
-    // hidden/`tests`/`-I`-excluded manifests are skipped just like their files —
-    // no spurious "could not parse manifest" warnings for invisible files, and no
-    // package leaking into the name set from a dir the tree never shows.
-    let walker = crate::walk::configured_walk(root, gitignore, include_tests, excludes).build();
+    // hidden/`tests`/`-I`-excluded manifests are skipped just like their files — no
+    // spurious "could not parse manifest" warnings for invisible files, and no package
+    // leaking into the name set from a dir the tree never shows. The DEPTH bound is
+    // `cap_manifest_depth`, deliberately one level below the row cap: a manifest sits
+    // inside the package whose row names it, so this reaches every displayed directory's
+    // own manifest and nothing beyond it.
+    let mut builder =
+        crate::walk::configured_walk(root, scope.gitignore, scope.include_tests, scope.excludes);
+    crate::walk::cap_manifest_depth(&mut builder, scope.max_depth);
+    let walker = builder.build();
     for entry in walker.flatten() {
         let fname = entry.file_name();
         let Some(parser) = parsers.iter().find(|p| fname == p.filename()) else {

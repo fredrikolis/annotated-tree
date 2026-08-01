@@ -28,3 +28,7 @@ HOW TO FIND THE NON-CONCERN
   Honesty over tidiness: a truthful line exposing a messy boundary beats a tidy one that hides it.
   Read a folder's annotations together — they should partition the work, no two claiming one job.
   Marker varies by language: # Python/shell, // Rust/Go/TS, <!-- --> HTML/Markdown, -- SQL.
+  A file with NO comment syntax (CSV, data, binaries) takes a `<name>.annotation` sidecar
+  beside it holding the line BARE, with no marker — the same shape a folder's `.annotation`
+  holds. Writing one is what lists the file at all. A file that can hold a comment must.
+  YAML frontmatter, like a shebang, keeps line 1: put the annotation on the line after it.

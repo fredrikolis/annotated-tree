@@ -6,6 +6,7 @@ Strict-check report — `--strict-check --format json` and MCP `strict_check`
   "files_checked":  integer,       // code files examined
   "annotated_count":integer,       // how many of files_checked already carry a conforming annotation (convergence numerator)
   "violations":     [ Violation, … ],
+  "orphan_sidecars":[ OrphanSidecar, … ],
   "rule_violations":[ RuleViolation, … ]
 }
 
@@ -29,6 +30,12 @@ Violation = {
   "found":      string | null,     // the offending line (raw for missing / actual for malformed/too long), null if none
   "suggestion": string,            // a FILE-TAILORED candidate: reused text + `<…>` placeholder slots; well formed as printed;  key omitted for annotation_too_long
   "detail":     string             // human prose where the machine fields alone would mislead (e.g. a present-but-empty field);  absent when they suffice
+}
+
+OrphanSidecar = {
+  "path":     string,              // the <name>.annotation sidecar, relative to the root (unix slashes)
+  "target":   string,              // the sibling file it names, which does not exist
+  "message":  string               // human detail (the TEXT report emits "path: message")
 }
 
 RuleViolation = {
@@ -57,9 +64,14 @@ LAST ` | Non-concern:`, `Non-concern` from the first of those to the LAST ` | IO
 the first of those to the end of the line. On a conforming line each separator occurs once, so a
 span is exactly the trimmed field value; an annotation whose prose QUOTES a separator
 over-measures and fails loudly rather than under-measuring. A field exactly at the bound
-passes). What a field SAYS is never a finding: the check is form only. A directory's `.annotation` charter breadcrumb
-(a bare, marker-less three-field line) is enforced by the SAME grammar and, when malformed or
-over-length, appears as a Violation with `language: "charter"` and `path: "<dir>/.annotation"`.
+passes). What a field SAYS is never a finding: the check is form only. A bare, marker-less `.annotation`
+line is enforced by the SAME grammar at both scales and, when malformed or over-length, appears
+as a Violation located at the `.annotation` file that HOLDS it: a directory's charter breadcrumb
+with `language: "charter"` and `path: "<dir>/.annotation"`, and a file's sidecar with
+`language: "sidecar"` and `path: "<dir>/<name>.annotation"`. A sidecar carries the contract of a
+file that maps to no comment marker (a CSV, a dataset) and listing it is that file's opt-in; one
+whose named file does not exist annotates nothing and is reported in `orphan_sidecars` — a
+dangling PATH, not an issue about an Annotation — which also FAILS the check.
 The opt-in `[rules] require_package_charter` gate adds a `missing_package_charter`
 RuleViolation for a manifest-bearing package that owns annotated files yet resolves no charter
 (off by default). `path` on a RuleViolation is absent (not null) when no single directory

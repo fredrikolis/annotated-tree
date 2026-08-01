@@ -108,6 +108,7 @@ fn a_hand_built_map_renders_through_the_exposed_renderer() {
                     "Concern: a hand-built node | Non-concern: the walk | IO: none".into(),
                 ),
                 age_secs: None,
+                sidecar: false,
             }],
             elided_dirs: 0,
             elided_files: 0,

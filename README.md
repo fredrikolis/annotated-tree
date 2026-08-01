@@ -240,6 +240,13 @@ You can see it at once. `proposal` and `findings` rest on `sources/`. `NOTES.md`
 the log, not the spec. `experiments/` is disposable by design. You know where a new
 source file goes, and what it must not turn into, without opening one.
 
+`trials.csv` is a plain CSV with nowhere to put a comment, so its line lives in a
+`trials.csv.annotation` file beside it — a *sidecar*, holding the same bare
+`Concern | Non-concern | IO` line a folder's `.annotation` holds. The sidecar is the
+opt-in: a file that carries one is listed whatever its extension, and the sidecar
+itself never takes a row of its own. Only a file with no comment syntax gets one, so
+there is never a second place to look for a source file's contract.
+
 A directory gets a charter the same way. A folder has one job too, the coarsest
 routing call an agent makes (does this change even belong in here), so it can carry
 its own `Concern | Non-concern | IO` line, promoted onto the folder's row in the tree
@@ -332,6 +339,24 @@ Same prebuilt binary on every channel.
 | Cap entries shown per directory (big corpora) | `--max-per-node <N>`, `--full` |
 | Runaway-scope guard | `--max-files <N>` |
 
+### Put the contracts in your agent's search results
+
+Your agent starts a task by searching, and what comes back is a list of paths that says
+nothing about what any of them is for. A Claude Code hook pipes your agent's own `grep`,
+`find` and `ls` output through an annotator, so the paths come back carrying the contracts.
+The commands themselves run exactly as written:
+
+```
+$ grep -rl "Renderer" src
+src/render/mod.rs  # Concern: the renderer seam — the `Renderer` trait, the format -> renderer factory | …
+src/render/text.rs  # Concern: formats the canonical map as a `tree`-style text view | Non-concern: filesystem reads | …
+```
+
+Same command, same files, one line each, and your agent types nothing different. (Two of the
+seven result lines are shown, sorted and abridged for width here; the wrapper itself does
+neither.) The binaries install with `cargo install`, since every other channel ships one
+prebuilt binary. See [toolcall-rewrite/README.md](toolcall-rewrite/README.md).
+
 ### Wire it into every session
 
 Your agent starts every session blind, so the map has to reach it before it guesses.
@@ -401,8 +426,9 @@ sales/                   # Concern: work the current lead list | Non-concern: wh
 
 The skills carry their concern and boundary the way code does, and the split between
 scoring and outreach reads at a glance. `customer-list.csv` has no comment line to
-hold an annotation (plain CSV has no comment syntax), so it renders as a bare name,
-and the `sales/` charter above it carries the meaning instead.
+hold an annotation (plain CSV has no comment syntax), so it renders as a bare name
+until you drop a `customer-list.csv.annotation` sidecar beside it; the `sales/`
+charter above it carries the meaning meanwhile.
 
 The layers stack: the code repo, the product workspace that feeds it features and
 bugs, the business workspace that decides what to build above that. Each is a

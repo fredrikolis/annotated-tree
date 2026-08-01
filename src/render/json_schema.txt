@@ -38,7 +38,8 @@ Charter  = {                       // a directory's concern charter (dir-scale a
 FileNode = {
   "name":       string,
   "annotation": string,            // OMITTED when the file has no annotation
-  "age_secs":   integer            // OMITTED unless --age
+  "age_secs":   integer,           // OMITTED unless --age
+  "sidecar":    true               // OMITTED unless the annotation came from a <name>.annotation sidecar
 }
 
 DirDeps  = {
@@ -55,6 +56,13 @@ presence signals the dependency graph is incomplete. Warnings are non-fatal (exi
 `charter` follows the same absent-key rule: present ONLY when the directory resolves one
 (a `.annotation` breadcrumb, else its code entry file's promoted annotation), omitted
 otherwise — so a charter-less tree is byte-identical and the schema stays additive.
+
+`sidecar` follows it too, and is the ONE exclusion a map document states about itself: a
+`.annotation` file never gets a node of its own — a directory's `.annotation` charter appears
+as that directory's `charter`, and a file's `<name>.annotation` sidecar appears as that file's
+`annotation` with `"sidecar": true` beside it. A file with no comment syntax (a CSV, a dataset)
+is listed BECAUSE it carries a sidecar, with no `--include` needed; a file that can hold a
+first-line comment never takes one, so `foo.rs.annotation` is an ordinary file, not a sidecar.
 
 `coverage` follows the same absent-key rule: it is present ONLY when some listed code file
 has no annotation (a file with no annotation is invisible to an agent reading the tree), and

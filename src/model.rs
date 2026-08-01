@@ -1,4 +1,4 @@
-// Concern: the canonical in-memory codebase map and every filesystem read behind it — a sorted directory/file tree carrying each file's annotation and mtime | Non-concern: output formatting | IO: (root, files, graph, Config) -> CodebaseMap
+// Concern: the canonical in-memory codebase map and every filesystem read behind it — a sorted directory/file tree carrying each file's annotation and mtime | Non-concern: output formatting | IO: (root, files, dirs, graph, Config) -> CodebaseMap
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -10,6 +10,7 @@ use crate::annotation;
 use crate::charter::{self, Charter};
 use crate::config::Config;
 use crate::graph::DirDeps;
+use crate::sidecar;
 
 /// One canonical tree per analyzed root. Renderers convert this to text/JSON/etc.
 #[derive(Serialize)]
@@ -47,6 +48,14 @@ impl Coverage {
 }
 
 impl CodebaseMap {
+    /// Whether any listed file takes its annotation from a `<name>.annotation` sidecar — i.e.
+    /// whether this map suppressed a real file's row. Drives the one-line exclusion criterion
+    /// the text map prints (`walk::ANNOTATION_FILE_CRITERION`); the JSON surface carries the
+    /// same fact per row as `FileNode.sidecar` instead.
+    pub fn has_sidecar_rows(&self) -> bool {
+        self.roots.iter().any(any_sidecar)
+    }
+
     /// Annotation coverage summed across every root's listed code files.
     pub fn coverage(&self) -> Coverage {
         let mut coverage = Coverage {
@@ -58,6 +67,10 @@ impl CodebaseMap {
         }
         coverage
     }
+}
+
+fn any_sidecar(dir: &DirNode) -> bool {
+    dir.files.iter().any(|f| f.sidecar) || dir.dirs.iter().any(any_sidecar)
 }
 
 /// Fold one directory subtree's files into the running coverage counts (recursing into
@@ -111,6 +124,17 @@ pub struct FileNode {
     pub annotation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub age_secs: Option<i64>,
+    /// True when `annotation` came from the `<name>.annotation` SIDECAR beside this file
+    /// rather than from its own first line — the one case where a real file (the sidecar)
+    /// carries no row of its own. This is where a JSON consumer reads the exclusion criterion
+    /// off the data, the way the text map reads it off the note. Omitted when false, so an
+    /// in-file annotation serializes byte-identically.
+    #[serde(skip_serializing_if = "is_false")]
+    pub sidecar: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// Intermediate sorted tree: dirs and files under a directory, keyed by name so
@@ -121,17 +145,29 @@ struct RawNode {
     files: BTreeMap<String, PathBuf>,
 }
 
-/// Build the canonical model for one root. `files` are absolute paths under
-/// `root`; `graph` is keyed by canonicalized directory path. All annotation and
-/// mtime reads happen here — renderers are pure over the returned tree.
+/// Build the canonical model for one root. `files` and `dirs` are absolute paths under
+/// `root` as the walk yielded them; `graph` is keyed by canonicalized directory path. All
+/// annotation and mtime reads happen here — renderers are pure over the returned tree.
+///
+/// Every WALKED directory gets a node, whether or not a listable file lies beneath it. The
+/// walk is what defines the tree's contents (`crate::walk`), and under a `-L` cap it stops
+/// at the cutoff — so "has a listable descendant" is a question the deepest rows can no
+/// longer answer, and asking it at one depth but not another would be the worse rule. An
+/// empty directory is therefore listed at every depth.
 pub fn build(
     root: &Path,
     files: &[PathBuf],
+    dirs: &[PathBuf],
     graph: &HashMap<PathBuf, DirDeps>,
     config: &Config,
     max_depth: Option<usize>,
 ) -> DirNode {
     let mut raw = RawNode::default();
+    for dir in dirs {
+        if let Ok(rel) = dir.strip_prefix(root) {
+            insert_dir(&mut raw, rel);
+        }
+    }
     for path in files {
         if let Ok(rel) = path.strip_prefix(root) {
             insert(&mut raw, rel, path);
@@ -146,6 +182,16 @@ pub fn build(
     let canon_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let now = SystemTime::now();
     convert(&raw, &canon_root, graph, config, now, max_depth, 0)
+}
+
+/// Ensure a node exists for `rel` and for every directory on the way to it. The root's own
+/// entry (an empty `rel`) has no components, so it is the no-op it should be.
+fn insert_dir(node: &mut RawNode, rel: &Path) {
+    let mut cursor = node;
+    for component in rel.components() {
+        let name = component.as_os_str().to_string_lossy().into_owned();
+        cursor = cursor.dirs.entry(name).or_default();
+    }
 }
 
 fn insert(node: &mut RawNode, rel: &Path, abs: &Path) {
@@ -215,10 +261,14 @@ fn convert(
     let files: Vec<FileNode> = node
         .files
         .iter()
-        .map(|(name, abs)| FileNode {
-            name: name.clone(),
-            annotation: file_annotation(abs, config),
-            age_secs: age_secs(abs, now, config),
+        .map(|(name, abs)| {
+            let (annotation, sidecar) = file_annotation(abs, config);
+            FileNode {
+                name: name.clone(),
+                annotation,
+                age_secs: age_secs(abs, now, config),
+                sidecar,
+            }
         })
         .collect();
 
@@ -294,15 +344,24 @@ fn dir_deps(abs_dir: &Path, graph: &HashMap<PathBuf, DirDeps>) -> Option<DirDeps
     graph.get(abs_dir).cloned()
 }
 
-/// Resolve a file's annotation from a bounded head-only read. An unreadable file, or one
-/// with no leading annotation, yields `None` (graceful, never fatal).
-fn file_annotation(abs: &Path, config: &Config) -> Option<String> {
-    match config.language_for_path(abs) {
-        Some(lang) => annotation::extract(abs, lang),
-        // No known language: the file is in the tree only because a `--include` selector
-        // opted it in (the default walk yields recognized languages only), so read the
-        // annotation marker-agnostically.
-        None => annotation::extract_any(abs),
+/// Resolve a file's annotation, and whether it came from a sidecar. A bounded head-only read
+/// for a file that can hold a comment; an unreadable file, or one with no leading annotation,
+/// yields `None` (graceful, never fatal).
+fn file_annotation(abs: &Path, config: &Config) -> (Option<String>, bool) {
+    if let Some(lang) = config.language_for_path(abs) {
+        return (annotation::extract(abs, lang), false);
+    }
+    // No known language, so the file may carry a `<name>.annotation` sidecar — and its
+    // presence WINS over a marker-agnostic read of the file's own head, the same
+    // most-explicit-first rule by which a directory's `.annotation` overrides a promoted
+    // entry-file line. Without a sidecar the file is here only because `--include` opted it
+    // in, so fall back to reading its head with no marker known.
+    let body = sidecar::body(abs)
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty());
+    match body {
+        Some(body) => (Some(body), true),
+        None => (annotation::extract_any(abs), false),
     }
 }
 

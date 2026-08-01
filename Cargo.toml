@@ -1,6 +1,6 @@
 [package]
 name = "annotated-tree"
-version = "0.5.0"
+version = "0.6.0-dev"
 edition = "2021"
 description = "Map an unfamiliar codebase in one command: an annotated directory tree with a cross-ecosystem (Python/npm/Cargo/Go) package dependency graph."
 license = "MIT"
@@ -12,6 +12,14 @@ categories = ["command-line-utilities", "development-tools"]
 [[bin]]
 name = "annotated-tree"
 path = "src/main.rs"
+
+[[bin]]
+name = "annotated-bash-wrapper"
+path = "toolcall-rewrite/src/bin/annotated-bash-wrapper.rs"
+
+[[bin]]
+name = "annotated-toolcall-rewrite"
+path = "toolcall-rewrite/src/bin/annotated-toolcall-rewrite.rs"
 
 [lib]
 name = "annotated_tree"

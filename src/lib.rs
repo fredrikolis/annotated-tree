@@ -64,6 +64,7 @@ pub(crate) mod mcp;
 pub(crate) mod model;
 pub(crate) mod render;
 pub(crate) mod rules;
+pub(crate) mod sidecar;
 pub(crate) mod strict;
 pub(crate) mod util;
 pub mod walk;
@@ -86,6 +87,9 @@ pub use util::build_globset;
 // tree without the internal `build` pipeline. The node field types (`DirDeps`, `InternalDep`,
 // `Charter`, `Warning`) are re-exported too so every field is nameable — but the graph BUILDER
 // functions stay crate-internal.
+/// Resolve a directory's charter from the filesystem. A relative path is taken against the
+/// process working directory.
+pub use charter::resolve_from_fs as resolve_charter;
 pub use charter::Charter;
 pub use graph::{DirDeps, InternalDep, Warning};
 pub use model::{CodebaseMap, Coverage, DirNode, FileNode};
@@ -370,6 +374,15 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
     // coverage (`is_incomplete` is false), and never on the JSON surface, where the SAME
     // fact rides structurally as the `coverage` object instead. `--strict-check` is the
     // authoritative per-file lister, so point at it rather than restate the gaps here.
+    // TREE2: a file the map does not list must fall under a criterion the Report STATES. A
+    // sidecar's own row is the one this run suppressed, so name the rule — once, and only when
+    // one was actually suppressed — on the same advisory channel the coverage note uses. The
+    // JSON surface says it structurally instead (`FileNode.sidecar` on the row that took the
+    // contract), so this stays off the machine parse.
+    if cli.format == Format::Text && map.has_sidecar_rows() {
+        writeln!(err, "note: {}.", walk::ANNOTATION_FILE_CRITERION)?;
+    }
+
     if cli.format == Format::Text {
         let coverage = map.coverage();
         if coverage.is_incomplete() {
@@ -385,7 +398,9 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
     Ok(exit::SUCCESS)
 }
 
-/// The one build pipeline: walk every root (runaway-scope capped), optionally
+/// The one build pipeline: walk every root (runaway-scope capped, and `max_depth`-capped —
+/// the walk STOPS at the deepest level the render can show, so nothing below it is visited,
+/// counted, or graphed), optionally
 /// filter down to the `--since` change set plus its blast radius, build the
 /// dependency graph, and assemble the canonical `CodebaseMap`. Both `run`
 /// (text/json/md) and the MCP `map` tool go through here, so the map is byte-for-byte
@@ -406,15 +421,17 @@ pub(crate) fn build_codebase_map(
     // repo config to another. The CLI overrides + `-I` excludes are shared. Walk all
     // roots up front so the runaway-scope trip happens before any graph build, model
     // build, or render.
-    let mut root_files = Vec::new();
+    let mut walked_roots = Vec::new();
     for root in roots {
         let config = Config::load(root, overrides).map_err(BuildError::Other)?;
         // The `--include`/`[display] include` selectors are per-root (each root uses its own
         // resolved config), compiled here next to the shared `-I` excludes. A bad pattern fails
         // fast as a precondition error, exactly like a bad `-I` glob.
         let include = util::build_globset(&config.display.include).map_err(BuildError::Other)?;
-        match walk::collect_code_files(root, &config, excludes, &include) {
-            Ok(files) => root_files.push((root, config, files)),
+        // `max_depth` bounds the WALK, not just the render: below the cutoff nothing is
+        // visited, stat'd, read — or counted against `--max-files`.
+        match walk::collect_tree(root, &config, excludes, &include, max_depth) {
+            Ok(walked) => walked_roots.push((root, config, walked)),
             Err(e) => return Err(BuildError::Limit(e)),
         }
     }
@@ -422,47 +439,60 @@ pub(crate) fn build_codebase_map(
     // Multi-root: the manifest walk uses the PRIMARY (first) root's gitignore +
     // include_tests settings, consistent with how the primary root's config already
     // drives the shared `ascii`/rules choices for a multi-root run.
-    let primary_config = &root_files[0].1;
+    let primary_config = &walked_roots[0].1;
     let graph = graph::build(
         roots,
         primary_config.display.gitignore,
         primary_config.display.include_tests,
         excludes,
+        max_depth,
     );
 
-    // `--since`/`--changed`: filter the already-walked file set down to what changed
+    // `--since`/`--changed`: filter the already-walked path set down to what changed
     // plus its blast radius. This is a FILTER over the existing walk + graph — not a
-    // second traversal. Absent the ref, `root_files` is untouched and every
+    // second traversal. Absent the ref, `walked_roots` is untouched and every
     // downstream step (and every golden) is byte-identical.
     if let Some(since) = since {
         // Fail-Fast: a git error (not a repo / missing git / bad ref) aborts here with
         // an explicit message, never a silent empty view.
         let mut changed = std::collections::HashSet::new();
-        for (root, _, _) in &root_files {
+        for (root, _, _) in &walked_roots {
             changed.extend(changed::changed_files(root, since).map_err(BuildError::Git)?);
         }
         // Blast radius: for each changed file's owning package, every package that
         // transitively depends on it (reverse closure over the `used_by` edges),
         // mapped back to directories to keep wholesale.
         let blast = graph.blast_radius_dirs(&changed);
-        for (_, _, files) in &mut root_files {
-            files.retain(|f| {
-                let canon = f.canonicalize().unwrap_or_else(|_| f.clone());
-                changed.contains(&canon) || blast.iter().any(|dir| canon.starts_with(dir))
-            });
+        let in_change_set = |p: &PathBuf| {
+            let canon = p.canonicalize().unwrap_or_else(|_| p.clone());
+            changed.contains(&canon) || blast.iter().any(|dir| canon.starts_with(dir))
+        };
+        // Directories take the SAME predicate as files, so `--since` keeps meaning "the
+        // change set" rather than the whole skeleton with a few files in it. A directory on
+        // the way to a surviving file still appears — the model recreates every ancestor.
+        for (_, _, walked) in &mut walked_roots {
+            walked.files.retain(&in_change_set);
+            walked.dirs.retain(&in_change_set);
         }
     }
 
     // The render glyph set is a global/terminal concern read from the primary (first
     // root's) resolved config. `roots` is never empty (`resolve_roots` yields at least
-    // `.`), so `root_files[0]` exists.
-    let ascii = root_files[0].1.display.ascii;
+    // `.`), so `walked_roots[0]` exists.
+    let ascii = walked_roots[0].1.display.ascii;
 
     let map = model::CodebaseMap {
-        roots: root_files
+        roots: walked_roots
             .iter()
-            .map(|(root, config, files)| {
-                model::build(root, files, &graph.dir_deps, config, max_depth)
+            .map(|(root, config, walked)| {
+                model::build(
+                    root,
+                    &walked.files,
+                    &walked.dirs,
+                    &graph.dir_deps,
+                    config,
+                    max_depth,
+                )
             })
             .collect(),
         // The graph's manifest-parse warnings travel WITH the map so every render surface

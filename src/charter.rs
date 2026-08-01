@@ -73,24 +73,24 @@ pub const DIRECT_ENTRY_FILES: &[&str] = &[
 /// Read a directory's `.annotation` breadcrumb, or `None` when absent/unreadable. Read DIRECTLY
 /// (never through the code-file walk) so it resolves even though `.annotation` is dot-hidden and
 /// excluded from the rendered tree — the metadata read the walk's display filters must not hide.
-pub fn read_charter_file(abs_dir: &Path) -> Option<String> {
-    std::fs::read_to_string(abs_dir.join(CHARTER_FILE)).ok()
+pub fn read_charter_file(dir: &Path) -> Option<String> {
+    std::fs::read_to_string(dir.join(CHARTER_FILE)).ok()
 }
 
-/// Resolve `abs_dir`'s charter from the FILESYSTEM (the strict-check path, which holds no built
+/// Resolve `dir`'s charter from the FILESYSTEM (the strict-check path, which holds no built
 /// tree): `.annotation` breadcrumb first (its presence overrides, even if it fails to parse —
 /// most-explicit-wins), else the promoted annotation of the code entry file. Re-reads the entry
 /// file's head via [`annotation::extract`]; the model path instead reuses the already-extracted
 /// `FileNode.annotation` (no re-parse). Both share [`from_line`] and the entry-file tables.
-pub fn resolve_from_fs(abs_dir: &Path, config: &Config) -> Option<Charter> {
+pub fn resolve_from_fs(dir: &Path, config: &Config) -> Option<Charter> {
     // 1. `.annotation` breadcrumb — its mere presence is the resolution (a malformed body
     //    yields `None` here and is flagged by `--strict-check`; it never falls through).
-    if let Some(content) = read_charter_file(abs_dir) {
+    if let Some(content) = read_charter_file(dir) {
         return from_line(&content);
     }
     // 2. Rust crate: promote src/lib.rs (else src/main.rs), only for a manifest-bearing crate.
-    if abs_dir.join("Cargo.toml").is_file() {
-        let src = abs_dir.join("src");
+    if dir.join("Cargo.toml").is_file() {
+        let src = dir.join("src");
         if let Some(charter) = CRATE_ENTRY_FILES
             .iter()
             .find_map(|base| entry_annotation(&src.join(base), config))
@@ -102,7 +102,7 @@ pub fn resolve_from_fs(abs_dir: &Path, config: &Config) -> Option<Charter> {
     // 3. Direct child entry file (module / package / index / doc).
     DIRECT_ENTRY_FILES
         .iter()
-        .find_map(|name| entry_annotation(&abs_dir.join(name), config))
+        .find_map(|name| entry_annotation(&dir.join(name), config))
         .and_then(|a| from_line(&a))
 }
 

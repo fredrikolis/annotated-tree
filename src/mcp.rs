@@ -126,7 +126,10 @@ mod imp {
     struct MapArgs {
         /// Directory to map (the codebase root or a subtree of it).
         path: String,
-        /// Optional maximum directory depth to expand.
+        /// Optional maximum directory depth to expand. Caps the walk itself, not just the
+        /// output: every directory in the map still carries its own dependency facts, but a
+        /// package below the cutoff is absent and contributes no edges, so a shallow map
+        /// carries a shallower graph of the same tree.
         max_depth: Option<usize>,
         /// Optional git ref: restrict the map to files changed since it, plus their
         /// blast radius (the same `--since` filter the CLI applies).
@@ -314,6 +317,9 @@ mod imp {
             config.display.gitignore,
             config.display.include_tests,
             &state.excludes,
+            // Uncapped: `dependencies`/`dependents` answer about the whole tree, not about a
+            // rendered view — only the `map` tool takes a depth (and passes it through).
+            None,
         ))
     }
 

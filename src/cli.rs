@@ -43,7 +43,12 @@ pub struct Cli {
     #[arg(long, value_name = "N")]
     pub max_length: Option<usize>,
 
-    /// Descend at most LEVEL directories deep.
+    /// Descend at most LEVEL directories deep. Caps the WALK, not just the output: nothing
+    /// below the cutoff is visited or counted against --max-files. Every directory shown
+    /// still states its own dependency facts (its manifest is read one level deeper), but a
+    /// package below the cutoff is not shown and contributes no edges, so a shallow render
+    /// gives a shallower graph of the same tree. --strict-check is a gate, not a view, and
+    /// is not capped.
     #[arg(short = 'L', long, value_name = "LEVEL")]
     pub max_depth: Option<usize>,
 

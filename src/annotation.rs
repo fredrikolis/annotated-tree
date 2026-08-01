@@ -55,11 +55,23 @@ pub fn extract_any_from(text: &str) -> Option<String> {
 /// removed, so a closer appearing inside the annotation's own prose is untouched.
 const BLOCK_CLOSERS: &[&str] = &["-->", "*/", "\"\"\"", "'''", "*)", "#}", "-}", "}}"];
 
+/// The delimiter line opening and closing a YAML frontmatter block. Matched exactly (trailing
+/// whitespace aside): an indented `---` is prose, and the block must sit at the very start of
+/// the file, so a `---` further down stays a horizontal rule or a document separator.
+const FRONTMATTER_FENCE: &str = "---";
+
 /// The first line that carries real content, with its 1-based line number: line 1, else the line
-/// past a `#!` shebang (+1), else the first non-blank line after leading blanks (+1 each). `None`
-/// when the head holds no such line. The ONE place the shebang/blank skip lives — both [`locate`]
-/// (which needs the line number for diagnostics) and the marker-agnostic [`extract_any_from`]
-/// (which ignores it) build on it, so they cannot drift on where a file's annotation may begin.
+/// past a `#!` shebang (+1), else past a closed YAML frontmatter block, else the first non-blank
+/// line after leading blanks (+1 each). `None` when the head holds no such line. The ONE place
+/// the skip lives — both [`locate`] (which needs the line number for diagnostics) and the
+/// marker-agnostic [`extract_any_from`] (which ignores it) build on it, so they cannot drift on
+/// where a file's annotation may begin.
+///
+/// Frontmatter is skipped for exactly the reason a shebang is: line 1 is spoken for by another
+/// contract that breaks if displaced — a Claude Code skill's `description`, a static-site
+/// generator's front matter — so requiring the annotation above it would make the two mutually
+/// exclusive. The position stays a deterministic function of the file's prefix, which is what a
+/// single-read recovery needs.
 fn first_meaningful_line(text: &str) -> Option<(usize, &str)> {
     let mut lines = text.lines();
     let mut line_no = 1usize;
@@ -67,6 +79,29 @@ fn first_meaningful_line(text: &str) -> Option<(usize, &str)> {
     if current.starts_with("#!") {
         current = lines.next()?;
         line_no += 1;
+    }
+    if current.trim_end() == FRONTMATTER_FENCE {
+        // Only a CLOSED block is a prefix. Probe a clone first so a file that merely opens
+        // with a horizontal rule (no closing fence, or one past the head window) is left
+        // exactly where it was rather than swallowed to EOF.
+        let mut probe = lines.clone();
+        let mut probe_no = line_no;
+        let closed = loop {
+            match probe.next() {
+                Some(line) => {
+                    probe_no += 1;
+                    if line.trim_end() == FRONTMATTER_FENCE {
+                        break true;
+                    }
+                }
+                None => break false,
+            }
+        };
+        if closed {
+            lines = probe;
+            line_no = probe_no + 1;
+            current = lines.next()?;
+        }
     }
     while current.trim().is_empty() {
         current = lines.next()?;
@@ -328,14 +363,92 @@ fn check_found(text: String, line: usize, max_len: Option<usize>) -> Outcome {
 /// with no comment marker to strip — against the SAME three-field grammar and `max_len` bound
 /// [`analyze`] applies after locating a file's first comment. An empty/whitespace body is
 /// `Missing` (an empty opt-in file is a defect, not a silent no-op). Reuses [`check_found`],
-/// so a directory's charter is checked by the one checker, never a second parser.
+/// so a directory's charter and a file's sidecar are checked by the one checker, never a
+/// second parser.
 pub fn analyze_charter(text: &str, max_len: Option<usize>) -> Outcome {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Outcome::Missing { line: 1, raw: None };
     }
-    check_found(trimmed.to_string(), 1, max_len)
+    let outcome = check_found(trimmed.to_string(), 1, max_len);
+    // An `.annotation` file is the ONE place an annotation is written bare, while every other
+    // annotation its author writes sits behind a comment marker — so wrapping this one is the
+    // easy mistake. It stays malformed either way, with the same parts reported; what changes
+    // is the diagnosis, because "the ` | ` separators are missing" is the one explanation that
+    // is definitely false when they are plainly there.
+    let Outcome::Malformed {
+        line,
+        actual,
+        missing,
+        detail,
+    } = outcome
+    else {
+        return outcome;
+    };
+    let detail = match unwrapped_bare_line(&actual) {
+        Some(wrapped) => Some(wrapped.detail()),
+        None => detail,
+    };
+    Outcome::Malformed {
+        line,
+        actual,
+        missing,
+        detail,
+    }
 }
+
+/// A bare annotation line someone wrapped in a comment marker: the marker to remove, and the
+/// conforming line underneath it.
+pub(crate) struct Wrapped {
+    opener: &'static str,
+    closer: Option<&'static str>,
+    /// The text between the markers — a line [`parse_fields`] accepts.
+    pub(crate) bare: String,
+}
+
+impl Wrapped {
+    /// The `detail` prose: name the marker to delete. Nothing else needs saying — the line
+    /// inside it is already correct, which is exactly what makes this diagnosable.
+    pub(crate) fn detail(&self) -> String {
+        let markers = match self.closer {
+            Some(closer) => format!("`{}` and `{closer}`", self.opener),
+            None => format!("`{}`", self.opener),
+        };
+        format!(
+            "a `.annotation` file holds a bare annotation line with no comment marker; remove \
+             the {markers}"
+        )
+    }
+}
+
+/// The conforming annotation inside a comment-wrapped bare line, or `None` when `text` carries
+/// no comment marker — or when what is inside one is still not the format, in which case
+/// removing the marker is not the whole fix and the ordinary diagnosis stands.
+pub(crate) fn unwrapped_bare_line(text: &str) -> Option<Wrapped> {
+    let (opener, rest) = COMMENT_OPENERS
+        .iter()
+        .find_map(|open| text.strip_prefix(*open).map(|rest| (*open, rest)))?;
+    let mut bare = rest.trim();
+    let mut closer = None;
+    for candidate in BLOCK_CLOSERS {
+        if let Some(stripped) = bare.strip_suffix(candidate) {
+            bare = stripped.trim_end();
+            closer = Some(*candidate);
+            break;
+        }
+    }
+    parse_fields(bare)?;
+    Some(Wrapped {
+        opener,
+        closer,
+        bare: bare.to_string(),
+    })
+}
+
+/// The comment openers a wrapped bare line is recognized by — exactly the four markers
+/// `docs/annotation-guide.md` teaches, since the mistake is copying one of those. `<!--` is
+/// tested before `--` so the diagnostic quotes the whole marker the author typed.
+const COMMENT_OPENERS: &[&str] = &["<!--", "//", "--", "#"];
 
 /// The `detail` prose for a comment whose three keys are all present yet whose structure
 /// defeats [`parse_fields`]. Without it a reader is told all three parts are absent while all
@@ -995,6 +1108,121 @@ mod tests {
         );
         let l = lang(Some("//"), None, &[]);
         assert_eq!(analyze(&format!("// {text}\n"), &l, Some(200)), Outcome::Ok);
+    }
+
+    #[test]
+    fn a_closed_yaml_frontmatter_block_is_skipped_like_a_shebang() {
+        // Line 1 belongs to another contract — a Claude Code skill's `description`, a static
+        // site's front matter — and displacing it breaks the tool that reads it. So the
+        // annotation is looked for after the block, and reported at its REAL line. Only a
+        // CLOSED block at the very start is a prefix: an unclosed `---` is a document that
+        // opens with a horizontal rule, and a `---` further down is one in the middle.
+        let md = lang(None, Some(("<!--", "-->")), &[]);
+        let ok = "Concern: the skill brief | Non-concern: running it | IO: none";
+        assert_eq!(
+            analyze(
+                &format!("---\ndescription: d\n---\n<!-- {ok} -->\n"),
+                &md,
+                None
+            ),
+            Outcome::Ok,
+            "frontmatter then the annotation is a conforming file"
+        );
+        assert_eq!(
+            analyze(
+                "---\ndescription: d\n---\n\n<!-- just a note -->\n",
+                &md,
+                None
+            ),
+            Outcome::Malformed {
+                line: 5,
+                actual: "just a note".into(),
+                missing: vec![PART_CONCERN, PART_NON_CONCERN, PART_IO],
+                detail: None,
+            },
+            "the diagnostic line number counts the skipped block and blanks"
+        );
+        assert_eq!(
+            analyze("---\nan unclosed opener\n", &md, None),
+            Outcome::Missing {
+                line: 1,
+                raw: Some("---".into()),
+            },
+            "with no closing fence there is no block to skip"
+        );
+        // A `---` that is NOT at the start stays a horizontal rule: the annotation on line 1
+        // is still read, and nothing below is treated as a prefix.
+        assert_eq!(
+            extract_from(&format!("<!-- {ok} -->\n---\nbody\n---\n"), &md).as_deref(),
+            Some(ok),
+        );
+        // Marker-agnostic reads share the ONE scanner, so they skip the block too.
+        assert_eq!(
+            extract_any_from(&format!("---\ndescription: d\n---\n# {ok}\n")).as_deref(),
+            Some(ok),
+        );
+    }
+
+    #[test]
+    fn a_bare_line_wrapped_in_a_comment_marker_names_the_marker() {
+        // A `.annotation` file is the ONE place the line is written bare, so wrapping it in
+        // the marker every other annotation uses is the easy mistake. The separators are
+        // right there, so reporting them as missing is the one thing that cannot be true:
+        // name the marker instead, and hand back the line from inside it — usable as printed.
+        for (body, markers, bare) in [
+            (
+                "<!-- Concern: a | Non-concern: b | IO: none -->",
+                "`<!--` and `-->`",
+                "Concern: a | Non-concern: b | IO: none",
+            ),
+            (
+                "# Concern: a | Non-concern: b | IO: none",
+                "`#`",
+                "Concern: a | Non-concern: b | IO: none",
+            ),
+        ] {
+            match analyze_charter(body, None) {
+                Outcome::Malformed {
+                    missing, detail, ..
+                } => {
+                    assert_eq!(
+                        missing,
+                        vec![PART_CONCERN, PART_NON_CONCERN, PART_IO],
+                        "the verdict is unchanged — no part is extractable from: {body}"
+                    );
+                    assert_eq!(
+                        detail.as_deref(),
+                        Some(
+                            format!(
+                                "a `.annotation` file holds a bare annotation line with no \
+                                 comment marker; remove the {markers}"
+                            )
+                            .as_str()
+                        ),
+                        "for: {body}"
+                    );
+                }
+                other => panic!("expected Malformed for {body:?}, got {other:?}"),
+            }
+            assert_eq!(unwrapped_bare_line(body).unwrap().bare, bare);
+        }
+        // A marker wrapping something that is STILL not the format is not the whole fix, so
+        // the ordinary diagnosis stands rather than a marker message that under-reports.
+        assert!(unwrapped_bare_line("<!-- Concern: a | IO: b -->").is_none());
+        match analyze_charter("<!-- Concern: a | IO: b -->", None) {
+            Outcome::Malformed {
+                missing, detail, ..
+            } => {
+                assert_eq!(missing, vec![PART_NON_CONCERN]);
+                assert_eq!(detail, None);
+            }
+            other => panic!("expected Malformed, got {other:?}"),
+        }
+        // An unwrapped, conforming charter is untouched.
+        assert_eq!(
+            analyze_charter("Concern: a | Non-concern: b | IO: c", None),
+            Outcome::Ok
+        );
     }
 
     #[test]

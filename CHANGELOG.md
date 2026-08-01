@@ -7,6 +7,86 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Per-file `.annotation` **sidecars** (#1). A file that maps to no comment marker — a CSV, a
+  dataset, a binary — carries its contract in a `<name>.annotation` file beside it, holding the
+  same bare three-field line a folder's `.annotation` holds. Three consequences:
+  a file carrying a sidecar is **listed whatever its extension** (writing the sidecar is the
+  opt-in, so no `--include` is needed); the sidecar's own row is **suppressed**, under a criterion
+  the report now states (see Changed); and a sidecar is only ever read for a file that cannot hold
+  a first-line comment, so `foo.rs.annotation` beside a `foo.rs` is an ordinary file, not a
+  sidecar, and an annotation's location stays determined by the path it annotates.
+- `orphan_sidecars` on the `--strict-check` report: a `<name>.annotation` whose named file does
+  not exist annotates nothing, and is reported as `path: message` (its own list — a dangling path
+  is not an issue about an Annotation, and no `[rules]` table configures it). It FAILS the check.
+  Nothing is deleted or rewritten: the tool still makes no write of any kind.
+- `--strict-check` enforces a sidecar body with the same grammar as a folder charter, reported at
+  the sidecar's own path with `language: "sidecar"`.
+- `FileNode.sidecar` in the JSON map (omitted when false): the row's annotation came from the
+  sidecar beside it. **BREAKING** for a consumer that builds a `FileNode` by struct literal.
+- A leading **YAML frontmatter** block is skipped when looking for a file's annotation, exactly as
+  a `#!` shebang already was (#16). A Claude Code skill/agent/command, or any static-site page,
+  must keep its frontmatter on line 1; before this, such a file could not carry an annotation at
+  all, so shipping skills and enforcing `--strict-check` were mutually exclusive. Only a CLOSED
+  block at the very start is a prefix — a `---` further down stays a horizontal rule.
+- Two accessory binaries, built by `cargo install annotated-tree` (cargo route only; the
+  prebuilt channels still ship a single binary):
+  `annotated-bash-wrapper` reads a tool's output and appends each printed path's first-line
+  annotation to the line it appeared on; `annotated-toolcall-rewrite` is a Claude Code
+  `PreToolUse` hook that pipes eligible `grep`, `find` and `ls` calls through it, so an
+  agent's own search results carry the contracts. The tool itself is never substituted and
+  its exit code is preserved. Neither changes `annotated-tree`.
+  See [toolcall-rewrite/README.md](toolcall-rewrite/README.md).
+- `annotated-toolcall-rewrite --install-hook [FILE]` and `--uninstall-hook [FILE]`. Cargo has
+  no post-install or pre-uninstall step — the only code it runs is `build.rs`, at build time —
+  so switching the hook on is an explicit command. It MERGES one `PreToolUse` entry into the
+  settings file, keeping every other key: that file holds the permissions a user has accepted,
+  and a setup step that overwrote it would cost them all of them. Defaults to
+  `~/.claude/settings.json`; pass `.claude/settings.local.json` for a single repo. Idempotent,
+  writes atomically, refuses a file that does not parse rather than replacing it, and
+  `--uninstall-hook` removes only the entry it added.
+- `annotated_tree::resolve_charter` — resolve a directory's charter through the public API.
+  `Charter` was already exported with no way to obtain one.
+
+### Changed
+- `-L LEVEL` caps the **walk**, not just the render (#15). The traversal stops at the deepest
+  level the output can show, so `annotated-tree -L 1 ~` no longer walks an entire home directory
+  to print one level (measured on one: 2.4 s warm and 253k directory reads, down to 17 ms and
+  88). Three user-visible consequences:
+  **empty directories are listed** — a directory earns its row by being VISITED, not by holding
+  a listable file somewhere beneath it. Below the cutoff nothing is visited, so "has a listable
+  descendant" is a question the deepest rows can no longer answer, and answering it at one depth
+  but not another would be the worse rule; a folder whose contents are all unlistable (only a
+  `notes.txt`, or nothing at all) now gets a row at every depth, where it used to be invisible.
+  The `-L` cap **cuts the input to the dependency graph**, so a shallow render shows a shallower
+  graph of the same tree instead of edges drawn from manifests the caller asked not to see. The
+  manifest walk runs exactly ONE level below the deepest row, because a package's manifest lives
+  INSIDE the package, one level under the row that names it — so every directory the map
+  DISPLAYS still states its own `<- depends on […]` / `used by: […]` facts, while a package
+  below the cutoff is no row, is never read, and contributes no edge (a path/workspace
+  dependency on one now renders as `(unresolved)`). The extra level reads manifests only and
+  can never add a row.
+  And **`--strict-check` is not capped**: a gate is not a rendered view, so it still lints every
+  file at every depth, `-L` or no `-L`.
+- The text map states the one exclusion criterion it applies to `.annotation` files, on stderr
+  and only when a sidecar row was actually suppressed. The JSON map states it structurally
+  instead, as `"sidecar": true` on the row that took the contract.
+- A malformed `.annotation` body that is a **conforming line wrapped in a comment marker** is
+  now diagnosed as exactly that — "remove the `<!--` and `-->`" — instead of "the ` | ` field
+  separators are missing", which was the one explanation that could not be true (#17). The
+  printed `suggestion` is the line from inside the wrapper, so it is usable as printed; it used
+  to embed the malformed text and could not be pasted. Same verdict, same parts reported.
+- `SPEC.md` gains an **accessory tool** vocabulary entry, stating that a program which
+  helps an agent consume Annotations performs no run, emits no Report, and is therefore
+  governed by none of the invariants.
+
+### Fixed
+- `--max-files` aborted runs over files that would never have been shown (#15). `-L 1
+  --max-files 5` on a tree holding 41 files three levels down exited 3 with nothing written,
+  and on any large tree the DEFAULT `--max-files 10000` failed a one-level render outright.
+  The count is now over what the capped walk visits, so it is bounded by `-L` like everything
+  else.
+
 ## [0.5.0] - 2026-07-30
 
 ### Added
