@@ -5,8 +5,8 @@ use std::ffi::OsString;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
-use crate::contracts::Contracts;
-use crate::map::{shape_of, Shape};
+use super::contracts::Contracts;
+use super::map::{shape_of, Shape};
 
 /// Is this something we can read a contract from without risking a block?
 ///

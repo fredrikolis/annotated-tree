@@ -5,7 +5,8 @@ use std::process::{Command, Stdio};
 
 /// Feed one hook event to the injector; return its stdout and exit code.
 fn hook(event: &str) -> (String, i32) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_annotated-toolcall-rewrite"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
+        .args(["toolcall-injector", "--rewrite-tool-call"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -29,16 +30,16 @@ fn json(out: &str) -> serde_json::Value {
 
 /// Does this rewrite wrap `pipeline` in a subshell that pipes it into the annotator?
 ///
-/// The annotator is spelled bare when it is on `PATH` and as a single-quoted absolute path when it
-/// is not; both are correct and which one appears depends on the machine, so neither is frozen.
-/// What IS frozen: the agent's pipeline is reproduced verbatim, the annotator is appended to it,
-/// and the status of the originally-last stage is re-raised.
+/// The annotator is `current_exe()` as a single-quoted absolute path, followed by the verb and flag
+/// unquoted. The path itself is machine-dependent and not frozen. What IS frozen: the agent's
+/// pipeline is reproduced verbatim, the annotator is appended to it, and the status of the
+/// originally-last stage is re-raised.
 fn wraps(command: &serde_json::Value, pipeline: &str) -> bool {
     let Some(c) = command.as_str() else {
         return false;
     };
     c.starts_with(&format!("( {pipeline} | "))
-        && c.contains("annotated-bash-wrapper")
+        && c.contains("toolcall-injector --annotate-tool-output")
         // The exit code is recovered from PIPESTATUS and re-raised; the exact expression is not
         // frozen here (toolcall_equivalence.rs checks the CODE against the unrewritten command,
         // which is the property that matters), only that the subshell ends by re-raising one.

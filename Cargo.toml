@@ -13,14 +13,6 @@ categories = ["command-line-utilities", "development-tools"]
 name = "annotated-tree"
 path = "src/main.rs"
 
-[[bin]]
-name = "annotated-bash-wrapper"
-path = "toolcall-rewrite/src/bin/annotated-bash-wrapper.rs"
-
-[[bin]]
-name = "annotated-toolcall-rewrite"
-path = "toolcall-rewrite/src/bin/annotated-toolcall-rewrite.rs"
-
 [lib]
 name = "annotated_tree"
 path = "src/lib.rs"

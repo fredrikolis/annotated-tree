@@ -483,8 +483,8 @@ const CASES: &[(&str, Want, &str)] = &[
 /// Drive the SHIPPED surface rather than an internal function: `--check` is what a user runs to
 /// ask what would happen to a command, so freezing it freezes something observable.
 fn check(cmd: &str) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_annotated-toolcall-rewrite"))
-        .args(["--check", cmd])
+    let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
+        .args(["toolcall-injector", "--check", cmd])
         .output()
         .expect("spawn injector");
     assert_eq!(

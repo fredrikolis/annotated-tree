@@ -1,34 +1,28 @@
 // Concern: appends the annotator to a Bash pipeline whose stdout the model reads | Non-concern: lexing, the tool table, or annotating a line | IO: (command) -> rewrite + tools, or None
 
-use crate::lex::{lex, Kind, Token};
-use crate::map::shape_of;
+use super::lex::{lex, Kind, Token};
+use super::map::shape_of;
 
-/// How to spell the wrapper so the rewritten command can actually run.
+/// How to spell the annotator so the rewritten command can actually run.
 ///
-/// `None` means it cannot be found, and the command is then left alone: emitting a name that does
-/// not resolve turns every eligible search into `command not found` for a command the agent knows
-/// exists — the exact failure the `PATH=` guard exists to prevent, arrived at from the other side.
+/// The annotator is this same binary, so this is `current_exe()` plus the verb. `None` is
+/// effectively unreachable (it needs `current_exe()` itself to fail) and the caller still treats it
+/// as "leave the command alone", which stays the correct answer for a process that cannot locate
+/// itself.
 fn wrapper_command() -> Option<String> {
-    const NAME: &str = "annotated-bash-wrapper";
     // ALWAYS absolute, never the bare name. The rewritten command runs in the agent's shell, whose
     // `PATH` the command itself may have changed — `export PATH=/usr/bin; ls` left a bare name
     // unresolvable, and because the annotator is the READER of the pipe, failing to start it made
     // the producer take SIGPIPE: no output at all, exit 141. An absolute path cannot be stranded.
-    let sibling = std::env::current_exe()
-        .ok()
-        .and_then(|e| e.parent().map(|p| p.join(NAME)))
-        .filter(|p| p.is_file());
-    let found = sibling.or_else(|| {
-        let paths = std::env::var_os("PATH")?;
-        std::env::split_paths(&paths)
-            .map(|d| d.join(NAME))
-            .find(|p| p.is_file())
-    })?;
+    let found = std::env::current_exe().ok()?;
     let path = found.to_string_lossy().into_owned();
     // ALWAYS quoted. A conditional rule has to enumerate every shell metacharacter and will miss
     // one — `$`, `(` and whitespace each produced a broken command — and quoting a plain path
     // costs nothing.
-    Some(format!("'{}'", path.replace('\'', "'\\''")))
+    Some(format!(
+        "'{}' toolcall-injector --annotate-tool-output",
+        path.replace('\'', "'\\''")
+    ))
 }
 
 /// Downstream stages that leave the output still a list of path-bearing lines.
@@ -76,11 +70,6 @@ const ORDER_PRESERVING: &[&str] = &["cat", "head"];
 const WRAPPERS: &[&str] = &["nohup", "nice", "stdbuf"];
 /// Same, but consumes one argument of its own first.
 const ARGFUL_WRAPPERS: &[&str] = &["timeout"];
-
-/// Can the annotator be located at all? Used only to make `--check` diagnostic.
-pub fn wrapper_missing() -> bool {
-    wrapper_command().is_none()
-}
 
 /// The rewritten command, or `None` to leave it exactly as the agent wrote it.
 ///

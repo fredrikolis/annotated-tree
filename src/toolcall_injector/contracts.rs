@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use annotated_tree::annotation;
-use annotated_tree::config::{CliOverrides, Config};
+use crate::annotation;
+use crate::config::{CliOverrides, Config};
 
 /// Path-keyed contracts and charters, memoised for one process.
 ///
@@ -65,7 +65,7 @@ impl Contracts {
         let found = self
             .config
             .as_ref()
-            .and_then(|c| annotated_tree::resolve_charter(dir, c))
+            .and_then(|c| crate::charter::resolve_from_fs(dir, c))
             .map(|c| c.line());
         self.dirs.insert(dir.to_path_buf(), found.clone());
         found

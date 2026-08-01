@@ -5,8 +5,11 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Map, Value};
 
 /// The command written into the settings file. A bare name, resolved from `PATH` by the harness,
-/// so the entry stays valid when the binary is reinstalled somewhere else.
-const HOOK_COMMAND: &str = "annotated-toolcall-rewrite";
+/// so the entry stays valid when the binary is reinstalled somewhere else. (The annotator inside a
+/// rewritten pipeline uses an ABSOLUTE path instead — see `inject::wrapper_command`, where a bare
+/// name that failed to resolve made the producer take SIGPIPE. Here the harness runs the command
+/// directly, so there is no pipe to break and the reinstall-proof spelling wins.)
+const HOOK_COMMAND: &str = "annotated-tree toolcall-injector --rewrite-tool-call";
 
 /// What a call did. Distinguishing "already there" from "added" is what makes running this twice
 /// safe to suggest in a README.
@@ -37,8 +40,12 @@ pub fn default_path() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".claude").join("settings.json"))
 }
 
-/// Is this one of OUR entries? Matched on the command's final path segment, so an entry written
-/// as an absolute path is still recognised as ours and is not duplicated or orphaned.
+/// Is this one of OUR entries? Matched on a SUBSTRING, the `--rewrite-tool-call` flag, which no
+/// other program's hook entry can contain — so an entry written as an absolute path is still
+/// recognised as ours and is not duplicated or orphaned. A final-path-segment match cannot be used
+/// once the command carries a verb and a flag after the path: the last `/`-separated segment is
+/// then the whole `annotated-tree toolcall-injector --rewrite-tool-call` tail for a bare entry and
+/// for an absolute one alike, so it would compare equal by accident rather than by rule.
 fn is_ours(entry: &Value) -> bool {
     entry
         .get("hooks")
@@ -47,7 +54,7 @@ fn is_ours(entry: &Value) -> bool {
             hooks.iter().any(|h| {
                 h.get("command")
                     .and_then(Value::as_str)
-                    .is_some_and(|c| c.rsplit('/').next() == Some(HOOK_COMMAND))
+                    .is_some_and(|c| c.contains("--rewrite-tool-call"))
             })
         })
 }
@@ -206,7 +213,7 @@ mod tests {
         let p = tmp("abs");
         std::fs::write(
             &p,
-            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"/home/x/.cargo/bin/annotated-toolcall-rewrite"}]}]}}"#,
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"/home/x/.cargo/bin/annotated-tree toolcall-injector --rewrite-tool-call"}]}]}}"#,
         )
         .unwrap();
         assert_eq!(install(&p).unwrap(), Outcome::AlreadyPresent);

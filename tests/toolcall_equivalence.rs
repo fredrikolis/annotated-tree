@@ -225,8 +225,8 @@ fn shell(dir: &Path, cmd: &str) -> (Vec<u8>, Option<i32>) {
 
 /// What the hook would substitute, or the command unchanged.
 fn rewritten(dir: &Path, cmd: &str) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_annotated-toolcall-rewrite"))
-        .args(["--check", cmd])
+    let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
+        .args(["toolcall-injector", "--check", cmd])
         .current_dir(dir)
         .output()
         .expect("spawn injector");

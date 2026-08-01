@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 
 use crate::config::CliOverrides;
 use crate::exit;
@@ -20,7 +20,7 @@ pub enum Format {
 
 /// Annotated directory tree with a cross-ecosystem package dependency graph.
 #[derive(Debug, Parser)]
-#[command(name = "annotated-tree", version)]
+#[command(name = "annotated-tree", version, disable_help_subcommand = true)]
 pub struct Cli {
     /// Directories to analyze [default: current directory].
     pub paths: Vec<PathBuf>,
@@ -120,6 +120,46 @@ pub struct Cli {
     /// exit: the pre-commit --strict-check gate and the commit-msg review attestation.
     #[arg(long)]
     pub githook_guide: bool,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Put each file's contract in your agent's Bash tool results.
+    ToolcallInjector(ToolcallInjector),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct ToolcallInjector {
+    /// Add the Claude Code PreToolUse hook to FILE [default: ~/.claude/settings.json].
+    #[arg(long)]
+    pub install_claude_hook: bool,
+
+    /// Remove the hook this tool added from FILE, and nothing else.
+    #[arg(long)]
+    pub uninstall_claude_hook: bool,
+
+    /// Print what each quoted CMD would become. Substitutes nothing and runs nothing.
+    #[arg(long)]
+    pub check: bool,
+
+    /// Hook entry point: one PreToolUse event on stdin, an updatedInput or nothing out.
+    #[arg(long)]
+    pub rewrite_tool_call: bool,
+
+    /// Pipeline entry point: append each printed path's contract to the line it appeared on.
+    #[arg(long)]
+    pub annotate_tool_output: bool,
+
+    /// A settings FILE, the CMDs to check, or the producer's argv.
+    #[arg(
+        trailing_var_arg = true,
+        allow_hyphen_values = true,
+        value_name = "ARGS"
+    )]
+    pub args: Vec<std::ffi::OsString>,
 }
 
 const EXAMPLES: &str = "\
@@ -149,7 +189,7 @@ fn exit_codes_block() -> String {
 EXIT CODES:
     {}  clean run (tree rendered, or --strict-check passed)
     {}  --strict-check found at least one violation
-    {}  usage error — bad flag or value (emitted by clap before the run)
+    {}  usage error — bad flag or value, or an unusable toolcall-injector invocation
     {}  a root exceeded --max-files; nothing written
     {}  precondition/environment error (missing dir, git/--since failure, bad config, I/O)",
         exit::SUCCESS,

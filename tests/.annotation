@@ -1,0 +1,1 @@
+Concern: holds the tool to what a caller can observe — its output, exit code and library surface | Non-concern: its internals, unit-tested inline in src/ | IO: (fixtures, sample/) -> pass/fail

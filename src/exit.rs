@@ -11,7 +11,7 @@
 //! ```text
 //! 0  SUCCESS        clean run
 //! 1  STRICT_FAILURE --strict-check found at least one violation
-//! 2  USAGE          bad flag / value (emitted by clap itself, before run())
+//! 2  USAGE          bad flag / value, or an unusable toolcall-injector invocation
 //! 3  RUNAWAY_SCOPE  a root exceeded --max-files; nothing written
 //! 4  PRECONDITION   environment/precondition error (missing root dir, git/--since failure)
 //! ```
@@ -22,9 +22,10 @@ pub const SUCCESS: i32 = 0;
 /// `--strict-check` found at least one annotation or architectural-rule violation.
 pub const STRICT_FAILURE: i32 = 1;
 
-/// Usage / argument error — a bad flag or value. Emitted by clap's own error path
-/// (`Error::exit`) before `run()` is reached, so `run()` never returns this code; it
-/// is named here to keep the whole taxonomy in one place.
+/// Usage / argument error — the invocation itself could not be acted on. Emitted by
+/// clap's own error path (`Error::exit`) before `run()` is reached for a bad flag or
+/// value, and returned FROM `run()` by the `toolcall-injector` verb when no single mode
+/// flag is set, or when the mode it names has nothing to work on.
 pub const USAGE: i32 = 2;
 
 /// Runaway-scope abort: a root exceeded the `--max-files` cap, so the walk was aborted
