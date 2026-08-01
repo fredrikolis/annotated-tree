@@ -3,10 +3,10 @@
 use crate::config;
 use crate::strict;
 
-/// The one canonical guide text, authored in [`docs/annotation-guide.md`] and embedded at
-/// build time (like `default_config.toml`). It supersedes the old hand-written `--explain`
+/// The one canonical guide text, authored in [`src/annotation-guide.md`] and embedded at
+/// build time (like `src/default_config.toml`). It supersedes the old hand-written `--explain`
 /// body: one source, rendered onto every teaching surface.
-const GUIDE: &str = include_str!("../docs/annotation-guide.md");
+const GUIDE: &str = include_str!("annotation-guide.md");
 
 /// Splits the compact `--help` head from the deeper `--strict-check` tail. Everything before
 /// it is the essence; the full guide is both halves with the marker removed.

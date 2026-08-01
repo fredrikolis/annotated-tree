@@ -1,4 +1,4 @@
-# Concern: the built-in default configuration — limits, rules, display defaults, and the per-language comment markers | Non-concern: resolving these against the user, repo, and CLI layers (src/config.rs owns that) | IO: none
+# Concern: the built-in default configuration — limits, rules, display defaults, and the per-language comment markers | Non-concern: resolving these against the user, repo, and CLI layers | IO: none
 # Precedence (low -> high): these defaults < ~/.config/annotated-tree/config.toml
 # < ./.annotated-tree.toml (nearest ancestor) < command-line flags.
 #

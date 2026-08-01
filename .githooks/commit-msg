@@ -66,11 +66,11 @@ fail_ann() {
 	echo "" >&2
 	echo "  Once the standards review above passes (content is FINAL), run a neutral" >&2
 	echo "  reviewer over EVERY file in this diff. For each, confirm it carries an" >&2
-	echo "  appropriate first-line annotation per docs/annotation-guide.md AND that this" >&2
+	echo "  appropriate first-line annotation per src/annotation-guide.md AND that this" >&2
 	echo "  diff did not make that annotation stale. APPROPRIATE: every field states WHAT," >&2
 	echo "  never why/how/when; Concern is the file's ONE job; Non-concern is a concern the" >&2
 	echo "  file does not own, its where-it-lives pointer optional (omit it when the tree" >&2
-	echo "  already shows the owner). docs/annotation-guide.md is the normative statement." >&2
+	echo "  already shows the owner). src/annotation-guide.md is the normative statement." >&2
 	echo "  Then attest in the commit message:" >&2
 	echo "      Annotation-Reviewer: <name of the neutral reviewer>" >&2
 	echo "      Annotation-Issues: 0" >&2

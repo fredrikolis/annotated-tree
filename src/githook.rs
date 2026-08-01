@@ -1,10 +1,10 @@
 // Concern: embeds the canonical git-hook guide and renders it for --githook-guide | Non-concern: running any hook (.githooks/ owns that) or the annotation format | IO: none
 
-/// The one canonical git-hook guide, authored in [`docs/githook-guide.md`] and embedded at
-/// build time (like the annotation guide in [`crate::guide`] and `default_config.toml`).
+/// The one canonical git-hook guide, authored in [`src/githook-guide.md`] and embedded at
+/// build time (like the annotation guide in [`crate::guide`] and `src/default_config.toml`).
 /// `--githook-guide` prints it whole, so an agent can reproduce the repo's local enforcement
 /// hooks without a human — the same push-to-the-agent teaching the annotation guide gives.
-const GUIDE: &str = include_str!("../docs/githook-guide.md");
+const GUIDE: &str = include_str!("githook-guide.md");
 
 /// The guide body with its own first-line annotation stripped. The doc carries a
 /// `<!-- … -->` annotation because the repo's own pre-commit gate requires one on every

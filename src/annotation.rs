@@ -450,7 +450,7 @@ pub(crate) fn unwrapped_bare_line(text: &str) -> Option<Wrapped> {
 }
 
 /// The comment openers a wrapped bare line is recognized by — exactly the four markers
-/// `docs/annotation-guide.md` teaches, since the mistake is copying one of those. `<!--` is
+/// `src/annotation-guide.md` teaches, since the mistake is copying one of those. `<!--` is
 /// tested before `--` so the diagnostic quotes the whole marker the author typed.
 const COMMENT_OPENERS: &[&str] = &["<!--", "//", "--", "#"];
 

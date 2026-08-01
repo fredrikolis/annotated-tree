@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::rules::Rules;
 
-const DEFAULT_CONFIG: &str = include_str!("../default_config.toml");
+const DEFAULT_CONFIG: &str = include_str!("default_config.toml");
 
 /// The raw, all-optional shape parsed from a TOML layer. Every layer omits most
 /// fields; merging overlays later layers onto earlier ones.

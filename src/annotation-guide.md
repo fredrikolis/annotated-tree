@@ -1,4 +1,4 @@
-<!-- Concern: the canonical guide to writing a good first-line annotation | Non-concern: enforcing the format (src/strict.rs owns the checker) or the argument for annotations at all | IO: none -->
+<!-- Concern: the canonical guide to writing a good first-line annotation | Non-concern: enforcing the format or the argument for annotations at all | IO: none -->
 ANNOTATION GUIDE — write a map an agent can route from WITHOUT opening the file.
 
 Every source file's first line states its ONE job, in three ` | `-delimited fields:
