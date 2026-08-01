@@ -20,9 +20,10 @@ fn main() -> ExitCode {
             ExitCode::from(code as u8)
         }
         // Any error out of `run()` is a precondition/environment failure (missing root
-        // dir, git/`--since` failure, bad config, I/O) — distinct from a clap usage error
-        // (exit 2, which clap emits itself before `run()`) and from a runaway-scope abort
-        // (exit 3, returned as `Ok`). Agents branch recovery on this code.
+        // dir, git/`--since` failure, bad config, I/O). Exit 2 arrives two ways — clap
+        // emits it itself before `run()` for a bad flag or value, and `toolcall-injector`
+        // returns it as `Ok(2)` for an invocation it cannot act on — and a runaway-scope
+        // abort is exit 3, also returned as `Ok`. Agents branch recovery on this code.
         Err(err) => {
             let _ = handle.flush();
             let _ = writeln!(errout, "error: {err:#}");

@@ -25,6 +25,10 @@
 //!   output over a tree you built yourself. The node field types ([`DirDeps`], [`Charter`],
 //!   …) are re-exported so every field is nameable.
 //!
+//! **No stability promise.** This surface exists for a known consumer. There is no semver policy
+//! and no deprecation cycle: a breaking change arrives as a compile error rather than through a
+//! deprecation window, and 0.6.0 is such a change.
+//!
 //! ```no_run
 //! use annotated_tree::config::{CliOverrides, Config};
 //! use annotated_tree::{annotation, walk};

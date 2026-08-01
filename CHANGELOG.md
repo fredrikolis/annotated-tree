@@ -19,7 +19,7 @@ to [Semantic Versioning](https://semver.org/).
 - `orphan_sidecars` on the `--strict-check` report: a `<name>.annotation` whose named file does
   not exist annotates nothing, and is reported as `path: message` (its own list — a dangling path
   is not an issue about an Annotation, and no `[rules]` table configures it). It FAILS the check.
-  Nothing is deleted or rewritten: the tool still makes no write of any kind.
+  Nothing is deleted or rewritten: `--strict-check` still makes no write of any kind.
 - `--strict-check` enforces a sidecar body with the same grammar as a folder charter, reported at
   the sidecar's own path with `language: "sidecar"`.
 - `FileNode.sidecar` in the JSON map (omitted when false): the row's annotation came from the
@@ -29,22 +29,21 @@ to [Semantic Versioning](https://semver.org/).
   must keep its frontmatter on line 1; before this, such a file could not carry an annotation at
   all, so shipping skills and enforcing `--strict-check` were mutually exclusive. Only a CLOSED
   block at the very start is a prefix — a `---` further down stays a horizontal rule.
-- Two accessory binaries, built by `cargo install annotated-tree` (cargo route only; the
-  prebuilt channels still ship a single binary):
-  `annotated-bash-wrapper` reads a tool's output and appends each printed path's first-line
-  annotation to the line it appeared on; `annotated-toolcall-rewrite` is a Claude Code
-  `PreToolUse` hook that pipes eligible `grep`, `find` and `ls` calls through it, so an
-  agent's own search results carry the contracts. The tool itself is never substituted and
-  its exit code is preserved. Neither changes `annotated-tree`.
-  See [toolcall-rewrite/README.md](toolcall-rewrite/README.md).
-- `annotated-toolcall-rewrite --install-hook [FILE]` and `--uninstall-hook [FILE]`. Cargo has
-  no post-install or pre-uninstall step — the only code it runs is `build.rs`, at build time —
-  so switching the hook on is an explicit command. It MERGES one `PreToolUse` entry into the
-  settings file, keeping every other key: that file holds the permissions a user has accepted,
-  and a setup step that overwrote it would cost them all of them. Defaults to
-  `~/.claude/settings.json`; pass `.claude/settings.local.json` for a single repo. Idempotent,
-  writes atomically, refuses a file that does not parse rather than replacing it, and
-  `--uninstall-hook` removes only the entry it added.
+- `annotated-tree toolcall-injector` puts each file's contract in an agent's own `grep`, `find`
+  and `ls` results, through a Claude Code `PreToolUse` hook that pipes eligible calls through an
+  annotator; `--install-claude-hook` switches it on. It is a verb on the one binary, so it ships
+  on **every** channel: npx, `cargo binstall`, the curl installer, `cargo install`. The tool
+  itself is never substituted and the wrapped command's exit status is preserved. One dev-branch
+  artifact: a hook installed by a pre-merge `0.6.0-dev` binary names `annotated-toolcall-rewrite`,
+  which no longer exists and is not migrated — remove that entry from your settings file.
+- `annotated-tree toolcall-injector --install-claude-hook [FILE]` and
+  `--uninstall-claude-hook [FILE]`. Cargo has no post-install or pre-uninstall step — the only
+  code it runs is `build.rs`, at build time — so switching the hook on is an explicit command.
+  It MERGES one `PreToolUse` entry into the settings file, keeping every other key: that file
+  holds the permissions a user has accepted, and a setup step that overwrote it would cost them
+  all of them. Defaults to `~/.claude/settings.json`; pass `.claude/settings.local.json` for a
+  single repo. Idempotent, writes atomically, refuses a file that does not parse rather than
+  replacing it, and `--uninstall-claude-hook` removes only the entry it added.
 - `annotated_tree::resolve_charter` — resolve a directory's charter through the public API.
   `Charter` was already exported with no way to obtain one.
 
@@ -91,9 +90,9 @@ to [Semantic Versioning](https://semver.org/).
   separators are missing", which was the one explanation that could not be true (#17). The
   printed `suggestion` is the line from inside the wrapper, so it is usable as printed; it used
   to embed the malformed text and could not be pasted. Same verdict, same parts reported.
-- `SPEC.md` gains an **accessory tool** vocabulary entry, stating that a program which
-  helps an agent consume Annotations performs no run, emits no Report, and is therefore
-  governed by none of the invariants.
+- `SPEC.md` gains an **accessory** vocabulary entry, stating that anything annotated-tree offers
+  that helps an agent consume Annotations outside a Report performs no run, emits no Report, and
+  is therefore governed by none of the invariants.
 
 ### Removed
 - **The MCP server.** `--mcp`, the `mcp` Cargo feature, and its `rmcp` + `tokio` optional

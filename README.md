@@ -27,8 +27,8 @@ Have your agent write a one-line contract at the top of each file: what it is fo
 2. **Enforce it with a local git hook.**  
 It fails on a missing or stale annotation and catches it while the agent still has the context to fix it, so the map never rots (see [Enforce it](#enforce-it)).
 
-3. **Read it at the start of every fresh session.**  
-Point your agent at the map before it touches code; it pays off most in architectural planning and bug-finding (see [Wire it into every session](#wire-it-into-every-session)).
+3. **Put the contracts in your agent's tool calls.**  
+Your agent explores with `grep`, `find` and `ls`, and gets back paths that say nothing about what they are for. A hook pipes that output through an annotator, so every path arrives carrying its contract. A `CLAUDE.md` note gets skimmed once; this fires on every call, so the map is in front of the agent through exploration, planning and bug-hunting (see [Put the contracts in your agent's search results](#put-the-contracts-in-your-agents-search-results)).
 
 ## TL;DR (for humans)
 
@@ -58,9 +58,10 @@ First read the raw README so you work from the source, not your priors:
 https://raw.githubusercontent.com/fredrikolis/annotated-tree/main/README.md
 
 Then install it, annotate the workspace (in batches if it's large, busiest areas
-first), add a local git hook that enforces annotations, and wire the map into
-every session. Set up only what fits, not everything. Recommend, then do it, and
-ask me only where you actually need a call.
+first), add a local git hook that enforces annotations, switch on the tool-call
+hook so search results carry the contracts, and wire the map into every session.
+Set up only what fits, not everything. Recommend, then do it, and ask me only
+where you actually need a call.
 ```
 
 ## Rationale (long read for agents)
@@ -323,6 +324,10 @@ Same prebuilt binary on every channel.
   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/fredrikolis/annotated-tree/releases/latest/download/annotated-tree-installer.sh | sh
   ```
 
+annotated-tree makes no network request of its own. It reads files and writes to stdout; the one
+file it ever writes is the settings file `toolcall-injector --install-claude-hook` edits. The only
+program it starts is `git`, for `--since`, and only with local commands.
+
 ### The commands
 
 `annotated-tree [PATHS]...` prints the annotated tree. The main flags are below. Run
@@ -352,9 +357,13 @@ src/render/text.rs  # Concern: formats the canonical map as a `tree`-style text 
 ```
 
 Same command, same files, one line each, and your agent types nothing different. (Two of the
-six result lines are shown, sorted and abridged for width here; the wrapper itself does
-neither.) The binaries install with `cargo install`, since every other channel ships one
-prebuilt binary. See [toolcall-rewrite/README.md](toolcall-rewrite/README.md).
+six result lines are shown, sorted and abridged for width here; the annotator itself does
+neither.) Switch it on with `annotated-tree toolcall-injector --install-claude-hook`, and see
+what any command would become with `annotated-tree toolcall-injector --check '<cmd>'`.
+
+If you allowlist Bash commands, a `Bash(grep:*)` rule stops matching once the command is
+rewritten, and those searches start prompting. Widen the rule, approve the prompts, or leave the
+hook off where the allowlist matters more.
 
 ### Wire it into every session
 
@@ -408,7 +417,11 @@ dependency rules, so enforcement is a property of the repo, not each contributor
 machine. The annotation format is invariant; the only per-language knob is the comment
 marker. Teaching it a new language is a few lines of TOML (an extension list + comment
 marker, or a regex for exotic comment syntax), no code change. See the shipped
-[default_config.toml](default_config.toml) for the exact keys.
+[default_config.toml](src/default_config.toml) for the exact keys.
+
+The crate also exposes its walk, annotation and render primitives as a library. That surface
+carries no stability promise: no semver policy, no deprecation cycle, and a breaking change
+arrives as a compile error. 0.6.0 is such a change.
 
 ## Beyond the codebase
 

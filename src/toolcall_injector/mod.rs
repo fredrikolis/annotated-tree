@@ -1,5 +1,49 @@
 // Concern: routes each toolcall-injector verb to its module, and owns the PreToolUse wire format | Non-concern: eligibility, or what an annotation means | IO: (args, stdin) -> output + exit code
 
+//! What gets rewritten, and why it is safe to leave on.
+//!
+//! Three tools are eligible, and each names the file a line is about in its own place:
+//!
+//! | the agent types | where that tool names the file a line is about |
+//! |---|---|
+//! | `ls` | the line, or its trailing field |
+//! | `find` | the line |
+//! | `grep` | the `path:` prefix (anything after it is file content, not a subject) |
+//!
+//! Everything else is left exactly as written. `map.rs` is that table, and its own doc states the
+//! extension procedure and the never-substituted guarantee behind it, including why `\grep`,
+//! `command grep`, `/usr/bin/grep` and `sudo grep` all need no special handling. What it does not
+//! buy is the tool's flag grammar: `ls` and `grep` each have a table in `run.rs` naming the options
+//! that take a value, which is what tells an operand from a flag's argument, and a new tool starts
+//! with an empty one and needs its own if its flags matter.
+//!
+//! **One line in, one line out.** A contract is appended to the line its path appeared on and
+//! never printed on a line of its own, so no downstream stage sees a line count it did not expect.
+//! The annotator is the LAST stage, so `| sort`, `| uniq` and `| grep -v` see the tool's raw
+//! output and behave exactly as they would without this installed.
+//!
+//! **It refuses anything it cannot guarantee.** A command is left alone whenever the lines
+//! reaching the annotator would no longer be the paths the tool printed. A missed rewrite costs
+//! nothing; a wrong one would corrupt a pipeline the agent then has to debug. Each rule and the
+//! failure behind it is stated where it is enforced, in `inject.rs`: `LINE_SAFE` and `line_safe`
+//! for what may follow the producer, `ORDER_PRESERVING` and `header_scoped` for the `<dir>:`
+//! headers `ls -R` prints, `nul_delimited` for NUL-delimited output, and `rewrite` itself for
+//! redirects, compound commands and `xargs`.
+//!
+//! It emits no permission decision of its own, so nothing is ever waved through that would not
+//! have been, and it never blocks a command. Two things it does change. `PreToolUse` runs before
+//! permissions are evaluated, so the string a Bash allowlist is matched against is the rewritten
+//! one, which begins `( grep …` and names the annotator by absolute path; a `Bash(grep:*)` rule
+//! stops matching. And the pipeline is wrapped in a subshell, so `${PIPESTATUS[i]}` inspected
+//! afterwards would describe that subshell, which is why a command mentioning `PIPESTATUS` is left
+//! alone entirely. `$?` is unaffected.
+//!
+//! **It makes output bigger.** A contract runs about 200 bytes. The bargain is that the agent
+//! stops opening files for the rest of the session to find out what they are: the same trade
+//! `annotated-tree` makes with the tree, moved onto the agent's own tool calls. That is the
+//! mechanism, not a measurement — `README_APPENDIX.md`'s future-work section names first-pass
+//! yield as the thing it most wants measured and has not measured.
+
 mod contracts;
 mod hookfile;
 mod inject;

@@ -1,1 +1,1 @@
-Concern: the tool's source and the assets compiled into it | Non-concern: shipping it (distribution/ owns that) or the standards it is judged against (docs/) | IO: (argv, roots) -> map or verdict
+Concern: the tool's source and the assets compiled into it | Non-concern: shipping it (distribution/ owns that) or the standards it is judged by (docs/) | IO: (argv, roots) -> annotations or verdict
