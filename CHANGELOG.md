@@ -36,9 +36,7 @@ to [Semantic Versioning](https://semver.org/).
   and `ls` results, through a Claude Code `PreToolUse` hook that pipes eligible calls through an
   annotator; `--install-claude-hook` switches it on. It is a verb on the one binary, so it ships
   on **every** channel: npx, `cargo binstall`, the curl installer, `cargo install`. The tool
-  itself is never substituted and the wrapped command's exit status is preserved. One dev-branch
-  artifact: a hook installed by a pre-merge `0.6.0-dev` binary names `annotated-toolcall-rewrite`,
-  which no longer exists and is not migrated — remove that entry from your settings file.
+  itself is never substituted and the wrapped command's exit status is preserved.
 - `annotated-tree bash-annotator --install-claude-hook [FILE]` and
   `--uninstall-claude-hook [FILE]`. Cargo has no post-install or pre-uninstall step — the only
   code it runs is `build.rs`, at build time — so switching the hook on is an explicit command.
@@ -50,25 +48,11 @@ to [Semantic Versioning](https://semver.org/).
 - `bash-annotator` says what it does ONCE, in a `SessionStart` entry `--install-claude-hook`
   now writes beside the `PreToolUse` one, instead of an `additionalContext` on every rewritten
   call — `PreToolUse` fires before the command runs, so that text was repeated per call and often
-  described contracts nothing printed. Already installed the hook? Re-run `--install-claude-hook`:
-  it adds the missing `SessionStart` entry and leaves the `PreToolUse` one alone.
+  described contracts nothing printed.
 - `annotated_tree::resolve_charter` — resolve a directory's charter through the public API.
   `Charter` was already exported with no way to obtain one.
 
 ### Changed
-- **BREAKING (dev-branch).** The verb is `bash-annotator`, renamed from `toolcall-injector` before
-  either name shipped. Claude Code's stock auto-mode permission classifier DENIED every rewritten
-  Bash call that carried the old verb. Three runs each, everything else byte-identical — same
-  subshell, same `PIPESTATUS` arithmetic, same absolute binary path, same `--annotate-tool-output`
-  flag: `toolcall-injector` denied, `bash-annotator` allowed. The word was the only variable.
-  "injector" reads as an attack in every security context it appears in, and a classifier looking
-  at a subshell it cannot attribute has nothing else to go on — so the old name would have had this
-  feature denied by default for every auto-mode adopter. Already installed the hook from a
-  dev-branch binary? Run `--uninstall-claude-hook`, then `--install-claude-hook`. Running
-  `--install-claude-hook` on its own does NOT fix it: an entry is recognised by the
-  `--rewrite-tool-call` flag, not by the verb, so the stale one is reported as already present and
-  left in place — and it names a verb this binary no longer accepts, so every Bash call fails with
-  a clap usage error until it is gone.
 - **BREAKING (gate).** An `.annotation` file — a directory charter or a `<name>.annotation`
   sidecar — must hold ONE bare annotation line and nothing but whitespace after it.
   `--strict-check` now FAILS a body with prose below line 1, reporting it in a new
