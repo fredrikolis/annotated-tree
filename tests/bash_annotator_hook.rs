@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 /// Feed one hook event to the injector; return its stdout and exit code.
 fn hook(event: &str) -> (String, i32) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
-        .args(["toolcall-injector", "--rewrite-tool-call"])
+        .args(["bash-annotator", "--rewrite-tool-call"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -39,9 +39,9 @@ fn wraps(command: &serde_json::Value, pipeline: &str) -> bool {
         return false;
     };
     c.starts_with(&format!("( {pipeline} | "))
-        && c.contains("toolcall-injector --annotate-tool-output")
+        && c.contains("bash-annotator --annotate-tool-output")
         // The exit code is recovered from PIPESTATUS and re-raised; the exact expression is not
-        // frozen here (toolcall_equivalence.rs checks the CODE against the unrewritten command,
+        // frozen here (bash_annotator_equivalence.rs checks the CODE against the unrewritten command,
         // which is the property that matters), only that the subshell ends by re-raising one.
         && c.contains("PIPESTATUS")
         && c.contains("exit $__rc )")

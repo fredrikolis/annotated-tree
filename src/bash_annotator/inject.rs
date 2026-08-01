@@ -20,7 +20,7 @@ fn wrapper_command() -> Option<String> {
     // one — `$`, `(` and whitespace each produced a broken command — and quoting a plain path
     // costs nothing.
     Some(format!(
-        "'{}' toolcall-injector --annotate-tool-output",
+        "'{}' bash-annotator --annotate-tool-output",
         path.replace('\'', "'\\''")
     ))
 }

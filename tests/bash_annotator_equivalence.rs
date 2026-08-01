@@ -19,7 +19,7 @@ use std::process::{Command, Stdio};
 /// It CANNOT catch a contract that belongs to the wrong file. Appending `docs/a.rs`'s contract to
 /// a line about `./a.rs` is still an append, and this sees only that something was appended — a
 /// mutation test confirmed it stays green with such a bug reintroduced. That class is the
-/// `SHAPES` table's job in `toolcall_run.rs`, which asserts WHICH contract a line carries. The two
+/// `SHAPES` table's job in `bash_annotator_run.rs`, which asserts WHICH contract a line carries. The two
 /// tables are complementary, and neither is sufficient alone.
 const COMMANDS: &[&str] = &[
     // plain shapes
@@ -144,7 +144,7 @@ const COMMANDS: &[&str] = &[
     "grep -d skip a.rs Makefile",
     "grep -rh -e -l -e Concern .",
     // Header-scoped `ls` piped into a stage that reorders or drops lines. Byte-wise these are
-    // perfect appends; the contracts they append belong to other files. `toolcall_inject.rs`
+    // perfect appends; the contracts they append belong to other files. `bash_annotator_inject.rs`
     // holds the rows that assert the decision, and this pair records that equivalence alone
     // would have shipped the defect.
     "ls docs src | grep -v zzz",
@@ -152,7 +152,7 @@ const COMMANDS: &[&str] = &[
     "ls -R | tail -3",
     // The same defect reached two ways the round-5 guard does not cover: a glob that expands to
     // several `ls` operands, and an ORDER_PRESERVING stage that rewrites the text of every line.
-    // Byte-wise both are perfect appends — `toolcall_inject.rs` holds the rows that assert the
+    // Byte-wise both are perfect appends — `bash_annotator_inject.rs` holds the rows that assert the
     // decision, and these record that this table is blind to them too.
     "ls */ | sort",
     "ls -R | nl",
@@ -166,11 +166,11 @@ const COMMANDS: &[&str] = &[
     "for f in docs src\ndo\nls $f\ndone | sort -u",
     // A column layout selected by the SEPARATE-token spelling of `--format`. Byte-wise this is a
     // clean append, which is exactly why this table cannot see that the contract belongs to one of
-    // the four names on the line rather than to the line. `toolcall_run.rs` holds the row that
+    // the four names on the line rather than to the line. `bash_annotator_run.rs` holds the row that
     // asserts no line may carry a contract at all; this one records that equivalence is blind.
     "ls --format across",
     // The same layout selected by an ABBREVIATED option name, which GNU ls accepts. Structurally
-    // clean here too; `toolcall_run.rs` holds the row that asserts the contract is wrong.
+    // clean here too; `bash_annotator_run.rs` holds the row that asserts the contract is wrong.
     "ls --form across",
 ];
 
@@ -226,7 +226,7 @@ fn shell(dir: &Path, cmd: &str) -> (Vec<u8>, Option<i32>) {
 /// What the hook would substitute, or the command unchanged.
 fn rewritten(dir: &Path, cmd: &str) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
-        .args(["toolcall-injector", "--check", cmd])
+        .args(["bash-annotator", "--check", cmd])
         .current_dir(dir)
         .output()
         .expect("spawn injector");

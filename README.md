@@ -327,7 +327,7 @@ Same prebuilt binary on every channel.
   ```
 
 annotated-tree makes no network request of its own. It reads files and writes to stdout; the one
-file it ever writes is the settings file `toolcall-injector --install-claude-hook` edits. The only
+file it ever writes is the settings file `bash-annotator --install-claude-hook` edits. The only
 program it starts is `git`, for `--since`, and only with local commands.
 
 ### The commands
@@ -360,8 +360,8 @@ src/render/text.rs  # Concern: formats the canonical map as a `tree`-style text 
 
 Same command, same files, one line each, and your agent types nothing different. (Two of the
 six result lines are shown, sorted and abridged for width here; the annotator itself does
-neither.) Switch it on with `annotated-tree toolcall-injector --install-claude-hook`, and see
-what any command would become with `annotated-tree toolcall-injector --check '<cmd>'`.
+neither.) Switch it on with `annotated-tree bash-annotator --install-claude-hook`, and see
+what any command would become with `annotated-tree bash-annotator --check '<cmd>'`.
 
 If you allowlist Bash commands, a `Bash(grep:*)` rule stops matching once the command is
 rewritten, and those searches start prompting. Widen the rule, approve the prompts, or leave the

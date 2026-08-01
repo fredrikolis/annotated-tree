@@ -1,4 +1,4 @@
-// Concern: prints one build-time line pointing a Claude Code user at the toolcall hook | Non-concern: installing it, or any other build step | IO: (HOME, Claude settings) -> at most one cargo warning
+// Concern: points a Claude Code user at the bash-annotator hook | Non-concern: installing it, or any other build step | IO: (HOME, Claude settings) -> at most one cargo warning
 
 use std::path::PathBuf;
 
@@ -42,7 +42,7 @@ fn main() {
     }
 
     println!(
-        "cargo:warning=Run `annotated-tree toolcall-injector --install-claude-hook` to let Claude \
+        "cargo:warning=Run `annotated-tree bash-annotator --install-claude-hook` to let Claude \
          read each file's contract in the results of its own grep, find and ls calls."
     );
 }

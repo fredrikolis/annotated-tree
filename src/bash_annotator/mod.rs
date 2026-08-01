@@ -1,4 +1,4 @@
-// Concern: routes each toolcall-injector verb to its module, and owns the hook wire format | Non-concern: eligibility, or what an annotation means | IO: (args, stdin) -> output + exit code
+// Concern: routes each bash-annotator verb to its module, and owns the hook wire format | Non-concern: eligibility, or what an annotation means | IO: (args, stdin) -> output + exit code
 
 //! What gets rewritten, and why it is safe to leave on.
 //!
@@ -55,7 +55,7 @@ use std::io::{IsTerminal, Read, Write};
 
 use anyhow::Result;
 
-use crate::cli::ToolcallInjector;
+use crate::cli::BashAnnotator;
 use crate::exit;
 
 /// The five verbs and their one-line summaries, in the order `--help` lists them. Kept here so the
@@ -84,7 +84,7 @@ const VERBS: &[(&str, &str)] = &[
 ];
 
 /// Which of the five mode flags are set, spelled as the user would type them.
-fn modes(args: &ToolcallInjector) -> Vec<&'static str> {
+fn modes(args: &BashAnnotator) -> Vec<&'static str> {
     let mut set = Vec::new();
     if args.install_claude_hook {
         set.push("--install-claude-hook");
@@ -105,19 +105,19 @@ fn modes(args: &ToolcallInjector) -> Vec<&'static str> {
 }
 
 fn usage(err: &mut impl Write) -> Result<()> {
-    writeln!(err, "usage: annotated-tree toolcall-injector <one of>")?;
+    writeln!(err, "usage: annotated-tree bash-annotator <one of>")?;
     for (flag, summary) in VERBS {
         writeln!(err, "    {flag:<32} {summary}")?;
     }
     Ok(())
 }
 
-/// Run one `toolcall-injector` verb. Exactly one of the five mode flags must be set.
+/// Run one `bash-annotator` verb. Exactly one of the five mode flags must be set.
 ///
 /// Every path returns a code the [`exit`] taxonomy already names: [`exit::SUCCESS`] on success,
 /// [`exit::USAGE`] from the mode check, and [`exit::PRECONDITION`] from a failed settings write.
 pub(crate) fn dispatch(
-    args: &ToolcallInjector,
+    args: &BashAnnotator,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> Result<i32> {
@@ -131,7 +131,7 @@ pub(crate) fn dispatch(
         if set.len() > 1 {
             writeln!(
                 err,
-                "annotated-tree toolcall-injector: {} and {} are exclusive; pass exactly one.",
+                "annotated-tree bash-annotator: {} and {} are exclusive; pass exactly one.",
                 set[0], set[1]
             )?;
         } else if let Some(unknown) = args
@@ -141,11 +141,11 @@ pub(crate) fn dispatch(
         {
             writeln!(
                 err,
-                "annotated-tree toolcall-injector: unknown flag {}",
+                "annotated-tree bash-annotator: unknown flag {}",
                 unknown.to_string_lossy()
             )?;
         } else {
-            writeln!(err, "annotated-tree toolcall-injector: no verb given.")?;
+            writeln!(err, "annotated-tree bash-annotator: no verb given.")?;
         }
         usage(err)?;
         return Ok(exit::USAGE);
@@ -170,7 +170,7 @@ pub(crate) fn dispatch(
 /// in CI. Editing a user's settings from there would be wrong twice over, so switching the hook on
 /// is an explicit command the user runs.
 fn hook_file(
-    args: &ToolcallInjector,
+    args: &BashAnnotator,
     verb: &str,
     out: &mut impl Write,
     err: &mut impl Write,
@@ -182,11 +182,11 @@ fn hook_file(
             None => {
                 writeln!(
                     err,
-                    "annotated-tree toolcall-injector: no HOME, so no default settings file."
+                    "annotated-tree bash-annotator: no HOME, so no default settings file."
                 )?;
                 writeln!(
                     err,
-                    "Pass one: annotated-tree toolcall-injector {verb} <path/to/settings.json>"
+                    "Pass one: annotated-tree bash-annotator {verb} <path/to/settings.json>"
                 )?;
                 return Ok(exit::USAGE);
             }
@@ -206,14 +206,14 @@ fn hook_file(
         // takes the code the taxonomy already has for one. Never 1: on this binary that is
         // `--strict-check found at least one violation`, which `--help` advertises.
         Err(e) => {
-            writeln!(err, "annotated-tree toolcall-injector: {e}")?;
+            writeln!(err, "annotated-tree bash-annotator: {e}")?;
             Ok(exit::PRECONDITION)
         }
     }
 }
 
 /// Offline surface: show what each command would become, substituting nothing.
-fn check(args: &ToolcallInjector, out: &mut impl Write) -> Result<i32> {
+fn check(args: &BashAnnotator, out: &mut impl Write) -> Result<i32> {
     for cmd in &args.args {
         let cmd = cmd.to_string_lossy();
         match inject::rewrite(&cmd) {
@@ -250,7 +250,7 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
     if std::io::stdin().is_terminal() {
         writeln!(
             err,
-            "annotated-tree toolcall-injector --rewrite-tool-call: reads one Claude Code \
+            "annotated-tree bash-annotator --rewrite-tool-call: reads one Claude Code \
              PreToolUse or SessionStart event on stdin; a terminal will never send one."
         )?;
         return Ok(exit::SUCCESS);
@@ -317,18 +317,18 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
 /// `grep` and `find` the engines that answer. The argv is passed so the flags that decide how a
 /// line names its file are read rather than guessed.
 fn annotate_tool_output(
-    args: &ToolcallInjector,
+    args: &BashAnnotator,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> Result<i32> {
     if args.args.is_empty() {
         writeln!(
             err,
-            "annotated-tree toolcall-injector: --annotate-tool-output needs the producer's argv."
+            "annotated-tree bash-annotator: --annotate-tool-output needs the producer's argv."
         )?;
         writeln!(
             err,
-            "usage: <tool> [args...] | annotated-tree toolcall-injector \
+            "usage: <tool> [args...] | annotated-tree bash-annotator \
              --annotate-tool-output <tool> [args...]"
         )?;
         return Ok(exit::USAGE);

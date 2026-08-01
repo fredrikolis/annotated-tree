@@ -11,7 +11,7 @@
 //! ```text
 //! 0  SUCCESS        clean run
 //! 1  STRICT_FAILURE --strict-check found at least one violation
-//! 2  USAGE          bad flag / value, or an unusable toolcall-injector invocation
+//! 2  USAGE          bad flag / value, or an unusable bash-annotator invocation
 //! 3  RUNAWAY_SCOPE  a root exceeded --max-files; nothing written
 //! 4  PRECONDITION   environment/precondition error (missing root dir, git/--since failure)
 //! ```
@@ -24,7 +24,7 @@ pub const STRICT_FAILURE: i32 = 1;
 
 /// Usage / argument error — the invocation itself could not be acted on. Emitted by
 /// clap's own error path (`Error::exit`) before `run()` is reached for a bad flag or
-/// value, and returned FROM `run()` by the `toolcall-injector` verb when no single mode
+/// value, and returned FROM `run()` by the `bash-annotator` verb when no single mode
 /// flag is set, or when the mode it names has nothing to work on.
 pub const USAGE: i32 = 2;
 

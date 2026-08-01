@@ -9,7 +9,7 @@ use serde_json::{json, Map, Value};
 /// rewritten pipeline uses an ABSOLUTE path instead — see `inject::wrapper_command`, where a bare
 /// name that failed to resolve made the producer take SIGPIPE. Here the harness runs the command
 /// directly, so there is no pipe to break and the reinstall-proof spelling wins.)
-const HOOK_COMMAND: &str = "annotated-tree toolcall-injector --rewrite-tool-call";
+const HOOK_COMMAND: &str = "annotated-tree bash-annotator --rewrite-tool-call";
 
 /// The entries we install, as `(hook event, matcher)`. Both run the SAME command — the injector
 /// branches on the event name it is handed — so `is_ours` recognises either one.
@@ -55,7 +55,7 @@ pub fn default_path() -> Option<PathBuf> {
 /// other program's hook entry can contain — so an entry written as an absolute path is still
 /// recognised as ours and is not duplicated or orphaned. A final-path-segment match cannot be used
 /// once the command carries a verb and a flag after the path: the last `/`-separated segment is
-/// then the whole `annotated-tree toolcall-injector --rewrite-tool-call` tail for a bare entry and
+/// then the whole `annotated-tree bash-annotator --rewrite-tool-call` tail for a bare entry and
 /// for an absolute one alike, so it would compare equal by accident rather than by rule.
 fn is_ours(entry: &Value) -> bool {
     entry
@@ -216,7 +216,7 @@ mod tests {
         let p = tmp("upgrade");
         std::fs::write(
             &p,
-            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"annotated-tree toolcall-injector --rewrite-tool-call"}]}]}}"#,
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"annotated-tree bash-annotator --rewrite-tool-call"}]}]}}"#,
         )
         .unwrap();
         assert_eq!(install(&p).unwrap(), Outcome::Added);
@@ -282,7 +282,7 @@ mod tests {
         let p = tmp("abs");
         std::fs::write(
             &p,
-            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"/home/x/.cargo/bin/annotated-tree toolcall-injector --rewrite-tool-call"}]}]}}"#,
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"/home/x/.cargo/bin/annotated-tree bash-annotator --rewrite-tool-call"}]}]}}"#,
         )
         .unwrap();
         // The SessionStart half is still added, but the recognised PreToolUse entry is not

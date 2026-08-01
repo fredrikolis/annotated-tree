@@ -71,7 +71,7 @@ pub(crate) mod sidecar;
 pub(crate) mod strict;
 // `pub(crate)`, never `pub`. The two retired accessory binaries used `#[path]` precisely to keep
 // this code off the published library surface, and that intent survives the merge.
-pub(crate) mod toolcall_injector;
+pub(crate) mod bash_annotator;
 pub(crate) mod util;
 pub mod walk;
 
@@ -187,13 +187,13 @@ impl Failure {
 /// - [`exit::SUCCESS`] (0) — clean run (tree rendered, or `--strict-check` passed).
 /// - [`exit::STRICT_FAILURE`] (1) — `--strict-check` found at least one violation.
 /// - [`exit::USAGE`] (2) — clap emits it for a bad flag or value before `run()` is
-///   reached, and `toolcall-injector` returns it directly for an invocation it cannot
+///   reached, and `bash-annotator` returns it directly for an invocation it cannot
 ///   act on: no verb, two verbs, a mistyped flag `trailing_var_arg` swallowed, no `HOME`
 ///   with no settings path given, or `--annotate-tool-output` with no producer argv.
 /// - [`exit::RUNAWAY_SCOPE`] (3) — a root exceeded `--max-files`; nothing written.
 /// - [`exit::PRECONDITION`] (4) — a precondition/environment error. Usually an `Err(_)`
 ///   (missing root dir, git/`--since` failure, bad config) that the binary maps to 4;
-///   `toolcall-injector` returns `Ok(4)` directly when a settings file cannot be read,
+///   `bash-annotator` returns `Ok(4)` directly when a settings file cannot be read,
 ///   parsed or replaced.
 ///
 /// On a failure under `--format json`, the same exit code is returned but a structured
@@ -201,12 +201,12 @@ impl Failure {
 /// to `out` first, so an agent parsing stdout gets a dispatch key instead of empty output;
 /// under any other format the failure surfaces as prose on `err` (behaviour unchanged).
 pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
-    // The `toolcall-injector` accessory verb dispatches FIRST: none of its five modes points at a
+    // The `bash-annotator` accessory verb dispatches FIRST: none of its five modes points at a
     // Workspace or emits a Report, so nothing below it applies. Routing it through `run()` is an
     // implementation choice about where dispatch lives — it does not make any of them a run in
     // SPEC.md's sense.
-    if let Some(cli::Command::ToolcallInjector(args)) = &cli.command {
-        return toolcall_injector::dispatch(args, out, err);
+    if let Some(cli::Command::BashAnnotator(args)) = &cli.command {
+        return bash_annotator::dispatch(args, out, err);
     }
 
     // `--schema` is a self-correcting-help info flag (like `--help`): print the wire

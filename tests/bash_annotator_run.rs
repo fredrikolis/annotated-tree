@@ -1,4 +1,4 @@
-// Concern: freezes the toolcall annotator's contract — one line in, one line out, each contract on its path's line | Non-concern: eligibility or the hook wire format | IO: (fixture) -> asserted stdout
+// Concern: freezes the bash-annotator's contract — one line in, one line out, each contract on its path's line | Non-concern: eligibility or the hook wire format | IO: (fixture) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -40,7 +40,7 @@ fn run_bytes(dir: &Path, args: &[&str]) -> Vec<u8> {
         .spawn()
         .expect("spawn tool");
     let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
-        .args(["toolcall-injector", "--annotate-tool-output"])
+        .args(["bash-annotator", "--annotate-tool-output"])
         .args(args)
         .current_dir(dir)
         .stdin(Stdio::from(tool.stdout.take().expect("tool stdout")))
@@ -245,7 +245,7 @@ fn the_rewritten_pipeline_reraises_the_tools_own_exit_code() {
     let dir = fixture("exit");
     let status = |cmd: &str| {
         let rewritten = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
-            .args(["toolcall-injector", "--check", cmd])
+            .args(["bash-annotator", "--check", cmd])
             .current_dir(&dir)
             .output()
             .expect("spawn injector");
@@ -306,7 +306,7 @@ fn a_path_that_is_not_a_regular_file_is_never_read() {
         return;
     }
     let cmd = format!(
-        "ls | timeout 5 '{}' toolcall-injector --annotate-tool-output ls > /dev/null",
+        "ls | timeout 5 '{}' bash-annotator --annotate-tool-output ls > /dev/null",
         env!("CARGO_BIN_EXE_annotated-tree")
     );
     let code = Command::new("bash")

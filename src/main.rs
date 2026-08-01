@@ -21,7 +21,7 @@ fn main() -> ExitCode {
         }
         // Any error out of `run()` is a precondition/environment failure (missing root
         // dir, git/`--since` failure, bad config, I/O). Exit 2 arrives two ways — clap
-        // emits it itself before `run()` for a bad flag or value, and `toolcall-injector`
+        // emits it itself before `run()` for a bad flag or value, and `bash-annotator`
         // returns it as `Ok(2)` for an invocation it cannot act on — and a runaway-scope
         // abort is exit 3, also returned as `Ok`. Agents branch recovery on this code.
         Err(err) => {

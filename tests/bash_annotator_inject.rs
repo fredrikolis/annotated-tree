@@ -484,7 +484,7 @@ const CASES: &[(&str, Want, &str)] = &[
 /// ask what would happen to a command, so freezing it freezes something observable.
 fn check(cmd: &str) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
-        .args(["toolcall-injector", "--check", cmd])
+        .args(["bash-annotator", "--check", cmd])
         .output()
         .expect("spawn injector");
     assert_eq!(
@@ -543,7 +543,7 @@ fn the_rest_of_the_command_survives_byte_for_byte() {
     );
     // The exit-code recovery must index the stage that was last BEFORE the annotator was
     // appended. (That the resulting CODE matches the unrewritten command, with and without
-    // `pipefail`, is checked end to end in toolcall_equivalence.rs.)
+    // `pipefail`, is checked end to end in bash_annotator_equivalence.rs.)
     assert!(
         check("ls | sort").contains("__rc=${__ps[1]}"),
         "a two-stage pipeline must re-raise stage 1, not stage 0"

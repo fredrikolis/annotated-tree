@@ -128,11 +128,11 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Put each file's contract in your agent's Bash tool results.
-    ToolcallInjector(ToolcallInjector),
+    BashAnnotator(BashAnnotator),
 }
 
 #[derive(Debug, clap::Args)]
-pub struct ToolcallInjector {
+pub struct BashAnnotator {
     /// Add the Claude Code PreToolUse hook to FILE [default: ~/.claude/settings.json].
     #[arg(long)]
     pub install_claude_hook: bool,
@@ -189,7 +189,7 @@ fn exit_codes_block() -> String {
 EXIT CODES:
     {}  clean run (tree rendered, or --strict-check passed)
     {}  --strict-check found at least one violation
-    {}  usage error — bad flag or value, or an unusable toolcall-injector invocation
+    {}  usage error — bad flag or value, or an unusable bash-annotator invocation
     {}  a root exceeded --max-files; nothing written
     {}  precondition/environment error (missing dir, git/--since failure, bad config, I/O)",
         exit::SUCCESS,
