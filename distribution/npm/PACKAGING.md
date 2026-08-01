@@ -2,9 +2,9 @@
 # npm channel — packaging internals
 
 Maintainer notes for how `npx annotated-tree` is packaged and published. The npmjs.com
-package page is the canonical repo-root [`README.md`](../README.md) — one README for
-every channel (GitHub, crates.io, npm), copied into `npm/` at publish time by
-`build-npm.mjs`, never committed here.
+package page is the canonical repo-root [`README.md`](../../README.md) — one README
+for every channel (GitHub, crates.io, npm), copied into `distribution/npm/` at
+publish time by `build-npm.mjs`, never committed here.
 
 `npx annotated-tree` runs the same prebuilt binary as every other channel — no
 Rust toolchain needed. This directory is the packaging for that channel.
@@ -12,12 +12,12 @@ Rust toolchain needed. This directory is the packaging for that channel.
 ## Layout
 
 ```
-npm/
+distribution/npm/
   package.json              main package `annotated-tree` (the thin shim)
   bin/annotated-tree.js     launcher: resolves the platform binary, forwards argv/stdio/exit code
   platforms/<plat>/         one package per target (os/cpu/libc + the binary)
   scripts/build-npm.mjs     publish preparer (stamps version, injects binaries + README)
-  README.md                 injected at publish from ../README.md (npmjs.com page); gitignored
+  README.md                 injected at publish from ../../README.md (npmjs.com page); gitignored
   PACKAGING.md              this file (maintainer-only; not published to npm)
 ```
 
@@ -58,42 +58,43 @@ the npm channel reuses those same binaries (single source of truth).
 
 ## Publish flow (CI)
 
-Binaries are **not committed** — `scripts/build-npm.mjs` injects them at publish
-time from the release artifacts:
+Binaries are **not committed** — `distribution/npm/scripts/build-npm.mjs` injects
+them at publish time from the release artifacts:
 
 1. `release.yml` builds + uploads `annotated-tree-<target>.tar.gz` per target
    (the existing `upload-assets` job).
 2. The `publish-npm` job downloads those tarballs, extracts each into
    `dist/<target>/annotated-tree`.
-3. `node scripts/build-npm.mjs <version> dist` stamps `<version>` across the main
-   package (and pins its `optionalDependencies`) and every platform package, copies
-   each binary into its `platforms/<plat>/` dir, and copies the canonical repo-root
-   `README.md` into `npm/` as the package page.
+3. `node distribution/npm/scripts/build-npm.mjs <version> dist` stamps `<version>`
+   across the main package (and pins its `optionalDependencies`) and every platform
+   package, copies each binary into its `platforms/<plat>/` dir, and copies the
+   canonical repo-root `README.md` into `distribution/npm/` as the package page.
 4. Platform packages are published **first**, then the main package (so the pinned
    optional deps already exist when the main package is installed).
 
 Published via **OIDC trusted publishing** — no stored token. Each of the 5 packages
 needs a GitHub Actions trusted publisher configured once on npmjs.com (org
 `fredrikolis`, repo `annotated-tree`, workflow `release.yml`); see
-[`scripts/bootstrap-npm.sh`](../scripts/bootstrap-npm.sh) for the one-time
+[`distribution/bootstrap-npm.sh`](../bootstrap-npm.sh) for the one-time
 bootstrap.
 
 ## Local check (no publish)
 
 ```sh
-# main package contents (README.md is injected by build-npm.mjs, so it only
-# appears in the tarball after that runs — e.g. `cp ../README.md ./npm/` first)
-npm pack --dry-run ./npm
+# Run from the repo root. Main package contents (README.md is injected by
+# build-npm.mjs, so it only appears in the tarball after that runs — e.g.
+# `cp README.md ./distribution/npm/` first)
+npm pack --dry-run ./distribution/npm
 
 # prove the shim resolves + forwards (host = linux x64):
 cargo build --release
-mkdir -p npm/node_modules/annotated-tree-linux-x64-musl
-cp target/release/annotated-tree npm/node_modules/annotated-tree-linux-x64-musl/
-cp npm/platforms/linux-x64-musl/package.json npm/node_modules/annotated-tree-linux-x64-musl/
-node npm/bin/annotated-tree.js --version           # prints the version
-node npm/bin/annotated-tree.js --strict-check <bad> # forwards exit 1
+mkdir -p distribution/npm/node_modules/annotated-tree-linux-x64-musl
+cp target/release/annotated-tree distribution/npm/node_modules/annotated-tree-linux-x64-musl/
+cp distribution/npm/platforms/linux-x64-musl/package.json distribution/npm/node_modules/annotated-tree-linux-x64-musl/
+node distribution/npm/bin/annotated-tree.js --version           # prints the version
+node distribution/npm/bin/annotated-tree.js --strict-check <bad> # forwards exit 1
 
 # prove the missing-binary path errors (nonzero, not silent):
-rm -rf npm/node_modules
-node npm/bin/annotated-tree.js --version           # exits nonzero with a clear message
+rm -rf distribution/npm/node_modules
+node distribution/npm/bin/annotated-tree.js --version           # exits nonzero with a clear message
 ```

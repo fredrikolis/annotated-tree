@@ -1,0 +1,1 @@
+Concern: ships a built annotated-tree — the curl installer, the npm packages, the pre-tag gates | Non-concern: building the binary, or what it does | IO: (a binary, a version) -> published artifacts

@@ -44,14 +44,14 @@ jobs:
       - run: cargo run --release -- --strict-check . --ignore sample --max-length 200
       - run: cargo run --release -- --strict-check . --ignore sample --include-tests -I 'tests/fixtures' --max-length 200
 
-  # Lint the POSIX installer script.
+  # Lint the distribution shell scripts.
   shellcheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ludeeus/action-shellcheck@master
         with:
-          scandir: ./installer
+          scandir: ./distribution
 
   # E2E: build the release binary, package it under the release asset name +
   # .sha256, serve it locally, run install.sh against it, and assert the
@@ -92,7 +92,7 @@ jobs:
           set -eux
           INSTALL_DIR="$(mktemp -d)"
           ANNOTATED_TREE_BASE_URL="http://localhost:8137" INSTALL_DIR="$INSTALL_DIR" \
-            sh installer/install.sh
+            sh distribution/install.sh
           "$INSTALL_DIR/annotated-tree" --version
       - name: Assert checksum mismatch aborts without installing
         run: |
@@ -103,7 +103,7 @@ jobs:
           printf 'deadbeef  %s\n' "$archive" > "srv/${checksum}"
           INSTALL_DIR="$(mktemp -d)"
           if ANNOTATED_TREE_BASE_URL="http://localhost:8137" INSTALL_DIR="$INSTALL_DIR" \
-              sh installer/install.sh; then
+              sh distribution/install.sh; then
             echo "installer did not abort on checksum mismatch" >&2
             exit 1
           fi
@@ -112,10 +112,11 @@ jobs:
             exit 1
           fi
 
-  # E2E: freeze the npm shim (npm/bin/annotated-tree.js) as glue. Build the
-  # release binary, stage it into the host platform package exactly as npm would
-  # install it, then drive the shim: assert --version works, a nonzero tool exit
-  # is forwarded, and a missing platform package errors explicitly (never silent).
+  # E2E: freeze the npm shim (distribution/npm/bin/annotated-tree.js) as glue.
+  # Build the release binary, stage it into the host platform package exactly as
+  # npm would install it, then drive the shim: assert --version works, a nonzero
+  # tool exit is forwarded, and a missing platform package errors explicitly
+  # (never silent).
   npm-shim-e2e:
     runs-on: ubuntu-latest
     steps:
@@ -126,48 +127,48 @@ jobs:
         with:
           node-version: 20
       - name: main package.json is valid
-        run: node -e "require('./npm/package.json')"
+        run: node -e "require('./distribution/npm/package.json')"
       - name: bin shim starts with a node shebang (npx/bin-link exec relies on it)
         run: |
           set -eux
           # The `node <file>` steps below bypass the shebang; a real `npx`/bin-link
           # invocation does not. Guard line 1 so the annotation can never again
           # displace the shebang and silently break `npx annotated-tree`.
-          test "$(head -1 npm/bin/annotated-tree.js)" = '#!/usr/bin/env node'
+          test "$(head -1 distribution/npm/bin/annotated-tree.js)" = '#!/usr/bin/env node'
       - name: npm pack (main + a platform package)
         run: |
           set -eux
-          npm pack --dry-run ./npm
-          npm pack --dry-run ./npm/platforms/linux-x64-musl
+          npm pack --dry-run ./distribution/npm
+          npm pack --dry-run ./distribution/npm/platforms/linux-x64-musl
       - name: Build release binary
         run: cargo build --release
       - name: Stage the built binary into the host platform package
         run: |
           set -eux
           # Host runner is linux x64 -> the linux-x64-musl package. Place it on
-          # the shim's module resolution path (npm/node_modules) exactly as an
-          # `npm install` of the optional dep would.
-          dest="npm/node_modules/annotated-tree-linux-x64-musl"
+          # the shim's module resolution path (distribution/npm/node_modules)
+          # exactly as an `npm install` of the optional dep would.
+          dest="distribution/npm/node_modules/annotated-tree-linux-x64-musl"
           mkdir -p "$dest"
           cp target/release/annotated-tree "$dest/"
-          cp npm/platforms/linux-x64-musl/package.json "$dest/"
+          cp distribution/npm/platforms/linux-x64-musl/package.json "$dest/"
       - name: Shim forwards --version
         run: |
           set -eux
-          node npm/bin/annotated-tree.js --version
+          node distribution/npm/bin/annotated-tree.js --version
       - name: Shim forwards a nonzero tool exit code
         run: |
           set -eux
           bad="$(mktemp -d)"
           printf '// no io contract here\n' > "$bad/bad.rs"
           code=0
-          node npm/bin/annotated-tree.js --strict-check "$bad" || code=$?
+          node distribution/npm/bin/annotated-tree.js --strict-check "$bad" || code=$?
           test "$code" -eq 1
       - name: Missing platform package errors explicitly (nonzero, not silent)
         run: |
           set -eux
-          rm -rf npm/node_modules
-          if node npm/bin/annotated-tree.js --version; then
+          rm -rf distribution/npm/node_modules
+          if node distribution/npm/bin/annotated-tree.js --version; then
             echo "expected the shim to fail when no platform package is installed" >&2
             exit 1
           fi

@@ -25,7 +25,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp installer/install.sh annotated-tree-installer.sh
+          cp distribution/install.sh annotated-tree-installer.sh
           gh release upload "${{ github.ref_name }}" annotated-tree-installer.sh --clobber
 
   upload-assets:
@@ -111,15 +111,16 @@ jobs:
         run: |
           set -eux
           version="${GITHUB_REF_NAME#v}"
-          node npm/scripts/build-npm.mjs "$version" dist
+          node distribution/npm/scripts/build-npm.mjs "$version" dist
       # No NODE_AUTH_TOKEN: `npm publish` auto-detects the OIDC id-token. Unscoped
       # packages are public by default; provenance is emitted automatically.
       - name: Publish platform packages then main package (OIDC)
         run: |
           set -eux
           for plat in linux-x64-musl linux-arm64-musl darwin-x64 darwin-arm64; do
-            npm publish "./npm/platforms/${plat}"
+            npm publish "./distribution/npm/platforms/${plat}"
           done
-          # Leading ./ is REQUIRED: `npm publish npm` treats `npm` as the package spec
-          # (tries to republish the npm CLI); `./npm` publishes the local directory.
-          npm publish ./npm
+          # Leading ./ is REQUIRED: a bare `npm publish npm` would treat `npm` as the
+          # package spec (and try to republish the npm CLI); a leading ./ publishes the
+          # local directory.
+          npm publish ./distribution/npm

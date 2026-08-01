@@ -1,6 +1,6 @@
-// Publish preparer: stamps the release version across the main + platform packages, drops each release binary into its platform dir, and refreshes the package README from the canonical repo-root README.md, ready for `npm publish`. NOT a network/publish step. | I/O: (version arg, extracted-binaries dir) -> in-place npm/ tree + printed publish order
+// Publish preparer: stamps the release version across the main + platform packages, drops each release binary into its platform dir, and refreshes the package README from the canonical repo-root README.md, ready for `npm publish`. NOT a network/publish step. | I/O: (version arg, extracted-binaries dir) -> in-place distribution/npm/ tree + printed publish order
 //
-// Usage:  node npm/scripts/build-npm.mjs <version> <binaries-dir>
+// Usage:  node distribution/npm/scripts/build-npm.mjs <version> <binaries-dir>
 //
 // <binaries-dir> holds one extracted binary per release target, at
 //   <binaries-dir>/<rust-target>/annotated-tree
@@ -59,9 +59,10 @@ stampVersion(join(npmDir, "package.json"), (pkg) => {
 
 // Package README is the canonical repo-root README.md — one source of truth for
 // every channel (GitHub, crates.io, npmjs.com). Injected here, never committed
-// under npm/, so it can never drift from the root. npm auto-includes README.md
-// in the tarball regardless of the `files` allowlist.
-const rootReadme = join(dirname(npmDir), "README.md");
+// under distribution/npm/, so it can never drift from the root. npm auto-includes
+// README.md in the tarball regardless of the `files` allowlist.
+const repoRoot = dirname(dirname(npmDir));
+const rootReadme = join(repoRoot, "README.md");
 if (!existsSync(rootReadme)) {
   console.error(`missing canonical README: ${rootReadme}`);
   process.exit(1);

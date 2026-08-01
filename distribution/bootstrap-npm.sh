@@ -7,10 +7,10 @@
 # each package on npmjs.com and every future release publishes via OIDC in CI — no
 # token. Run ONCE.
 #
-# Usage:  scripts/bootstrap-npm.sh v0.1.0
+# Usage:  distribution/bootstrap-npm.sh v0.1.0
 set -euo pipefail
 
-tag="${1:?usage: scripts/bootstrap-npm.sh <tag, e.g. v0.1.0>}"
+tag="${1:?usage: distribution/bootstrap-npm.sh <tag, e.g. v0.1.0>}"
 version="${tag#v}"
 repo="fredrikolis/annotated-tree"
 cd "$(dirname "$0")/.."
@@ -24,15 +24,15 @@ for target in $targets; do
   rm -f "$archive"
 done
 
-node npm/scripts/build-npm.mjs "$version" dist
+node distribution/npm/scripts/build-npm.mjs "$version" dist
 
 echo ">> Publishing 5 packages (npm will prompt for your 2FA OTP each time)…"
 for plat in linux-x64-musl linux-arm64-musl darwin-x64 darwin-arm64; do
-  npm publish "./npm/platforms/${plat}"
+  npm publish "./distribution/npm/platforms/${plat}"
 done
-# Leading ./ is REQUIRED: `npm publish npm` treats `npm` as the package spec (and
-# tries to republish the npm CLI); `./npm` publishes the local directory.
-npm publish ./npm
+# Leading ./ is REQUIRED: a bare `npm publish npm` would treat `npm` as the package
+# spec (and try to republish the npm CLI); a leading ./ publishes the local directory.
+npm publish ./distribution/npm
 
 cat <<'EOF'
 >> Bootstrap publish complete.
