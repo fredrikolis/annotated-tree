@@ -121,13 +121,18 @@ pub struct Cli {
     #[arg(long)]
     pub githook_guide: bool,
 
+    /// Print the annotation-writing guide to stdout and exit: the same full text a failing
+    /// --strict-check appends, reachable without a violation to trigger it.
+    #[arg(long)]
+    pub annotation_guide: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Put each file's contract in your agent's Bash tool results.
+    /// Put each file's annotation in your agent's Bash tool results.
     BashAnnotator(BashAnnotator),
     /// Remove first-line annotations from FILEs, and from DIRs under -R.
     Strip(Strip),
@@ -151,11 +156,12 @@ pub struct Strip {
 
 #[derive(Debug, clap::Args)]
 pub struct BashAnnotator {
-    /// Add the Claude Code PreToolUse hook to FILE [default: ~/.claude/settings.json].
+    /// Add both Claude Code hook entries — PreToolUse and SessionStart — to FILE
+    /// [default: ~/.claude/settings.json].
     #[arg(long)]
     pub install_claude_hook: bool,
 
-    /// Remove the hook this tool added from FILE, and nothing else.
+    /// Remove the hook entries this tool added from FILE, and nothing else.
     #[arg(long)]
     pub uninstall_claude_hook: bool,
 
@@ -167,7 +173,12 @@ pub struct BashAnnotator {
     #[arg(long)]
     pub rewrite_tool_call: bool,
 
-    /// Pipeline entry point: append each printed path's contract to the line it appeared on.
+    /// Print the once-per-session announcement to stdout and exit: the SessionStart hook entry
+    /// runs this, so what the agent is told is what you see here.
+    #[arg(long)]
+    pub session_announcement: bool,
+
+    /// Pipeline entry point: append each printed path's annotation to the line it appeared on.
     #[arg(long)]
     pub annotate_tool_output: bool,
 
@@ -188,14 +199,6 @@ EXAMPLES:
     annotated-tree --strict-check .   Lint annotations, exit non-zero on gaps
     annotated-tree --strict-check f.rs  Lint a single file (e.g. a pre-commit hook)
     annotated-tree --since main .     Changed files plus their blast radius";
-
-/// The `ANNOTATION FORMAT:` help section — the compact head of the one canonical annotation guide,
-/// whose `{TEMPLATE}`/`{EXAMPLE}` placeholders are filled from the ENFORCED contract, so `--help`,
-/// a failing `--strict-check` and the guide doc advertise the SAME exemplar. Built at runtime
-/// because it is derived, not a literal.
-fn annotation_help_block() -> String {
-    crate::guide::essence()
-}
 
 /// The `EXIT CODES:` help section. Each line is sourced from the [`exit`] taxonomy
 /// constants (not a hand-typed literal), so `--help` cannot advertise a code that has
@@ -220,12 +223,12 @@ EXIT CODES:
 
 /// Parse argv into a [`Cli`]. Builds `after_help` at runtime (rather than a derive
 /// literal) so the annotation-format example is sourced from the embedded config
-/// via [`annotation_help_block`] and the EXIT CODES block from the [`exit`] constants,
+/// via [`crate::guide::essence`] and the EXIT CODES block from the [`exit`] constants,
 /// keeping help and enforcement in lockstep.
 pub fn parse() -> Cli {
     let command = Cli::command().after_help(format!(
         "{EXAMPLES}\n\n{}\n\n{}",
-        annotation_help_block(),
+        crate::guide::essence(),
         exit_codes_block()
     ));
     let matches = command.get_matches();

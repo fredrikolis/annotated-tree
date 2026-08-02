@@ -4,20 +4,26 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
 
+/// The entries we install, as `(hook event, matcher, verb)` — one verb per event, so the settings
+/// file says what each entry is for. `SessionStart` names every source Claude Code has because the
+/// announcement is worth one telling per context, and `compact` is the one that matters: a
+/// compacted session would otherwise never hear it again.
+const ENTRIES: &[(&str, &str, &str)] = &[
+    ("PreToolUse", "Bash", "--rewrite-tool-call"),
+    (
+        "SessionStart",
+        "startup|resume|clear|compact|fork",
+        "--session-announcement",
+    ),
+];
+
 /// The command written into the settings file: a bare name, resolved from `PATH` by the harness, so
 /// the entry stays valid when the binary is reinstalled elsewhere. The annotator inside a rewritten
 /// pipeline uses an ABSOLUTE path instead, because a bare name that failed to resolve made the
 /// producer take SIGPIPE; here the harness runs the command directly, so there is no pipe to break.
-const HOOK_COMMAND: &str = "annotated-tree bash-annotator --rewrite-tool-call";
-
-/// The entries we install, as `(hook event, matcher)`. Both run the SAME command — the injector
-/// branches on the event name it is handed — so `is_ours` recognises either. `SessionStart` names
-/// every source Claude Code has because the announcement is worth one telling per context, and
-/// `compact` is the one that matters: a compacted session would otherwise never hear it again.
-const ENTRIES: &[(&str, &str)] = &[
-    ("PreToolUse", "Bash"),
-    ("SessionStart", "startup|resume|clear|compact|fork"),
-];
+fn command(verb: &str) -> String {
+    format!("annotated-tree bash-annotator {verb}")
+}
 
 /// What a call did. Distinguishing "already there" from "added" is what makes running this twice
 /// safe to suggest in a README.
@@ -25,6 +31,7 @@ const ENTRIES: &[(&str, &str)] = &[
 pub enum Outcome {
     Added,
     AlreadyPresent,
+    Replaced,
     Removed,
     NotPresent,
 }
@@ -35,6 +42,10 @@ impl Outcome {
         match self {
             Outcome::Added => format!("hook installed in {p}"),
             Outcome::AlreadyPresent => format!("hook already present in {p}; nothing changed"),
+            Outcome::Replaced => format!(
+                "hook installed in {p}; an entry of ours that ran the wrong verb for its event \
+                 was replaced"
+            ),
             Outcome::Removed => format!("hook removed from {p}"),
             Outcome::NotPresent => format!("no hook of ours in {p}; nothing changed"),
         }
@@ -48,11 +59,10 @@ pub fn default_path() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".claude").join("settings.json"))
 }
 
-/// Is this one of OUR entries? Matched on a SUBSTRING — the `--rewrite-tool-call` flag, which no
-/// other program's hook entry can contain — so an entry written as an absolute path is still
-/// recognised and is not duplicated or orphaned. A final-path-segment match cannot serve once the
-/// command carries a verb and flag: that tail is identical for a bare entry and an absolute one.
-fn is_ours(entry: &Value) -> bool {
+/// Does any command in this entry contain `needle`? Matched on a SUBSTRING so an entry written as
+/// an absolute path is still recognised — a final-path-segment match cannot serve once the command
+/// carries a verb and flag, since that tail is identical for a bare entry and an absolute one.
+fn names(entry: &Value, needle: &str) -> bool {
     entry
         .get("hooks")
         .and_then(Value::as_array)
@@ -60,9 +70,16 @@ fn is_ours(entry: &Value) -> bool {
             hooks.iter().any(|h| {
                 h.get("command")
                     .and_then(Value::as_str)
-                    .is_some_and(|c| c.contains("--rewrite-tool-call"))
+                    .is_some_and(|c| c.contains(needle))
             })
         })
+}
+
+/// Is this one of OUR entries? True of any entry naming any of our hook verbs, whichever event it
+/// sits under, so an entry that ended up under the wrong event is still ours to replace or remove.
+/// No other program's hook entry can contain one of these flags.
+fn is_ours(entry: &Value) -> bool {
+    ENTRIES.iter().any(|(_, _, verb)| names(entry, verb))
 }
 
 /// Read the settings file as an object, or an empty one when it does not exist yet.
@@ -109,13 +126,14 @@ fn write(path: &Path, root: &Map<String, Value>) -> Result<(), String> {
 }
 
 /// Add every entry in [`ENTRIES`], keeping every other key; running it again changes nothing. Each
-/// event is considered on its own, so an adopter who installed when there was only a `PreToolUse`
-/// entry gains the `SessionStart` one on a re-install rather than being told the hook is already
-/// present. The file is written only if something was actually added.
+/// event is considered on its own, so a file missing one entry gains it on a re-install rather than
+/// being told the hook is already present, and an entry of ours found under an event that runs a
+/// different verb is replaced rather than left beside the new one. Written only if something changed.
 pub fn install(path: &Path) -> Result<Outcome, String> {
     let mut root = read(path)?;
     let mut added = false;
-    for (event, matcher) in ENTRIES {
+    let mut replaced = false;
+    for (event, matcher, verb) in ENTRIES {
         let hooks = root
             .entry("hooks")
             .or_insert_with(|| json!({}))
@@ -126,12 +144,16 @@ pub fn install(path: &Path) -> Result<Outcome, String> {
             .or_insert_with(|| json!([]))
             .as_array_mut()
             .ok_or_else(|| format!("`hooks.{event}` in {} is not an array", path.display()))?;
-        if list.iter().any(is_ours) {
+        // The verb, not the whole command: an entry a user rewrote to an absolute path is already doing this event's one job, and re-spelling it would be a change they did not ask for.
+        if list.iter().any(|e| names(e, verb)) {
             continue;
         }
+        let before = list.len();
+        list.retain(|e| !is_ours(e));
+        replaced |= list.len() != before;
         list.push(json!({
             "matcher": matcher,
-            "hooks": [{ "type": "command", "command": HOOK_COMMAND }],
+            "hooks": [{ "type": "command", "command": command(verb) }],
         }));
         added = true;
     }
@@ -139,7 +161,11 @@ pub fn install(path: &Path) -> Result<Outcome, String> {
         return Ok(Outcome::AlreadyPresent);
     }
     write(path, &root)?;
-    Ok(Outcome::Added)
+    Ok(if replaced {
+        Outcome::Replaced
+    } else {
+        Outcome::Added
+    })
 }
 
 /// Remove our entries and nothing else, pruning the containers we would have created so the file
@@ -152,7 +178,7 @@ pub fn uninstall(path: &Path) -> Result<Outcome, String> {
         let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) else {
             return Ok(Outcome::NotPresent);
         };
-        for (event, _) in ENTRIES {
+        for (event, _, _) in ENTRIES {
             let Some(list) = hooks.get_mut(*event).and_then(Value::as_array_mut) else {
                 continue;
             };
@@ -195,17 +221,17 @@ mod tests {
         assert_eq!(install(&p).unwrap(), Outcome::Added);
         assert_eq!(install(&p).unwrap(), Outcome::AlreadyPresent);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
-        for (event, matcher) in ENTRIES {
+        for (event, matcher, verb) in ENTRIES {
             let list = v["hooks"][event].as_array().unwrap();
             assert_eq!(list.len(), 1, "{event} was duplicated");
             assert_eq!(list[0]["matcher"], *matcher);
-            assert_eq!(list[0]["hooks"][0]["command"], HOOK_COMMAND);
+            assert_eq!(list[0]["hooks"][0]["command"], command(verb));
         }
     }
 
     #[test]
     fn re_installing_over_a_pretooluse_only_file_adds_the_sessionstart_entry() {
-        // What an adopter of the first release has on disk. Re-running install must not report "already present" and leave them without the once-per-session announcement.
+        // A file holding only some of our entries — install considers each event on its own, so the missing one is added rather than the file being reported already present.
         let p = tmp("upgrade");
         std::fs::write(
             &p,
@@ -216,6 +242,40 @@ mod tests {
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
         assert_eq!(v["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_entry_under_an_event_that_runs_a_different_verb_is_replaced() {
+        // A settings file is hand-editable, so an entry of ours can end up under an event whose verb it does not run. Install must replace it, not recognise it and stop — leaving it would put a dead entry beside the live one.
+        let p = tmp("stale");
+        std::fs::write(
+            &p,
+            r#"{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"annotated-tree bash-annotator --rewrite-tool-call"}]}]}}"#,
+        )
+        .unwrap();
+        assert_eq!(install(&p).unwrap(), Outcome::Replaced);
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        let list = v["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(list.len(), 1, "the stale entry was left beside the new one");
+        assert_eq!(
+            list[0]["hooks"][0]["command"],
+            command("--session-announcement")
+        );
+    }
+
+    #[test]
+    fn the_tracked_settings_example_is_what_install_writes() {
+        // README points adopters at `.claude/settings.json` as the example of an installed file. It is generated, not authored: regenerate it with `--install-claude-hook .claude/settings.json` rather than editing it by hand.
+        let p = tmp("example");
+        install(&p).unwrap();
+        let tracked = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(".claude")
+            .join("settings.json");
+        assert_eq!(
+            std::fs::read_to_string(&p).unwrap(),
+            std::fs::read_to_string(&tracked).unwrap(),
+            "the tracked example has drifted from what install writes"
+        );
     }
 
     #[test]

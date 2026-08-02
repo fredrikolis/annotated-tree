@@ -27,15 +27,15 @@ fn main() {
         return;
     }
 
-    // (b) Is the hook already on? A plain substring search over the settings file, deliberately dependency-free — a build script is the wrong place to take a JSON dependency, and a false POSITIVE here only costs a line that was never printed.
+    // (b) Is the hook already on? A plain substring search over the settings file, deliberately dependency-free — a build script is the wrong place to take a JSON dependency, and both verbs must be present, so a half-installed file still gets the nudge — that is the file a re-install repairs.
     let installed = std::fs::read_to_string(claude_dir.join("settings.json"))
-        .is_ok_and(|s| s.contains("--rewrite-tool-call"));
+        .is_ok_and(|s| s.contains("--rewrite-tool-call") && s.contains("--session-announcement"));
     if installed {
         return;
     }
 
     println!(
         "cargo:warning=Run `annotated-tree bash-annotator --install-claude-hook` to let Claude \
-         read each file's contract in the results of its own grep, find and ls calls."
+         read each file's annotation in the results of its own grep, find and ls calls."
     );
 }

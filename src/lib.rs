@@ -1,4 +1,4 @@
-// Concern: the library surface — run(), which drives config, the walk, and tree, strict or maintenance output, plus the primitives | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code + edits
+// Concern: the library surface — run(), plus the walk, annotation and render primitives | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code + edits
 // Deliberately synchronous: a one-shot batch traversal with no concurrent I/O wait to overlap. The `ignore` crate parallelizes the disk work across a thread pool.
 
 //! # `annotated-tree` as a library
@@ -157,6 +157,11 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
 
     if cli.githook_guide {
         write!(out, "{}", githook::text())?;
+        return Ok(exit::SUCCESS);
+    }
+
+    if cli.annotation_guide {
+        write!(out, "{}", guide::full())?;
         return Ok(exit::SUCCESS);
     }
 

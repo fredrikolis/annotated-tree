@@ -1,4 +1,4 @@
-<!-- Concern: version history and notable changes | Non-concern: usage or roadmap (see README) | IO: none -->
+<!-- Concern: version history and notable changes | Non-concern: usage or roadmap | IO: none -->
 # Changelog
 
 All notable changes to this project are documented here. The format follows
@@ -45,10 +45,17 @@ to [Semantic Versioning](https://semver.org/).
   all of them. Defaults to `~/.claude/settings.json`; pass `.claude/settings.local.json` for a
   single repo. Idempotent, writes atomically, refuses a file that does not parse rather than
   replacing it, and `--uninstall-claude-hook` removes only the entries it added.
-- `bash-annotator` says what it does ONCE, in a `SessionStart` entry `--install-claude-hook`
-  now writes beside the `PreToolUse` one, instead of an `additionalContext` on every rewritten
-  call — `PreToolUse` fires before the command runs, so that text was repeated per call and often
-  described contracts nothing printed.
+- `bash-annotator` says what it does ONCE, through a `SessionStart` entry `--install-claude-hook`
+  writes beside the `PreToolUse` one, running `annotated-tree bash-annotator --session-announcement`
+  — a verb you can run by hand to read exactly what the agent is told. Not an `additionalContext` on
+  each rewritten call: `PreToolUse` fires before the command runs, so that text would repeat per call
+  and describe contracts nothing printed. Claude Code adds a `SessionStart` hook's stdout to the
+  agent's context verbatim, so it is printed bare, with no JSON envelope. Each entry names the one
+  verb that does its job, so the settings file says what each is for.
+- `--annotation-guide` prints the annotation-writing guide to stdout and exits — the same full text
+  a failing `--strict-check` appends, reachable without a violation to trigger it. It ADDS a way to
+  reach the guide, it does not move it: `--help` still carries its compact head, and a failing
+  `--strict-check` still appends it in full.
 - `annotated_tree::resolve_charter` — resolve a directory's charter through the public API.
   `Charter` was already exported with no way to obtain one.
 

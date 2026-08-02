@@ -1,4 +1,4 @@
-// Concern: freezes the hook wire contract — the JSON Claude Code parses and the exit code it reads | Non-concern: eligibility, or the annotated output | IO: (hook JSON) -> asserted stdout + code
+// Concern: freezes the hook wire contract — what each entry writes to stdout and the exit code it reads | Non-concern: eligibility, or the annotated output | IO: (hook event | argv) -> stdout + code
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -61,35 +61,35 @@ fn a_rewrite_is_returned_in_the_shape_the_harness_reads() {
     );
 }
 
+/// Claude Code adds a `SessionStart` hook's stdout to the agent's context verbatim, so these bytes
+/// are the bytes the agent reads. Frozen: that something is said, and that it is bare text rather
+/// than an envelope. Not frozen: the wording.
 #[test]
-fn a_session_start_event_is_answered_with_the_announcement_once() {
+fn the_session_start_verb_prints_the_announcement_as_bare_text() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
+        .args(["bash-annotator", "--session-announcement"])
+        .output()
+        .expect("run the announcement verb");
+    assert_eq!(out.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(!text.trim().is_empty(), "no announcement");
+    assert!(
+        !text.trim_start().starts_with('{'),
+        "a JSON envelope would be injected literally: {text}"
+    );
+    // The load-bearing content: the reader is an agent about to meet trailing contracts it did not ask for, and must recognise them instead of debugging its tools.
+    assert!(text.contains("Concern:"), "{text}");
+    assert!(text.contains("grep"), "{text}");
+}
+
+#[test]
+fn the_rewriter_answers_no_session_start_event() {
+    // One job, one owner: `--rewrite-tool-call` is the PreToolUse entry and nothing else, so a SessionStart payload produces nothing.
     let (out, code) = hook(
         r#"{"hook_event_name":"SessionStart","session_id":"abc","source":"startup","cwd":"/tmp"}"#,
     );
     assert_eq!(code, 0);
-    let hook_out = &json(&out)["hookSpecificOutput"];
-    assert_eq!(hook_out["hookEventName"], "SessionStart");
-    // The wire contract is that SOMETHING is said, not what. The wording is prose and will keep improving; freezing it here only breaks this test every time it does.
-    assert!(
-        hook_out["additionalContext"]
-            .as_str()
-            .is_some_and(|c| !c.is_empty()),
-        "no announcement: {out}"
-    );
-    // No rewrite is proposed for an event that names no tool.
-    assert!(hook_out.get("updatedInput").is_none(), "{out}");
-}
-
-#[test]
-fn a_session_start_event_never_reaches_the_rewriter() {
-    // `hook_event_name` is matched first, so a SessionStart payload that also happened to carry a `tool_name` is still answered as a SessionStart.
-    let (out, code) = hook(
-        r#"{"hook_event_name":"SessionStart","source":"compact","tool_name":"Bash","tool_input":{"command":"ls src"}}"#,
-    );
-    assert_eq!(code, 0);
-    let hook_out = &json(&out)["hookSpecificOutput"];
-    assert_eq!(hook_out["hookEventName"], "SessionStart");
-    assert!(hook_out.get("updatedInput").is_none(), "{out}");
+    assert_eq!(out, "", "the rewriter still answers SessionStart");
 }
 
 #[test]

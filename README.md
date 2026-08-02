@@ -5,8 +5,9 @@
 file's one-line **responsibility annotation**, giving an agent a fast map of a workspace,
 what every file is for, without opening the files. The annotation is a strict, checkable
 format, so the map cannot silently go missing or lose its shape, and an agent trusts it
-instead of re-deriving the structure each session. For code, it also cross-references
-package manifests into a cross-ecosystem dependency graph.
+instead of re-deriving the structure each session. It can also annotate the results of your
+agent's exploration tool calls. For code, it cross-references package manifests into a
+cross-ecosystem dependency graph.
 
 ```
 $ annotated-tree
@@ -22,13 +23,13 @@ $ annotated-tree
 ## Intended usage
 
 1. **Annotate every file.**  
-Have your agent write a one-line contract at the top of each file: what it is for, and what it is deliberately not. The `Non-concern` is the most valuable field, the boundary an agent would otherwise guess wrong (see [the format](#the-format) and [Good vs bad annotations](#good-vs-bad-annotations)).
+Have your agent write a one-line annotation at the top of each file (point it at `annotated-tree --annotation-guide` for editorial guidance). `Non-concern` is often the most valuable field as it documents the architectural/structural boundary the content itself does not speak to (see [the format](#the-format)).
 
-2. **Enforce it with a local git hook.**  
-It fails on a missing or stale annotation and catches it while the agent still has the context to fix it, so the map never rots (see [Enforce it](#enforce-it)).
+2. **Prevent stale annotations using a git hook.**  
+Well-written commit-time githooks will catch: a) **structural** issues mechanically using `annotated-tree --strict-check` and, b) **editorial** issues using a neutral agent reviewer (see ours here [`.githooks/`](.githooks/)). Blocking at commit catches the rot while the agent still has the context to fix it.
 
-3. **Put the contracts in your agent's tool calls.**  
-Your agent explores with `grep`, `find` and `ls`, and gets back paths that say nothing about what they are for. A hook pipes that output through an annotator, so every path arrives carrying its contract. A `CLAUDE.md` note gets skimmed once; this fires on every call, so the map is in front of the agent through exploration, planning and bug-hunting (see [Put the contracts in your agent's search results](#put-the-contracts-in-your-agents-search-results)).
+3. **Put them in front of the agent during daily work.**  
+Most agents did not see `annotated-tree` in their training set and will reflexively explore a folder using traditional `grep`/`find`/`ls`. To make sure that agents still see and use annotations for decision making, we can install a `PreToolUse` hook (see ours here [`.claude/settings.json`](.claude/settings.json)). The tool call still runs unchanged, but each path in the output is printed along with its annotation.
 
 ## TL;DR (for humans)
 
@@ -40,12 +41,12 @@ If agents do real work in your repo, you have hit these:
 - Its **memory and skill files** have drifted into a duplicated mess.
 
 `annotated-tree` fixes the cause, not the symptoms. It **makes your agent write a
-one-line contract at the top of every file** (what the file is for, and what it is
-deliberately not), and **a local git hook enforces it**, so the contracts can't go
+one-line annotation at the top of every file** (what the file is for, and what it is
+deliberately not), and **a local git hook enforces it**, so the annotations can't go
 missing or rot.
 That is workspace hygiene your agent keeps up itself.
 
-Once every file carries its contract, one command renders the whole workspace, each
+Once every file carries its annotation, one command renders the whole workspace, each
 file's job and how the code connects, so your agent plans against real structure instead
 of re-deriving it every session. The overview is only worth trusting *because* the
 process guarantees it is complete.
@@ -57,18 +58,23 @@ Set up https://github.com/fredrikolis/annotated-tree in this workspace.
 First read the raw README so you work from the source, not your priors:
 https://raw.githubusercontent.com/fredrikolis/annotated-tree/main/README.md
 
-Then install it, annotate the workspace (in batches if it's large, busiest areas
-first), add a local git hook that enforces annotations, switch on the tool-call
-hook so search results carry the contracts, and wire the map into every session.
+Then:
+- Install it.
+- Annotate the workspace in batches, busiest areas first. Editorial guidance:
+  `annotated-tree --annotation-guide`.
+- Add the commit-time git hooks. Setup guide: `annotated-tree --githook-guide`.
+- Put annotations in tool results:
+  `annotated-tree bash-annotator --install-claude-hook .claude/settings.json`.
+  Naming the file keeps it to this workspace; the default is my global
+  settings. Tell me to restart Claude Code afterwards, or it does not take
+  effect.
+- Wire the map into every session.
+
 Set up only what fits, not everything. Recommend, then do it, and ask me only
 where you actually need a call.
 ```
 
 ## Rationale (long read for agents)
-
-The extended argument (the infinite-context objection, related work, what is still
-unproven) and the full references for every citation on this page live in
-[README_APPENDIX.md](README_APPENDIX.md).
 
 ### Agentic development is software automation
 
@@ -246,7 +252,7 @@ source file goes, and what it must not turn into, without opening one.
 `Concern | Non-concern | IO` line a folder's `.annotation` holds. The sidecar is the
 opt-in: a file that carries one is listed whatever its extension, and the sidecar
 itself never takes a row of its own. Only a file with no comment syntax gets one, so
-there is never a second place to look for a source file's contract.
+there is never a second place to look for a source file's annotation.
 
 A directory gets a charter the same way. A folder has one job too, the coarsest
 routing call an agent makes (does this change even belong in here), so it can carry
@@ -260,7 +266,7 @@ lines are fine); put the note in a README.
 
 ### How an agent uses it
 
-Five uses, roughly in the order a task hits them.
+Three uses, roughly in the order a task hits them.
 
 **Plan, before writing a line.** Read the tree to find the unit that already *owns*
 the concern you are about to touch, and put the change there instead of inventing a
@@ -274,7 +280,9 @@ state in one line, with a real `Non-concern`, is a design you have not made yet.
 Y" is the easy half. The half only a map can do is the unknown unknowns: grep finds
 what you already suspect is there (you search `retry`, `cache`, `auth` because you
 know to look), but you cannot grep a capability you do not know exists. The map indexes
-concerns, not identifiers.
+concerns, not identifiers. It reaches you two ways: rendered on demand, or appended to
+your own `ls` and `find` results when the tool-call annotator is on, so a listing carries
+the same concerns the tree does.
 
 ```
 core/
@@ -296,18 +304,6 @@ structured data.)
 **Review and impact.** `--changed` shows what a branch touched plus its
 reverse-dependency blast radius, the things downstream that could break. *Outcome: you
 scope a review, or a change, to exactly what it can break.*
-
-**Check, mid-task.** Run `--strict-check` on yourself before committing and fix what it
-flags, presence and form, not a verdict on truth. Drift between a line and its code is
-a signal to fix in review, not a hard gate. *Outcome: annotations stay
-conformant before the commit hook ever has to reject you.*
-
-**Enforce, at commit.** The same `--strict-check` in a local pre-commit hook exits
-nonzero and blocks the commit before it lands, so coverage never silently rots. It gates architecture
-too: `deny` / `forbid_cycles` / `forbid_orphans` turn your intended boundaries into
-lint, failing the build when `web` reaches into `core` or a cycle appears. *Outcome:
-the map, and the architecture, cannot decay.* Setup is under
-[How to install and use it](#how-to-install-and-use-it).
 
 One boundary: the tool renders, it does not reason. It makes structure observable and
 leaves every judgment (what to annotate, where a concern belongs, whether the work is
@@ -351,8 +347,8 @@ to disk:
 | Remove first-line annotations in bulk | `strip [-R] [-y] <PATH>...` |
 
 **An agent shown an existing annotation edits that line instead of reading the code**, so strip the
-contracts you want rewritten first. `strip` also removes annotations from a tree that should not
-carry them.
+ones you want rewritten first. `strip` also removes them from a tree that should not carry
+them.
 
 - It lists the files it would change, and **writes nothing until you pass `-y`**.
 - A directory needs `-R`. Without it, `strip` exits 2.
@@ -366,11 +362,11 @@ carry them.
 - A `.annotation` charter or sidecar is reported and skipped. The whole file is the annotation, so
   removing it means deleting the file yourself.
 
-### Put the contracts in your agent's search results
+### Put the annotations in your agent's tool call results
 
 Your agent starts a task by searching, and what comes back is a list of paths that says
 nothing about what any of them is for. A Claude Code hook pipes your agent's own `grep`,
-`find` and `ls` output through an annotator, so the paths come back carrying the contracts.
+`find` and `ls` output through an annotator, so the paths come back carrying the annotations.
 The commands themselves run exactly as written:
 
 ```
@@ -418,8 +414,10 @@ Three gates under `.githooks/` (enable with `git config core.hooksPath .githooks
    *true*. Gate the commit on a neutral reviewer (not the author) who checks, per changed
    file, that the annotation still holds after the diff: `Concern` names what the file now
    does, `Non-concern` still excludes a real boundary the file does not own (not a truism),
-   `IO` still matches. Block unless the message reports zero issues.
-   [`.githooks/commit-msg`](.githooks/commit-msg) is a working example.
+   `IO` still matches. Grade each finding by what the fix costs, and block only on the ones
+   that need rework: a gate demanding zero findings never converges, because a reviewer with
+   nothing at stake always finds one more. `--githook-guide` ships the exact attestation
+   shape. [`.githooks/commit-msg`](.githooks/commit-msg) is a working example.
 
 3. **Standards enforcement (optional, recommended, workspace-dependent).** Layer your
    repo's architectural and anti-litter rules on top. Lint-checkable ones go in a repo
@@ -470,7 +468,12 @@ bugs, the business workspace that decides what to build above that. Each is a
 workspace an agent works, fed from the layer above and feeding the one below. Make each
 layer legible and the automation scales up the org, not only the codebase.
 
-## A note about the author
+## Additional Reading
+The extended argument (the infinite-context objection, related work, what is still
+unproven) and the full references for every citation on this page live in
+[README_APPENDIX.md](README_APPENDIX.md).
+
+## About the author
 
 Fredrik Rydén holds a Ph.D. in telerobotics from the University of Washington and has
 spent some fifteen years keeping humans in control of machines: teleoperating surgical

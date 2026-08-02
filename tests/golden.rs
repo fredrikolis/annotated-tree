@@ -383,6 +383,53 @@ fn strict_failure_prints_guide_on_stdout() {
     );
 }
 
+/// `--annotation-guide` is the way to READ the guide without provoking a violation to print it.
+/// Pin the info-flag semantics (whole guide alone on stdout, exit 0), that the same text still
+/// reaches `--help`, and that the guide states the length bound — an agent that has to discover the
+/// bound by being rejected pays for the annotation twice.
+#[test]
+fn annotation_guide_flag_prints_the_guide_alone() {
+    // The flag short-circuits before any traversal, so the appended sample path is unused.
+    let (out, code) = run(&["--annotation-guide"]);
+    assert_eq!(
+        code, 0,
+        "--annotation-guide is an info flag: print and exit clean"
+    );
+    assert!(
+        out.starts_with("ANNOTATION GUIDE"),
+        "the guide is printed alone, with nothing before it, got: {out}"
+    );
+    assert!(
+        out.contains("HOW TO FIND THE NON-CONCERN"),
+        "the flag prints the FULL guide, not just the --help essence, got: {out}"
+    );
+    assert!(
+        !out.contains("EXIT CODES:") && !out.contains("Usage:"),
+        "nothing but the guide goes to stdout, got: {out}"
+    );
+
+    for fact in ["200", "--max-length", "max_annotation_length"] {
+        assert!(
+            out.contains(fact),
+            "the guide must state `{fact}` of the bound it forbids raising, got: {out}"
+        );
+    }
+
+    let help = std::process::Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
+        .arg("--help")
+        .output()
+        .expect("run --help");
+    let help = String::from_utf8(help.stdout).expect("utf8");
+    assert!(
+        help.contains("ANNOTATION GUIDE") && help.contains("max_annotation_length"),
+        "--help still carries the guide, bound included, got: {help}"
+    );
+    assert!(
+        help.contains("--annotation-guide"),
+        "a new flag lands with its --help text, got: {help}"
+    );
+}
+
 /// `--githook-guide` ships the commit-message ATTESTATION KEYS to adopters who wire the example
 /// hook into their own repo, so those keys are an external contract with consumers we cannot
 /// coordinate. Pin the keys — never the prose around them — and pin the absence of the retired

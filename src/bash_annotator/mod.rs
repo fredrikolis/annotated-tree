@@ -19,16 +19,16 @@ use anyhow::Result;
 use crate::cli::BashAnnotator;
 use crate::exit;
 
-/// The five verbs and their one-line summaries, in the order `--help` lists them. Kept here so the
+/// The six verbs and their one-line summaries, in the order `--help` lists them. Kept here so the
 /// fail-fast usage message below cannot drift from what actually parses.
 const VERBS: &[(&str, &str)] = &[
     (
         "--install-claude-hook [FILE]",
-        "switch the hook on [default: ~/.claude/settings.json]",
+        "switch both hook entries on [default: ~/.claude/settings.json]",
     ),
     (
         "--uninstall-claude-hook [FILE]",
-        "remove the entry this tool added, and nothing else",
+        "remove the entries this tool added, and nothing else",
     ),
     (
         "--check CMD…",
@@ -36,7 +36,11 @@ const VERBS: &[(&str, &str)] = &[
     ),
     (
         "--rewrite-tool-call",
-        "hook entry point: one PreToolUse or SessionStart event on stdin",
+        "hook entry point: one PreToolUse event on stdin",
+    ),
+    (
+        "--session-announcement",
+        "hook entry point: print what a SessionStart tells the agent",
     ),
     (
         "--annotate-tool-output CMD…",
@@ -44,7 +48,7 @@ const VERBS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Which of the five mode flags are set, spelled as the user would type them.
+/// Which of the six mode flags are set, spelled as the user would type them.
 fn modes(args: &BashAnnotator) -> Vec<&'static str> {
     let mut set = Vec::new();
     if args.install_claude_hook {
@@ -58,6 +62,9 @@ fn modes(args: &BashAnnotator) -> Vec<&'static str> {
     }
     if args.rewrite_tool_call {
         set.push("--rewrite-tool-call");
+    }
+    if args.session_announcement {
+        set.push("--session-announcement");
     }
     if args.annotate_tool_output {
         set.push("--annotate-tool-output");
@@ -73,7 +80,7 @@ fn usage(err: &mut impl Write) -> Result<()> {
     Ok(())
 }
 
-/// Run one `bash-annotator` verb. Exactly one of the five mode flags must be set.
+/// Run one `bash-annotator` verb. Exactly one of the six mode flags must be set.
 ///
 /// Every path returns a code the [`exit`] taxonomy already names: [`exit::SUCCESS`] on success,
 /// [`exit::USAGE`] from the mode check, and [`exit::PRECONDITION`] from a failed settings write.
@@ -116,6 +123,9 @@ pub(crate) fn dispatch(
     }
     if args.rewrite_tool_call {
         return rewrite_tool_call(out, err);
+    }
+    if args.session_announcement {
+        return session_announcement(out);
     }
     annotate_tool_output(args, out, err)
 }
@@ -182,23 +192,31 @@ fn check(args: &BashAnnotator, out: &mut impl Write) -> Result<i32> {
 /// that it recognises them and does not go debugging its own tools. Everything else it might want
 /// is in `--help` and the README.
 const SESSION_ANNOUNCEMENT: &str = concat!(
-    "ls, find and grep output in this session carries each file's contract:\n",
+    "ls, find and grep output in this session carries each file's annotation:\n",
     "  src/render/text.rs  # Concern: … | Non-concern: … | IO: …\n",
     "Only output returned directly to your context is annotated (i.e. `ls -la > out.txt` is ",
     "unaffected).",
 );
 
-/// The Claude Code hook entry point: one hook event on stdin, one JSON object out, or nothing.
-/// `SessionStart` gets the announcement ONCE; `PreToolUse` gets an `updatedInput` when it names an
-/// eligible Bash command. Anything else gets silence. ALWAYS [`exit::SUCCESS`] — a PreToolUse
-/// exit 2 BLOCKS the tool call, and other nonzero codes surface as errors.
+/// The `SessionStart` hook entry point: print the announcement, exit 0. Claude Code adds a
+/// `SessionStart` hook's stdout to the agent's context verbatim, so no JSON envelope is needed and
+/// none is emitted — the text a user reads here is exactly the text the agent is handed.
+fn session_announcement(out: &mut impl Write) -> Result<i32> {
+    writeln!(out, "{SESSION_ANNOUNCEMENT}")?;
+    Ok(exit::SUCCESS)
+}
+
+/// The `PreToolUse` hook entry point: one hook event on stdin, one JSON object out, or nothing.
+/// An `updatedInput` comes back when the event names an eligible Bash command; anything else gets
+/// silence. ALWAYS [`exit::SUCCESS`] — a PreToolUse exit 2 BLOCKS the tool call, and other nonzero
+/// codes surface as errors.
 fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
     // A hook is fed JSON on stdin. Run by hand from a terminal there is nothing to read, so say so instead of blocking forever on a pipe that will never carry anything.
     if std::io::stdin().is_terminal() {
         writeln!(
             err,
             "annotated-tree bash-annotator --rewrite-tool-call: reads one Claude Code \
-             PreToolUse or SessionStart event on stdin; a terminal will never send one."
+             PreToolUse event on stdin; a terminal will never send one."
         )?;
         return Ok(exit::SUCCESS);
     }
@@ -210,20 +228,6 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
     let Ok(payload) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return Ok(exit::SUCCESS);
     };
-    // Claude Code stamps the event name on every payload. Matched before `tool_name` because a SessionStart event carries no tool at all.
-    if payload.get("hook_event_name").and_then(|v| v.as_str()) == Some("SessionStart") {
-        writeln!(
-            out,
-            "{}",
-            serde_json::json!({
-                "hookSpecificOutput": {
-                    "hookEventName": "SessionStart",
-                    "additionalContext": SESSION_ANNOUNCEMENT,
-                }
-            })
-        )?;
-        return Ok(exit::SUCCESS);
-    }
     if payload.get("tool_name").and_then(|v| v.as_str()) != Some("Bash") {
         return Ok(exit::SUCCESS);
     }
