@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# pre-commit gate 1 of 2 (mechanical): every code file must carry a conforming
-# first-line annotation. This is the deterministic presence/form check only; the
-# QUALITY + staleness review is gate 2, attested in the commit message (commit-msg).
-# Gate 1 runs first because gate 2's semantic review is wasted on a file that has no
+# pre-commit gates 1 and 2 of 3 (mechanical). Gate 1: every code file carries a conforming
+# first-line annotation. Gate 2: comment volume stays inside the budget in
+# .cargo-lint-extra.toml. Both are deterministic form checks; the QUALITY + staleness review
+# is gate 3, attested in the commit message (commit-msg).
+# Gate 1 runs first because gate 3's semantic review is wasted on a file that has no
 # annotation at all.
 # Bypass a genuinely trivial, non-code commit: git commit --no-verify.
 # Enable per clone: git config core.hooksPath .githooks
@@ -38,6 +39,59 @@ if ! "${run[@]}" --strict-check . --ignore sample --include-tests -I 'tests/fixt
 	echo "" >&2
 	echo "pre-commit: ANNOTATION GATE FAILED (tests/)" >&2
 	echo "  - one or more files under tests/ lack a conforming first-line annotation (see above)." >&2
+	echo "  Fix them, then re-commit. Bypass a trivial, non-code commit: git commit --no-verify" >&2
+	exit 1
+fi
+
+# Gate 2: comment budget. Blocking comes from `level = "deny"` in .cargo-lint-extra.toml, never
+# from `-W` — in 0.1.4 that flag exits 1 even on a run with zero findings, which would block
+# every commit on a clean tree.
+#
+# The linter is a pinned dependency of this repo, not a precondition the committer must satisfy:
+# it is provisioned into a rev-keyed path under target/ on first use. Rev-keyed so a bump to
+# LINT_REV installs fresh rather than silently reusing the old binary, and repo-local so it
+# neither depends on nor overwrites whatever is on the committer's PATH. The pin matters because
+# the linter gains rules between revisions, and an unpinned upgrade would introduce blocking
+# findings on an unrelated commit.
+#
+# Pinned to a public fork rather than the crates.io release because the released 0.1.4 has no
+# file-scoped comment rule: its `inline-comments` sees only function bodies and never counts
+# `///`, leaving doc-comment volume unbounded. The fork adds `file-comments` and is proposed
+# upstream; when that merges and releases, this becomes a version pin again.
+LINT_REPO="https://github.com/fredrikolis/cargo-lint-extra"
+LINT_REV="848bc0c616e94c16c32607be9603a770f55bbebe"
+LINT_ROOT="target/lint-tools/${LINT_REV:0:12}"
+LINT_BIN="$LINT_ROOT/bin/cargo-lint-extra"
+
+# A git pin builds from source (no prebuilt artifact to fetch), so the one-time cost is a
+# compile. The attempt is tolerated (`|| true`) so a missing cargo or a network failure reaches
+# the explicit check below and reports there, instead of aborting the hook under `set -e` with a
+# bare "command not found" the committer has to decode.
+if [ ! -x "$LINT_BIN" ] && command -v cargo >/dev/null 2>&1; then
+	echo "pre-commit: building cargo-lint-extra @ ${LINT_REV:0:12} (one-time, ~1 min)…" >&2
+	cargo install --git "$LINT_REPO" --rev "$LINT_REV" --root "$LINT_ROOT" --quiet cargo-lint-extra >&2 || true
+fi
+
+# Provisioning can fail (offline, unreachable rev). That FAILS the gate rather than skipping it:
+# a gate that passes silently when its tool is missing is a false green no reviewer can detect.
+if [ ! -x "$LINT_BIN" ]; then
+	echo "" >&2
+	echo "pre-commit: COMMENT GATE CANNOT RUN" >&2
+	echo "  - could not build cargo-lint-extra @ ${LINT_REV:0:12}, and this gate refuses to pass silently." >&2
+	echo "  Retry, or build it by hand:" >&2
+	echo "    cargo install --git $LINT_REPO --rev $LINT_REV --root $LINT_ROOT cargo-lint-extra" >&2
+	exit 1
+fi
+
+if ! "$LINT_BIN" lint-extra --config .cargo-lint-extra.toml . 1>&2; then
+	echo "" >&2
+	echo "pre-commit: COMMENT GATE FAILED" >&2
+	echo "  - comment volume is over the budget in .cargo-lint-extra.toml (see above)." >&2
+	echo "" >&2
+	echo "The standard this gate enforces — it measures volume, never quality:" >&2
+	echo "" >&2
+	cat docs/comment-standards.md >&2
+	echo "" >&2
 	echo "  Fix them, then re-commit. Bypass a trivial, non-code commit: git commit --no-verify" >&2
 	exit 1
 fi
