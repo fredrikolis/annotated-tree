@@ -1,9 +1,30 @@
-<!-- Concern: the canonical prompt a neutral reviewer is handed, and what its severities mean | Non-concern: which gate demands a review, or what a passing attestation looks like | IO: none -->
-NEUTRAL REVIEW — hand a reviewer in a FRESH context exactly the block below and nothing else.
+<!-- Concern: the canonical prompt each neutral reviewer is handed, and what its severities mean | Non-concern: which gate demands a review, or what a passing attestation looks like | IO: none -->
+NEUTRAL REVIEW — hand a reviewer in a FRESH context exactly ONE block below and nothing else.
 
 The diff is the only signal it gets about where to look. Naming what you changed, or what you
 suspect, tells it what counts, and it will find that and stop looking. To re-review, update the
 diff and say only `re-review`.
+
+EVERY item on the checklist, never a subset: choosing in advance which ones a change could breach
+is how the one that matters gets dropped. `N/A — reason` is the answer where an item does not
+apply.
+
+THE LADDER — three rungs, graded by what the fix costs, in every review. Each block states what
+they mean there; what the author does with each is the same everywhere:
+
+  MAJOR     the resolution is re-planned by a neutral task agent that did not write it, before
+            implementation and re-review. The author does not patch it in place.
+  MODERATE  the fix requires something the reviewer has not seen. Author fixes; review again.
+  MINOR     the fix reshapes what is already there. NEVER blocks — fixed, or consciously left
+            with a one-line reason, at the author's discretion.
+
+MAJOR is the one rung graded by wrongness rather than by cost, so a one-line fix that changes
+behaviour never falls through to MINOR.
+
+Iterate fix -> re-review until no MAJOR and no MODERATE remains. MINOR is required and never
+gated, so a real nit has a home instead of being inflated into a blocker.
+
+== GATE A — STANDARDS ==
 
   ----------------------------------------------------------------------
   INTENT: <what the diff sets out to do, under 1000 characters. State the aim flatly, as a
@@ -14,14 +35,54 @@ diff and say only `re-review`.
   Review the staged diff (git diff --cached) against docs/repo-standards.md.
   Give EVERY principle in its summary table one line, plus its AUTO-REJECT list:
   '- <Principle>: none | N/A — <why> | <SEVERITY> — <finding>'.
-  MAJOR    = an unintended consequence, a bug, or a solution that is wrong.
-  MODERATE = the solution is right but breaches a standard; it needs rework.
-  MINOR    = polish, a quick fix, a nice-to-have.
+  MAJOR    = wrong — a bug, an unintended consequence, an AUTO-REJECT hit. The
+             resolution has to be re-planned by a neutral task agent that did not
+             write it, before implementation and re-review.
+  MODERATE = the fix requires new code — a restructure, move, extract, or delete.
+             The review runs again.
+  MINOR    = the fix reshapes what is already there.
   End with 'MAJOR: <n>', 'MODERATE: <n>', 'MINOR: <n>'. Do not pad the count.
   ----------------------------------------------------------------------
 
-EVERY principle, never a subset: choosing in advance which ones a change could breach is how the
-one that matters gets dropped. `N/A — reason` is the answer where a principle does not apply.
+== GATE B — ANNOTATION ==
 
-Iterate fix -> re-review until no MAJOR and no MODERATE remains. MINOR never blocks — it is the
-author's discretion, fixed or consciously left, so a real nit has a home instead of being inflated.
+INTENT is deliberately absent here. The annotation is judged against the file as it now stands;
+what the author meant is a steering vector, not context.
+
+  ----------------------------------------------------------------------
+  Derive the file list yourself: git diff --cached --name-only. Do not take one
+  from the author. Review the staged diff against src/annotation-guide.md.
+  Give EVERY file on that list one line:
+  '- <path>: none | N/A — <why> | <SEVERITY> — <finding>'.
+  MAJOR    = missing or false — no annotation where one is due, or a line that
+             claims a job the file does not do, stale after this diff.
+  MODERATE = the fix requires a new claim of ownership — Concern is the wrong job,
+             a charter sits at file altitude, the line only fits by splitting the
+             file. The review runs again.
+  MINOR    = the fix reshapes what is already there — words that can be cut without
+             changing what the line claims, a truism to sharpen, IO wrong,
+             why/how/when in a field, a pointer the tree already shows.
+  N/A      = the file cannot carry a comment and has no sidecar duty.
+  End with 'Annotation-MAJOR: <n>', 'Annotation-MODERATE: <n>',
+  'Annotation-MINOR: <n>'. Do not pad the count.
+  ----------------------------------------------------------------------
+
+== GATE C — COMMUNICATION STYLE ==
+
+  ----------------------------------------------------------------------
+  Review 'git diff --cached README.md README_APPENDIX.md' against
+  docs/communication-style.md, one changed line at a time. Give EVERY rule in
+  its table one line:
+  '- <Rule>: none | N/A — <why> | <SEVERITY> — <file:line, the finding>'.
+  MAJOR    = one of the three checkable rules — a flag, example, or link that
+             teaches the reader something that is not there. Verify against
+             `annotated-tree --help`, the source, and the actual headings.
+  MODERATE = the fix requires new sentences — a claim reframed, a passage
+             rewritten from the reader's side rather than ours. The review runs
+             again.
+  MINOR    = the fix reshapes what is already there — em-dash, hype word, hedge,
+             soft pointer, windup, an unbolded claim, a paragraph split into the
+             list it should have been, problem/fix/benefit reordered.
+  Identify; do not rewrite. End with 'Style-MAJOR: <n>', 'Style-MODERATE: <n>',
+  'Style-MINOR: <n>'. Do not pad the count.
+  ----------------------------------------------------------------------

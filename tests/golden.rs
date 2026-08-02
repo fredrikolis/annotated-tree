@@ -399,15 +399,19 @@ fn githook_guide_ships_the_attestation_keys() {
         "MAJOR:",
         "MODERATE:",
         "MINOR:",
-        "Annotation-Issues:",
-        "Style-Issues:",
+        "Annotation-MAJOR:",
+        "Annotation-MODERATE:",
+        "Annotation-MINOR:",
+        "Style-MAJOR:",
+        "Style-MODERATE:",
+        "Style-MINOR:",
     ] {
         assert!(
             out.contains(key),
             "the guide must ship the `{key}` attestation key, got: {out}"
         );
     }
-    for retired in ["MEDIUM", "/10"] {
+    for retired in ["MEDIUM", "/10", "Annotation-Issues:", "Style-Issues:"] {
         assert!(
             !out.contains(retired),
             "the guide must not name the retired `{retired}` payload, got: {out}"

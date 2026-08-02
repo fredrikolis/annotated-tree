@@ -30,30 +30,43 @@ COMMIT-MSG — semantic, attestation-based (quality + staleness)
   that a review happened. What it buys is ATTRIBUTION, not enforcement — a false attestation
   passes, but it is then a claim on the record with a name on it.
 
-  Circular-standards guard. A diff that edits the rubric doc the review is judged against is
-  blocked: it lands alone via `--no-verify`. Judging a yardstick against itself is circular.
+  Circular-rubric guard. A diff that edits any rubric a review is judged against — your standards
+  doc, your annotation guide, your prose-style doc, the review prompt itself — is blocked: it lands
+  alone via `--no-verify`. Judging a yardstick against itself is circular.
 
-  Gate A — standards review. Require a non-empty `Reviewer:` line; one `- <Principle>: ` line per
-  principle in your standards doc whose payload is `none`, `N/A — reason`, or a severity plus the
-  finding; and `MAJOR: <n>`, `MODERATE: <n>`, `MINOR: <n>` counts, each read from the LAST match so
-  body prose cannot shadow the trailer. The prompt that reviewer is handed, and what the three
-  severities mean, live in ONE place — `docs/review-prompt.md`, which the hook prints on failure.
-  Iterate fix -> re-review until no MAJOR and no MODERATE remains. A missing line, a blocker above
-  0, or a line whose severity contradicts a declared 0, fails. `MINOR:` is required and NEVER
-  gated, so a real nit has a home instead of being inflated. A severity, not a score: it drives the
+  ONE SHAPE, three gates. Each requires a named reviewer, one `- <item>: ` line per checklist item
+  whose payload is `none`, `N/A — reason`, or a severity plus the finding, and `MAJOR`/`MODERATE`/
+  `MINOR` counts, each read from the LAST match so body prose cannot shadow the trailer. A missing
+  line, a blocker above 0, or a line whose severity contradicts a declared 0, fails. Iterate fix ->
+  re-review until no MAJOR and no MODERATE remains. `MINOR` is required and NEVER gated, so a real
+  nit has a home instead of being inflated into a blocker. A severity, not a score: it drives the
   weak dimension to zero directly, where a number lets it hide behind strong ones and invites
   argument that cannot change the outcome.
 
-  Gate B — annotation review. Require `Annotation-Reviewer: <name>` + `Annotation-Issues: 0`: a
-  neutral reviewer confirmed every file in the diff carries an APPROPRIATE annotation and that the
-  diff did not make it STALE — the truth + staleness check a linter cannot make. APPROPRIATE: every
-  field states WHAT, never why/how/when; Concern is the file's ONE job; Non-concern is a concern it
-  does not own, its where-it-lives pointer optional (omit it when the tree shows the owner anyway).
+  Grade the three rungs by what the FIX costs, not by how bad the finding sounds — that is what
+  makes the loop converge. MODERATE means the fix produces something the reviewer has not seen, so
+  the review runs again; anything an agent can apply verbatim without a second look is MINOR and
+  never blocks. MAJOR is the one rung graded by wrongness instead: it is re-planned by a neutral
+  task agent, not patched in place, so a cheap fix that changes behaviour cannot land as a nit.
 
-  Gate C — conditional style review. Only when a human-facing doc is in the diff, require
-  `Style-Reviewer:` + `Style-Issues: 0` against your prose-style doc, from a fresh-context
-  reviewer that did not write the change. A reminder gate: a hook cannot stop a determined
-  agent from rubber-stamping, so make it print the exact reviewer prompt.
+  The prompt each reviewer is handed, and what the three severities mean under it, live in ONE
+  place — `docs/review-prompt.md`, which the hook prints on failure, section by gate.
+
+  Gate A — standards review. `Reviewer:` + one line per principle in your standards doc, then
+  `MAJOR: <n>`, `MODERATE: <n>`, `MINOR: <n>`.
+
+  Gate B — annotation review. `Annotation-Reviewer:` + one line per file in the diff, then
+  `Annotation-MAJOR: <n>`, `Annotation-MODERATE: <n>`, `Annotation-MINOR: <n>`. The reviewer
+  confirms every file carries an APPROPRIATE annotation and that the diff did not make it STALE —
+  the truth + staleness check a linter cannot make. The hook derives the file list from git, never
+  from the author: an author-supplied list decides what gets looked at, and that is where a missed
+  file hides.
+
+  Gate C — conditional style review. Only when a human-facing doc is in the diff:
+  `Style-Reviewer:` + one line per rule in your prose-style doc, then `Style-MAJOR: <n>`,
+  `Style-MODERATE: <n>`, `Style-MINOR: <n>`, from a fresh-context reviewer that did not write the
+  change. A reminder gate: a hook cannot stop a determined agent from rubber-stamping, so make it
+  print the exact reviewer prompt.
 
 WHY THIS SHAPE
   Render, don't reason: presence/form is deterministic, so it is HARD-GATED by the tool; truth and
