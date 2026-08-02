@@ -3,23 +3,16 @@
 use crate::config;
 use crate::strict;
 
-/// The one canonical guide text, authored in [`src/annotation-guide.md`] and embedded at
-/// build time (like `src/default_config.toml`). It supersedes the old hand-written `--explain`
-/// body: one source, rendered onto every teaching surface.
+/// The one canonical guide text, embedded at build time: one source, rendered onto every teaching
+/// surface.
 const GUIDE: &str = include_str!("annotation-guide.md");
 
-/// Splits the compact `--help` head from the deeper `--strict-check` tail. Everything before
-/// it is the essence; the full guide is both halves with the marker removed.
+/// Splits the compact `--help` head from the deeper `--strict-check` tail.
 const MORE_MARKER: &str = "<!-- more -->\n";
 
-/// The guide body with its own first-line annotation stripped and the `{TEMPLATE}` /
-/// `{EXAMPLE}` placeholders replaced by the ENFORCED contract — so the guide and the checker
-/// can never advertise a different shape (the same no-drift discipline `--help`/`--strict-check`
-/// already share via [`strict::EXPECTED`]).
-///
-/// `GUIDE` is an embedded compile-time constant we author on both sides, so its shape is a
-/// precondition, not untrusted input (DbC): a malformed doc — no first-line annotation, or a
-/// missing section marker — fails loudly here rather than degrading to a silently wrong render.
+/// The guide body, annotation stripped and `{TEMPLATE}`/`{EXAMPLE}` filled from the ENFORCED
+/// contract, so guide and checker cannot advertise different shapes. An authored constant, so a
+/// malformed doc fails loudly (DbC) rather than degrading to a silently wrong render.
 fn substituted() -> String {
     let (first, rest) = GUIDE
         .split_once('\n')
@@ -36,8 +29,7 @@ fn substituted() -> String {
         .replace("{EXAMPLE}", &config::builtin_example())
 }
 
-/// The compact form for `--help`: the format, the fields, and the GOOD/FAILS contrast —
-/// everything before the `<!-- more -->` marker (which `substituted` guarantees is present).
+/// The compact form for `--help`: everything before the `<!-- more -->` marker.
 pub fn essence() -> String {
     let full = substituted();
     let head = full
@@ -47,8 +39,7 @@ pub fn essence() -> String {
     head.trim_end().to_string()
 }
 
-/// The full guide, printed on a failing `--strict-check` (unless `--no-guide`) — the
-/// push-by-default teaching that replaced the old `--explain` pull command.
+/// The full guide, printed on a failing `--strict-check` unless `--no-guide`.
 pub fn full() -> String {
     // Keep a blank line where the section marker was, so the two halves stay visually split.
     let body = substituted().replace(MORE_MARKER, "\n");

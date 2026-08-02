@@ -16,19 +16,15 @@ fn describable(p: &Path) -> bool {
     p.metadata().is_ok_and(|m| m.is_file() || m.is_dir())
 }
 
-/// Bound on the resolution memo.
-///
-/// Every candidate string a line offers becomes a key, so an unbounded map retains a copy of the
-/// output: a 29 MB `grep` result held 275 MB of keys. Past this many entries the cache stops
-/// growing and resolution simply costs a `stat` again — slower, never wrong.
+/// Bound on the resolution memo. Every candidate string a line offers becomes a key, so an
+/// unbounded map retains a copy of the output — a 29 MB `grep` result held 275 MB of keys. Past
+/// this many entries the cache stops growing and resolution costs a `stat` again: slower, never wrong.
 const RESOLVE_CACHE_MAX: usize = 8192;
 
-/// Annotate `input` — the output of the pipeline whose producer was `producer` — onto `out`.
-///
-/// The tool is NOT run here. It has already run, as the shell's own `grep`/`find`/`ls`, and this
-/// reads what it printed. `producer` is that tool's argv, forwarded by the rewrite so the flag
-/// rules below (which base a bare name resolves against, whether the layout puts one name on a
-/// line) are read rather than guessed.
+/// Annotate `input` — the output of the pipeline whose producer was `producer` — onto `out`. The
+/// tool is NOT run here: it has already run, as the shell's own `grep`/`find`/`ls`, and this reads
+/// what it printed. `producer` is that tool's argv, forwarded by the rewrite so the flag rules below
+/// are read rather than guessed.
 pub fn annotate(producer: &[OsString], input: &mut impl BufRead, out: &mut impl Write) -> i32 {
     let Some((tool, args)) = producer.split_first() else {
         return 0;
@@ -52,12 +48,10 @@ pub fn annotate(producer: &[OsString], input: &mut impl BufRead, out: &mut impl 
     0
 }
 
-/// Appends contracts to a tool's output.
-///
-/// THE INVARIANT: one line in, one line out. A contract is appended to the line its path appeared
-/// on and never printed on a line of its own, so a downstream `head -20`, `tail`, `wc -l`, `sort`
-/// or `uniq` — every modifier whose smallest unit is a line — means exactly what it meant without
-/// this wrapper.
+/// Appends contracts to a tool's output. THE INVARIANT: one line in, one line out. A contract is
+/// appended to the line its path appeared on and never printed on a line of its own, so a downstream
+/// `head -20`, `tail`, `wc -l`, `sort` or `uniq` — every modifier whose smallest unit is a line —
+/// means exactly what it meant without this wrapper.
 struct Annotator {
     contracts: Contracts,
     /// The ONE directory a bare name is relative to. `ls <onedir>` names entries relative to that
@@ -90,12 +84,10 @@ struct Annotator {
     multi_name: bool,
 }
 
-/// `ls` options that consume the NEXT argument. Knowing which flags take a value is far less than
-/// knowing what flags mean, and it is the minimum needed to tell an operand from a flag's value:
-/// `ls -I sub` lists the working directory while EXCLUDING `sub`.
-///
-/// `--color` is deliberately absent: its argument is OPTIONAL, and `getopt_long` never takes a
-/// separate token for one, so `ls --color docs` lists `docs`.
+/// `ls` options that consume the NEXT argument — far less than knowing what flags mean, and the
+/// minimum needed to tell an operand from a flag's value: `ls -I sub` lists the working directory
+/// while EXCLUDING `sub`. `--color` is deliberately absent: its argument is OPTIONAL and
+/// `getopt_long` never takes a separate token for one, so `ls --color docs` lists `docs`.
 const LS_VALUE_LONG: &[&str] = &[
     "--ignore",
     "--hide",
@@ -132,14 +124,10 @@ const GREP_VALUE_LONG: &[&str] = &[
     "--group-separator",
 ];
 
-/// EVERY long option each tool has, not only the ones consulted below.
-///
-/// `getopt_long` accepts any UNAMBIGUOUS abbreviation, so a guard that compares full spellings is
-/// evaded by `ls --recur`. Resolving an abbreviation needs the whole option set, for two reasons:
-/// an abbreviation is only unambiguous with respect to all of them, and a candidate that is
-/// itself another option's full spelling is THAT option, never an abbreviation of a longer one.
-/// Missing the second is what made `grep --file P onefile` — `--file` being the long spelling of
-/// `-f` — read as `--files-with-matches` and hand a content line another file's contract.
+/// EVERY long option each tool has, not only the ones consulted below. `getopt_long` accepts any
+/// UNAMBIGUOUS abbreviation, so comparing full spellings is evaded by `ls --recur`, and resolving
+/// one needs the whole set: an abbreviation is unambiguous only with respect to all of them, and a
+/// candidate that is another option's full spelling is THAT option, never an abbreviation.
 const LS_LONG: &[&str] = &[
     "--all",
     "--almost-all",
@@ -316,13 +304,10 @@ fn cluster_of_for(word: &str, value_letters: &str) -> Cluster {
     }
 }
 
-/// The argv entries that name something to operate on, rather than flags or their values.
-///
-/// For `grep` the FIRST non-flag entry is the PATTERN, not a file. Counting it as one — which
-/// `p.exists()` alone does whenever the search term happens to name a path, as in
-/// `grep src Makefile` — made a single-file invocation look like a multi-file one, so its content
-/// lines were scanned for a `path:` prefix that grep never printed. `-e`/`-f` supply the pattern
-/// separately, and then every non-flag entry really is a file.
+/// The argv entries that name something to operate on, rather than flags or their values. For
+/// `grep` the FIRST non-flag entry is the PATTERN, not a file: counting it as one — which
+/// `p.exists()` alone does whenever the search term names a path, as in `grep src Makefile` — makes
+/// a single-file invocation look multi-file, so its content lines get scanned for a missing prefix.
 struct Argv {
     /// Only the entries that are OPTIONS — never an option's value, never an operand.
     options: Vec<String>,
@@ -330,14 +315,10 @@ struct Argv {
     operands: Vec<PathBuf>,
 }
 
-/// Split an argv once, into options and operands.
-///
-/// Both halves must come from the SAME walk. Deriving them separately meant a flag's value was
-/// re-read as an option — `grep -e -l -e beta .` searches for the literal `-l` and switched on
-/// path-only mode — and, for `grep`, that the PATTERN was counted as a file: `grep src Makefile`
-/// then looked like a multi-file search and believed it printed `path:` prefixes it never did.
-/// `-e`/`-f` and their long spellings supply the pattern separately, and then every non-flag
-/// entry really is a file.
+/// Split an argv once, into options and operands. Both halves must come from the SAME walk:
+/// deriving them separately re-read a flag's value as an option — `grep -e -l -e beta .` searched
+/// for a literal `-l` — and counted grep's PATTERN as a file, so `grep src Makefile` looked
+/// multi-file and believed it printed `path:` prefixes it never did.
 fn parse_argv(tool: &str, args: &[OsString]) -> Argv {
     let values = value_short(tool);
     let longs = value_long(tool);
@@ -518,16 +499,10 @@ impl Annotator {
         Ok(())
     }
 
-    /// The contract of the path this line is ABOUT, if it has not been described already.
-    ///
-    /// A line names its subject at one END or the other — `path`, `path:line:text`,
-    /// `-rw-r--r-- … path`, `123 path`. A path appearing anywhere else is part of a match's
-    /// CONTENT, and describing it would put one file's contract on a line about another.
-    ///
-    /// A content-printing tool names its subject only as a `path:` prefix, so a line without one
-    /// — `grep PAT onefile`, `grep -rh` — carries NO contract. Guessing the subject from argv was
-    /// tried and removed: a pattern or a flag's value that happened to name a file then became the
-    /// subject of every line.
+    /// The contract of the path this line is ABOUT, if not already described. A line names its
+    /// subject at one END or the other; a path anywhere else is match CONTENT, and describing it
+    /// would put one file's contract on a line about another. A content-printing tool names its
+    /// subject only as a `path:` prefix, so a line without one carries NO contract.
     fn contract_for(&mut self, text: &str) -> Option<String> {
         if self.multi_name {
             return None;
@@ -548,13 +523,10 @@ impl Annotator {
         self.contracts.describe(&path)
     }
 
-    /// The path a listing tool named on this line.
-    ///
-    /// Scanned as SUFFIXES OF THE ORIGINAL LINE, from each token boundary, longest first — a
-    /// filename containing spaces is one name, and `ls -l` puts it last. Slicing rather than
-    /// re-joining tokens is load-bearing: joining with a single space silently loses a name with
-    /// two consecutive spaces or a tab in it. A symlink line is cut at ` -> ` so the link, not its
-    /// target, is described.
+    /// The path a listing tool named on this line. Scanned as SUFFIXES OF THE ORIGINAL LINE, from
+    /// each token boundary, longest first — a filename containing spaces is one name and `ls -l`
+    /// puts it last. Slicing rather than re-joining tokens is load-bearing: a single-space join
+    /// loses a name with two consecutive spaces. A symlink line is cut at ` -> `.
     fn listed_path(&mut self, text: &str) -> Option<PathBuf> {
         // `ls -l`/`-s` open with a `total N` summary about no file; left to the suffix scan, `N` resolves against a numerically-named file, which `seen` then counts as described so its own line later carries nothing.
         if let Some(n) = text.strip_prefix("total ") {
@@ -594,12 +566,10 @@ impl Annotator {
         found
     }
 
-    /// The path a content-printing tool named as this line's `path:` prefix.
-    ///
-    /// The colon positions are scanned in the LINE, not in its first whitespace token, so a prefix
-    /// that itself contains spaces still resolves. A prefix is always followed by content in the
-    /// same field and always names a file, so a trailing colon (`docs:` in a Makefile, `src:` in
-    /// YAML) is content, and a directory is never a prefix.
+    /// The path a content-printing tool named as this line's `path:` prefix. Colon positions are
+    /// scanned in the LINE, not its first whitespace token, so a prefix containing spaces still
+    /// resolves. A prefix is always followed by content and always names a file, so a trailing colon
+    /// (`docs:` in a Makefile) is content, and a directory is never a prefix.
     fn prefix_path(&mut self, text: &str) -> Option<PathBuf> {
         // `grep -l` prints the path alone — but ONLY then: trying every line as a whole lets a match line that happens to spell a filename take that file's contract.
         if self.path_only {
@@ -619,12 +589,10 @@ impl Annotator {
         None
     }
 
-    /// A path this line might be about, if it names something we can safely describe.
-    ///
-    /// ONLY a regular file or a directory. A FIFO, socket or character device also `exists()`, and
-    /// describing one means opening it to read its first line — which never returns. `ls` in a
-    /// directory holding a FIFO hung until the agent's whole tool call timed out, losing output
-    /// that had already been produced.
+    /// A path this line might be about, if it names something we can safely describe: ONLY a regular
+    /// file or a directory. A FIFO, socket or character device also `exists()`, and describing one
+    /// means opening it to read its first line — which never returns, so `ls` in a directory holding
+    /// a FIFO hangs until the agent's whole tool call times out.
     fn resolve(&mut self, cand: &str) -> Option<PathBuf> {
         let key = (self.current.clone(), cand.to_string());
         if let Some(hit) = self.resolved.get(&key) {

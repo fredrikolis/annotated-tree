@@ -1,48 +1,9 @@
 // Concern: routes each bash-annotator verb to its module, and owns the hook wire format | Non-concern: eligibility, or what an annotation means | IO: (args, stdin) -> output + exit code
 
-//! What gets rewritten, and why it is safe to leave on.
-//!
-//! Three tools are eligible, and each names the file a line is about in its own place:
-//!
-//! | the agent types | where that tool names the file a line is about |
-//! |---|---|
-//! | `ls` | the line, or its trailing field |
-//! | `find` | the line |
-//! | `grep` | the `path:` prefix (anything after it is file content, not a subject) |
-//!
-//! Everything else is left exactly as written. `map.rs` is that table, and its own doc states the
-//! extension procedure and the never-substituted guarantee behind it, including why `\grep`,
-//! `command grep`, `/usr/bin/grep` and `sudo grep` all need no special handling. What it does not
-//! buy is the tool's flag grammar: `ls` and `grep` each have a table in `run.rs` naming the options
-//! that take a value, which is what tells an operand from a flag's argument, and a new tool starts
-//! with an empty one and needs its own if its flags matter.
-//!
-//! **One line in, one line out.** A contract is appended to the line its path appeared on and
-//! never printed on a line of its own, so no downstream stage sees a line count it did not expect.
-//! The annotator is the LAST stage, so `| sort`, `| uniq` and `| grep -v` see the tool's raw
-//! output and behave exactly as they would without this installed.
-//!
-//! **It refuses anything it cannot guarantee.** A command is left alone whenever the lines
-//! reaching the annotator would no longer be the paths the tool printed. A missed rewrite costs
-//! nothing; a wrong one would corrupt a pipeline the agent then has to debug. Each rule and the
-//! failure behind it is stated where it is enforced, in `inject.rs`: `LINE_SAFE` and `line_safe`
-//! for what may follow the producer, `ORDER_PRESERVING` and `header_scoped` for the `<dir>:`
-//! headers `ls -R` prints, `nul_delimited` for NUL-delimited output, and `rewrite` itself for
-//! redirects, compound commands and `xargs`.
-//!
-//! It emits no permission decision of its own, so nothing is ever waved through that would not
-//! have been, and it never blocks a command. Two things it does change. `PreToolUse` runs before
-//! permissions are evaluated, so the string a Bash allowlist is matched against is the rewritten
-//! one, which begins `( grep …` and names the annotator by absolute path; a `Bash(grep:*)` rule
-//! stops matching. And the pipeline is wrapped in a subshell, so `${PIPESTATUS[i]}` inspected
-//! afterwards would describe that subshell, which is why a command mentioning `PIPESTATUS` is left
-//! alone entirely. `$?` is unaffected.
-//!
-//! **It makes output bigger.** A contract runs about 200 bytes. The bargain is that the agent
-//! stops opening files for the rest of the session to find out what they are: the same trade
-//! `annotated-tree` makes with the tree, moved onto the agent's own tool calls. That is the
-//! mechanism, not a measurement — `README_APPENDIX.md`'s future-work section names first-pass
-//! yield as the thing it most wants measured and has not measured.
+//! What gets rewritten, and why it is safe to leave on. Only `ls`, `find` and `grep` are eligible
+//! (`map.rs` is that table); the annotator is appended as the LAST stage, one contract per line,
+//! so downstream stages still see raw output. Refusals are stated where enforced, in `inject.rs`.
+//! A Bash allowlist matches the REWRITTEN string, so a `Bash(grep:*)` rule stops matching.
 
 mod contracts;
 mod hookfile;
@@ -159,12 +120,10 @@ pub(crate) fn dispatch(
     annotate_tool_output(args, out, err)
 }
 
-/// Turning the hook on and off.
-///
-/// `cargo install` has no post-install step and `cargo uninstall` has no pre-remove step -- the
-/// only code cargo runs is build.rs, at BUILD time, which would fire on every checkout build and
-/// in CI. Editing a user's settings from there would be wrong twice over, so switching the hook on
-/// is an explicit command the user runs.
+/// Turning the hook on and off. `cargo install` has no post-install step and `cargo uninstall` no
+/// pre-remove step — the only code cargo runs is build.rs, at BUILD time, which would fire on every
+/// checkout build and in CI. Editing a user's settings from there would be wrong twice over, so
+/// switching the hook on is an explicit command the user runs.
 fn hook_file(
     args: &BashAnnotator,
     verb: &str,
@@ -218,11 +177,10 @@ fn check(args: &BashAnnotator, out: &mut impl Write) -> Result<i32> {
     Ok(exit::SUCCESS)
 }
 
-/// Said once, at the start of a session, instead of on every rewritten call.
-///
-/// The reader is an agent that is about to see `# Concern: …` trailing lines it did not ask for.
-/// The whole job of this text is that it recognises them and does not go debugging its own tools;
-/// everything else it might want to know is in `--help` and the README.
+/// Said once, at the start of a session, instead of on every rewritten call. The reader is an agent
+/// about to see `# Concern: …` trailing lines it did not ask for, and the whole job of this text is
+/// that it recognises them and does not go debugging its own tools. Everything else it might want
+/// is in `--help` and the README.
 const SESSION_ANNOUNCEMENT: &str = concat!(
     "ls, find and grep output in this session carries each file's contract:\n",
     "  src/render/text.rs  # Concern: … | Non-concern: … | IO: …\n",
@@ -231,13 +189,9 @@ const SESSION_ANNOUNCEMENT: &str = concat!(
 );
 
 /// The Claude Code hook entry point: one hook event on stdin, one JSON object out, or nothing.
-///
-/// Two events are answered. `SessionStart` gets the announcement above — ONCE, which is why no
-/// rewritten call carries one; `PreToolUse` gets an `updatedInput` when it names an eligible Bash
-/// command. Anything else is not ours and gets silence.
-///
-/// ALWAYS [`exit::SUCCESS`]. A PreToolUse hook's exit 2 BLOCKS the tool call; other nonzero codes
-/// surface as errors. Neither is an acceptable way to say "nothing to do here".
+/// `SessionStart` gets the announcement ONCE; `PreToolUse` gets an `updatedInput` when it names an
+/// eligible Bash command. Anything else gets silence. ALWAYS [`exit::SUCCESS`] — a PreToolUse
+/// exit 2 BLOCKS the tool call, and other nonzero codes surface as errors.
 fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
     // A hook is fed JSON on stdin. Run by hand from a terminal there is nothing to read, so say so instead of blocking forever on a pipe that will never carry anything.
     if std::io::stdin().is_terminal() {
@@ -298,10 +252,9 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
 }
 
 /// The pipeline entry point: read the wrapped tool's stdout, append each printed path's contract.
-///
-/// The tool is NOT run here — the shell already ran it, which is what makes the session's own
-/// `grep` and `find` the engines that answer. The argv is passed so the flags that decide how a
-/// line names its file are read rather than guessed.
+/// The tool is NOT run here — the shell already ran it, which is what makes the session's own `grep`
+/// and `find` the engines that answer. The argv is passed so the flags deciding how a line names its
+/// file are read rather than guessed.
 fn annotate_tool_output(
     args: &BashAnnotator,
     out: &mut impl Write,

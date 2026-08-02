@@ -2,30 +2,9 @@
 // Deliberately synchronous: a one-shot batch traversal with no concurrent I/O wait to overlap. The `ignore` crate parallelizes the disk work across a thread pool.
 
 //! # `annotated-tree` as a library
-//!
-//! The crate powers the `annotated-tree` binary but also exposes its core building blocks so
-//! another program can reuse the efficient tree walk and the annotation grammar over files of
-//! ANY shape — extensionless files, symlinks, files whose whole content (not just a first-line
-//! comment) is the annotation — and drive its OWN rendering. The two entry styles are:
-//!
-//! - **Whole-tool**: [`parse_cli`] + [`run`] — parse argv and execute exactly as the binary does.
-//! - **Primitives** (this is the library surface): the [`walk`] module (the `ignore`-based
-//!   [`walk::configured_walk`] and [`walk::collect_code_files`]), the [`annotation`] module
-//!   (marker-based [`annotation::extract`] and marker-agnostic [`annotation::extract_any`], plus
-//!   the [`annotation::analyze`] checker), the [`config`] module ([`config::Config`] /
-//!   [`config::Language`]), and the glob-compile helper [`build_globset`]. Compose them freely; a
-//!   consumer that wants its own model/renderer never touches the internal tree/graph/strict
-//!   machinery.
-//! - **Map + render** (access-only): assemble a [`CodebaseMap`] by hand from [`DirNode`] /
-//!   [`FileNode`] (the `charter`/`deps`/`warnings` fields may be `None`/`Vec::new()`)
-//!   and render it via [`for_format`] + the [`Renderer`] trait — the tool's own text/json/md
-//!   output over a tree you built yourself. The node field types ([`DirDeps`], [`Charter`],
-//!   …) are re-exported so every field is nameable.
-//!
-//! **No stability promise.** This surface exists for a known consumer. There is no semver policy
-//! and no deprecation cycle: a breaking change arrives as a compile error rather than through a
-//! deprecation window, and 0.6.0 is such a change.
-//!
+//! Two entry styles: whole-tool ([`parse_cli`] + [`run`]), or primitives — [`walk`],
+//! [`annotation`], [`config`] and [`build_globset`], plus the access-only map/render surface
+//! ([`CodebaseMap`] + [`for_format`]). No stability promise; a break arrives as a compile error.
 //! ```no_run
 //! use annotated_tree::config::{CliOverrides, Config};
 //! use annotated_tree::{annotation, walk};
@@ -47,6 +26,7 @@
 //! ```
 
 pub mod annotation;
+pub(crate) mod bash_annotator;
 pub(crate) mod changed;
 pub(crate) mod charter;
 pub(crate) mod cli;
@@ -61,7 +41,6 @@ pub(crate) mod render;
 pub(crate) mod rules;
 pub(crate) mod sidecar;
 pub(crate) mod strict;
-pub(crate) mod bash_annotator;
 pub(crate) mod util;
 pub mod walk;
 
@@ -78,31 +57,27 @@ pub use util::build_globset;
 /// process working directory.
 pub use charter::resolve_from_fs as resolve_charter;
 pub use charter::Charter;
+pub use cli::Format;
+use config::{CliOverrides, Config};
 pub use graph::{DirDeps, InternalDep, Warning};
 pub use model::{CodebaseMap, Coverage, DirNode, FileNode};
 pub use render::{for_format, Renderer};
-pub use cli::Format;
-use config::{CliOverrides, Config};
 use walk::LimitExceeded;
 
-/// A build-pipeline failure, split so each caller renders it for its own surface and
-/// classifies it into the right dispatch code: `Limit` is the runaway-scope trip (exit
-/// [`exit::RUNAWAY_SCOPE`] + [`exit::code::SCOPE_EXCEEDED`]), `Git` is a `--since` git
-/// failure ([`exit::code::GIT_ERROR`],
-/// exit [`exit::PRECONDITION`]), and `Other` is any remaining precondition failure (bad
-/// config, I/O → [`exit::code::PRECONDITION`]). Git is split from `Other` only so the two
-/// map to distinct, caller-actionable codes.
+/// A build-pipeline failure, split so each caller classifies it into the right dispatch code:
+/// `Limit` is the runaway-scope trip, `Git` a `--since` git failure, and `Other` any remaining
+/// precondition failure. Git is split from `Other` only so the two map to distinct,
+/// caller-actionable codes.
 pub(crate) enum BuildError {
     Limit(LimitExceeded),
     Git(anyhow::Error),
     Other(anyhow::Error),
 }
 
-/// A classified run failure: its process exit code, a stable string dispatch `code` (from
-/// [`exit::code`] — the JSON-envelope counterpart to the integer exit code), a human
-/// message, and the offending path when known. One object per failure class so an agent
-/// branches on `code`, never on prose — mirroring how [`strict::AnnotationViolation`]
-/// carries a structured, dispatchable diagnostic rather than one opaque string.
+/// A classified run failure: its process exit code, a stable string dispatch `code`, a human
+/// message, and the offending path when known. One object per failure class so an agent branches on
+/// `code` and never on prose — mirroring how [`strict::AnnotationViolation`] carries a structured,
+/// dispatchable diagnostic rather than one opaque string.
 pub(crate) struct Failure {
     exit_code: i32,
     code: &'static str,
@@ -160,25 +135,10 @@ impl Failure {
     }
 }
 
-/// Execute the parsed command, writing output to `out`. Returns the process exit code
-/// from the [`exit`] taxonomy — one disjoint code per failure class an agent branches on:
-///
-/// - [`exit::SUCCESS`] (0) — clean run (tree rendered, or `--strict-check` passed).
-/// - [`exit::STRICT_FAILURE`] (1) — `--strict-check` found at least one violation.
-/// - [`exit::USAGE`] (2) — clap emits it for a bad flag or value before `run()` is
-///   reached, and `bash-annotator` returns it directly for an invocation it cannot
-///   act on: no verb, two verbs, a mistyped flag `trailing_var_arg` swallowed, no `HOME`
-///   with no settings path given, or `--annotate-tool-output` with no producer argv.
-/// - [`exit::RUNAWAY_SCOPE`] (3) — a root exceeded `--max-files`; nothing written.
-/// - [`exit::PRECONDITION`] (4) — a precondition/environment error. Usually an `Err(_)`
-///   (missing root dir, git/`--since` failure, bad config) that the binary maps to 4;
-///   `bash-annotator` returns `Ok(4)` directly when a settings file cannot be read,
-///   parsed or replaced.
-///
-/// On a failure under `--format json`, the same exit code is returned but a structured
-/// error envelope (`{"schema":1,"error":{"code",…}}`, code from [`exit::code`]) is written
-/// to `out` first, so an agent parsing stdout gets a dispatch key instead of empty output;
-/// under any other format the failure surfaces as prose on `err` (behaviour unchanged).
+/// Execute the parsed command, writing output to `out`. Returns a process exit code from the
+/// [`exit`] taxonomy, which documents each class. On a failure under `--format json` a structured
+/// error envelope (code from [`exit::code`]) is written to `out` first, so an agent parsing stdout
+/// gets a dispatch key instead of empty output; other formats surface the failure as prose on `err`.
 pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
     // Dispatched FIRST: an accessory verb points at no Workspace and emits no Report, so nothing in SPEC.md governs it.
     if let Some(cli::Command::BashAnnotator(args)) = &cli.command {
@@ -328,17 +288,10 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
     Ok(exit::SUCCESS)
 }
 
-/// The one build pipeline: walk every root (runaway-scope capped, and `max_depth`-capped —
-/// the walk STOPS at the deepest level the render can show, so nothing below it is visited,
-/// counted, or graphed), optionally
-/// filter down to the `--since` change set plus its blast radius, build the
-/// dependency graph, and assemble the canonical `CodebaseMap`. Every `run`
-/// render (text/json/md) goes through here, so the map is byte-for-byte the same on
-/// each. Returns the map — which now CARRIES the manifest-parse
-/// warnings (so the JSON envelope surfaces them, and the CLI reads them off
-/// `map.warnings` to echo to stderr) — and the primary (first root's) resolved `ascii`
-/// glyph choice, handed back so the render path reuses the config this pipeline already
-/// loaded instead of re-loading (re-parse + regex recompile) it.
+/// The one build pipeline: walk every root (runaway-scope and `max_depth` capped, so nothing below
+/// the deepest displayable level is visited, counted or graphed), optionally filter to the
+/// `--since` change set plus its blast radius, build the graph, and assemble the `CodebaseMap`.
+/// Returns the map — which carries the manifest warnings — and the primary root's `ascii` choice.
 pub(crate) fn build_codebase_map(
     roots: &[PathBuf],
     overrides: &CliOverrides,
@@ -408,11 +361,10 @@ pub(crate) fn build_codebase_map(
     Ok((map, ascii))
 }
 
-/// Surface a runaway-scope abort at exit [`exit::RUNAWAY_SCOPE`], stdout kept clean of any
-/// partial tree either way. Under `--format json` the abort is emitted as the structured
-/// error envelope on stdout (code [`exit::code::SCOPE_EXCEEDED`]), so an agent parsing
-/// stdout still gets a dispatch key; otherwise the human note goes to `err` ONLY (stdout
-/// stays empty — no half-written JSON).
+/// Surface a runaway-scope abort at exit [`exit::RUNAWAY_SCOPE`], stdout kept clean of any partial
+/// tree either way. Under `--format json` the abort is emitted as the structured error envelope on
+/// stdout, so an agent parsing stdout still gets a dispatch key; otherwise the human note goes to
+/// `err` ONLY and stdout stays empty.
 fn report_limit_exceeded(
     out: &mut impl Write,
     err: &mut impl Write,
@@ -449,11 +401,10 @@ fn report_limit_exceeded(
     Ok(exit::RUNAWAY_SCOPE)
 }
 
-/// Print the machine-readable output schema (version 1) to `out` and return
-/// [`exit::SUCCESS`]: the map document plus its sub-shapes and `warnings`/error envelope
-/// ([`render::json::SCHEMA_DOC`]), then the strict-check report ([`strict::SCHEMA_DOC`]).
-/// Both strings are the SAME text embedded in those modules' rustdoc, so the advertised
-/// wire contract is sourced from ONE place per surface and cannot drift into a second copy.
+/// Print the machine-readable output schema (version 1) to `out` and return [`exit::SUCCESS`]: the
+/// map document plus its sub-shapes and error envelope, then the strict-check report. Both strings
+/// are the SAME text embedded in those modules' rustdoc, so the advertised wire contract is sourced
+/// from ONE place per surface and cannot drift into a second copy.
 fn print_schema(out: &mut impl Write) -> Result<i32> {
     write!(
         out,
@@ -480,11 +431,10 @@ pub(crate) fn resolve_roots(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     Ok(paths.to_vec())
 }
 
-/// Resolve `--strict-check` targets. Like [`resolve_roots`], but a target may be a single
-/// FILE as well as a directory — so an agent can lint the one file it just wrote, and a
-/// pre-commit hook can lint exactly the changed files, without pointing the check at a whole
-/// tree. Empty args still default to `.`; any path that is neither an existing file nor an
-/// existing directory fails fast, naming the offender (never a silent drop).
+/// Resolve `--strict-check` targets. Like [`resolve_roots`], but a target may be a single FILE as
+/// well as a directory, so an agent can lint the one file it just wrote and a pre-commit hook can
+/// lint exactly the changed files. Empty args still default to `.`; a path that is neither an
+/// existing file nor directory fails fast, naming the offender.
 pub(crate) fn resolve_lint_targets(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     if paths.is_empty() {
         return Ok(vec![PathBuf::from(".")]);

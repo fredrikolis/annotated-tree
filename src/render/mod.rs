@@ -15,12 +15,10 @@ pub trait Renderer {
     fn render(&self, map: &CodebaseMap) -> String;
 }
 
-/// The one-line overflow summary the text and markdown renderers share when a
-/// directory's children were capped by `--max-per-node`. Returns e.g.
-/// `+3 folders and 40 files, use --full to expand` (dropping a zero clause), or
-/// `None` when nothing was elided. Each renderer wraps it in its own delimiters,
-/// so the phrasing lives in ONE place (DRY). Glyph-neutral ASCII so it reads
-/// identically in `--ascii` mode.
+/// The one-line overflow summary the text and markdown renderers share when `--max-per-node` capped
+/// a directory's children — e.g. `+3 folders and 40 files, use --full to expand`, dropping a zero
+/// clause, or `None` when nothing was elided. Each renderer wraps it in its own delimiters, so the
+/// phrasing lives in ONE place. Glyph-neutral ASCII, so it reads identically in `--ascii` mode.
 pub(crate) fn elision_summary(elided_dirs: u32, elided_files: u32) -> Option<String> {
     let mut parts = Vec::new();
     if elided_dirs > 0 {

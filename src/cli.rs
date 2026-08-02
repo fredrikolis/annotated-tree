@@ -171,11 +171,10 @@ EXAMPLES:
     annotated-tree --strict-check f.rs  Lint a single file (e.g. a pre-commit hook)
     annotated-tree --since main .     Changed files plus their blast radius";
 
-/// The `ANNOTATION FORMAT:` help section — the compact head of the one canonical annotation
-/// guide ([`crate::guide::essence`]), whose `{TEMPLATE}`/`{EXAMPLE}` placeholders are filled
-/// from the ENFORCED contract ([`crate::strict::EXPECTED`] + [`crate::config::builtin_example`]), so
-/// `--help`, a failing `--strict-check`, and the guide doc advertise the SAME exemplar (no
-/// advertise-vs-enforce drift). Built at runtime because it is derived, not a literal.
+/// The `ANNOTATION FORMAT:` help section — the compact head of the one canonical annotation guide,
+/// whose `{TEMPLATE}`/`{EXAMPLE}` placeholders are filled from the ENFORCED contract, so `--help`,
+/// a failing `--strict-check` and the guide doc advertise the SAME exemplar. Built at runtime
+/// because it is derived, not a literal.
 fn annotation_help_block() -> String {
     crate::guide::essence()
 }

@@ -1,22 +1,14 @@
 // Concern: reports each annotation absent, malformed or over the bound, and each dangling or overfull `.annotation` file | Non-concern: the tree view | IO: (files, Config) -> (report, exit_code)
 
 //! # Strict-check JSON schema (`--strict-check --format json`)
-//!
-//! The structured verdict is a machine-consumable contract (the counterpart to the
-//! default human TEXT report), so its shape is documented here — mirroring the schema
-//! note in `render/json.rs`. It serializes the SAME [`StrictReport`] the TEXT report
-//! renders, so the two can never disagree on a verdict. The
-//! exact same text is exposed at runtime via `--schema` and defined ONCE in
-//! [`SCHEMA_DOC`] (an embedded file), so this rustdoc and the `--schema` output can never
-//! drift apart:
-//!
+//! The structured verdict is a machine-consumable contract, serializing the SAME [`StrictReport`]
+//! the TEXT report renders so the two cannot disagree. That text is exposed at runtime via
+//! `--schema` and defined ONCE in [`SCHEMA_DOC`], so this rustdoc and `--schema` cannot drift:
 #![doc = concat!("```text\n", include_str!("strict_schema.txt"), "```")]
 //!
-//! `category` maps `Outcome::Missing` -> `missing_annotation`, `Outcome::Malformed` ->
-//! `malformed_annotation` (a keyed field is absent or empty, or the ` | ` structure is
-//! broken), and `Outcome::TooLong` -> `annotation_too_long` (the annotation is longer than the
-//! configured bound). `found` carries the raw landing line even for ordinary code (so no
-//! misleading "unrecognized token" category is needed). Every category FAILS the check.
+//! `category` maps `Outcome::Missing` -> `missing_annotation`, `Malformed` ->
+//! `malformed_annotation` and `TooLong` -> `annotation_too_long`. `found` carries the raw landing
+//! line even for ordinary code, so no misleading "unrecognized token" category is needed.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -64,26 +56,19 @@ pub enum Category {
     AnnotationTooLong,
 }
 
-/// What `--max-length` / `[rules] max_annotation_length` measures. The flag's `--help` renders
-/// this rather than restating it.
-///
-/// It is not the only statement of the bound, and claiming otherwise here was itself wrong: the
-/// `note:` line carries the LIVE value (correct by construction), and the guide, config and
-/// README point at the rule for their own readers. What this owns is the DEFINITION. Seven
-/// copies existed when the bound changed from per-field to whole-annotation; five went stale,
-/// including the user-facing help — the same no-drift reason [`EXPECTED`] feeds the guide.
+/// What `--max-length` / `[rules] max_annotation_length` measures; `--help` renders this rather
+/// than restating it. Not the only statement of the bound — the `note:` line carries the LIVE
+/// value, and guide, config and README point at the rule — but this owns the DEFINITION. Seven
+/// copies existed when the bound went per-field to whole-annotation, and five went stale.
 pub const LENGTH_RULE: &str = "Fail --strict-check when an annotation is longer than N \
     characters, counted over the whole annotation rather than any one field, with the comment \
     marker excluded. 200 by default; 0 turns the bound off. Overrides \
     `[rules] max_annotation_length`.";
 
-/// The canonical annotation shape an agent should converge on — the fill-in `template`
-/// plus which named parts are ENFORCED (`required`) vs ADVISED (`recommended`). Every
-/// violation carries this so an agent reads the contract off the finding instead of
-/// reverse-engineering it. All three fields are `required`; `recommended` is empty (the
-/// old advisory boundary is now a required field). Part tokens come from
-/// [`crate::annotation`], the checker that produces them, so the contract and the delta
-/// name the SAME parts and cannot drift.
+/// The canonical annotation shape an agent should converge on — the fill-in `template` plus which
+/// parts are ENFORCED. Every violation carries it, so an agent reads the contract off the finding
+/// rather than reverse-engineering it. Part tokens come from [`crate::annotation`], the checker that
+/// produces them, so the contract and the delta name the SAME parts and cannot drift.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Expected {
     pub template: &'static str,
@@ -105,12 +90,10 @@ pub(crate) const EXPECTED: Expected = Expected {
     recommended: &[],
 };
 
-/// The machine-coded delta between the required shape and what `found` carries: which named
-/// parts are ABSENT-OR-EMPTY (`missing`), and how long the annotation is when it exceeds the
-/// configured bound (`length`, with the bound itself in `max`). An agent branches on the stable
-/// part tokens (`concern` | `non_concern` | `io`) and on these numbers, never on `message` prose.
-/// The list is omitted when empty and each number when absent, per the schema's absent-key
-/// convention.
+/// The machine-coded delta between the required shape and what `found` carries: which parts are
+/// ABSENT-OR-EMPTY, and how long the annotation is when it exceeds the bound. An agent branches on
+/// the stable part tokens and these numbers, never on `message` prose. The list is omitted when
+/// empty and each number when absent, per the schema's absent-key convention.
 #[derive(Debug, Clone, Serialize)]
 pub struct Defect {
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -151,14 +134,10 @@ pub struct AnnotationViolation {
     /// The offending line — the raw landing line (missing) or the extracted annotation
     /// (malformed / too long) — or `None` for an empty / unreadable head.
     pub found: Option<String>,
-    /// A FILE-TAILORED candidate to adapt: whatever descriptive text the file already
-    /// carries (or its stem) seeds the `Concern:` field, with the judgment fields scaffolded
-    /// as `<…>` placeholder slots (`<concern owned elsewhere>`, `(<inputs>) -> <outputs>`).
-    /// The check is form-only, so the stub itself is well-formed and applying it does not
-    /// stack a second failure — but a configured length bound still applies to it, and the
-    /// `<…>` slots are unfilled judgments an agent has to write out. Absent for
-    /// `annotation_too_long`: the only text available to seed a stub from is the over-length
-    /// annotation itself, so a stub would restate the defect.
+    /// A FILE-TAILORED candidate to adapt: whatever descriptive text the file carries (or its stem)
+    /// seeds `Concern:`, with the judgment fields scaffolded as `<…>` slots. The check is form-only,
+    /// so the stub is well-formed and applying it stacks no second failure. Absent for
+    /// `annotation_too_long`, where the only text to seed from is the over-length annotation itself.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggestion: Option<String>,
     /// Human prose for the cases where the machine fields alone would mislead: which fields are
@@ -170,12 +149,10 @@ pub struct AnnotationViolation {
 }
 
 impl AnnotationViolation {
-    /// The one human message line for this violation, keeping the machine-parseable
-    /// `path:line:` prefix. The TEXT report is exactly these, one per line, shared by the CLI
-    /// report and any renderer. The per-category FRAME lives here; the `detail` clause it
-    /// interpolates is authored where the defect is diagnosed ([`annotation`]'s
-    /// broken-structure and empty-field prose, and [`too_long_detail`]) — so a message is one
-    /// frame plus one carried clause, never two competing renderings.
+    /// The one human message line for this violation, keeping the machine-parseable `path:line:`
+    /// prefix; the TEXT report is exactly these, one per line. The per-category FRAME lives here and
+    /// the `detail` clause it interpolates is authored where the defect is diagnosed, so a message is
+    /// one frame plus one carried clause, never two competing renderings.
     fn message(&self) -> String {
         match self.category {
             Category::MissingAnnotation => {
@@ -226,11 +203,10 @@ impl AnnotationViolation {
     }
 }
 
-/// One architectural `[rules]` finding, its own shape (distinct from annotation
-/// violations), so consumers can tell a dependency-rule breach from a missing comment.
-/// Carries a stable dispatch [`code`](rules::RuleCode) and located facts — the same
-/// located-diagnostic contract as [`AnnotationViolation`], so an agent acts on
-/// structure and only humans read `message`.
+/// One architectural `[rules]` finding, its own shape so consumers can tell a dependency-rule breach
+/// from a missing comment. Carries a stable dispatch [`code`](rules::RuleCode) and located facts —
+/// the same contract as [`AnnotationViolation`], so an agent acts on structure and only humans read
+/// `message`.
 #[derive(Debug, Clone, Serialize)]
 pub struct RuleViolation {
     /// Stable dispatch code — an agent branches on this, not `message` prose.
@@ -246,12 +222,10 @@ pub struct RuleViolation {
     pub path: Option<String>,
 }
 
-/// One `<name>.annotation` sidecar that annotates nothing: the file it names is not there.
-/// Its own list, not a [`AnnotationViolation`], because it is not an issue about an Annotation
-/// — a dangling path claims a target that does not exist, which says nothing about any
-/// Annotation's parts — and not a [`RuleViolation`], because no `[rules]` table configures it
-/// and no package participates. Located and dual-rendered like both: `path` is what an agent
-/// acts on, `message` is what a human reads.
+/// One `<name>.annotation` sidecar that annotates nothing, because the file it names is not there.
+/// Its own list: a dangling path says nothing about any Annotation's parts, and no `[rules]` table
+/// configures it. Located and dual-rendered like both — `path` is what an agent acts on, `message`
+/// what a human reads.
 #[derive(Debug, Clone, Serialize)]
 pub struct OrphanSidecar {
     /// The sidecar, relative to the checked root (unix slashes).
@@ -262,12 +236,10 @@ pub struct OrphanSidecar {
     pub message: String,
 }
 
-/// One `.annotation` artifact — a directory charter or a `<name>.annotation` sidecar — with
-/// content below its first line. Its own list, not an [`AnnotationViolation`], because it is not
-/// an issue about an Annotation: every part may be present and non-empty, and the whole
-/// annotation inside the bound, and the defect is still that the FILE holds more than the one
-/// line it IS. The same non-Annotation class as [`OrphanSidecar`], located and dual-rendered the
-/// same way.
+/// One `.annotation` artifact — a directory charter or a sidecar — with content below its first
+/// line. Its own list: every part may be present, non-empty and inside the bound, and the defect is
+/// still that the FILE holds more than the one line it IS. Same non-Annotation class as
+/// [`OrphanSidecar`], located and dual-rendered the same way.
 #[derive(Debug, Clone, Serialize)]
 pub struct TrailingContent {
     /// The `.annotation` file, relative to the checked root (unix slashes).
@@ -278,11 +250,10 @@ pub struct TrailingContent {
     pub message: String,
 }
 
-/// The whole structured `--strict-check` verdict for one root: annotation violations,
-/// dangling sidecars, `.annotation` files with trailing content, PLUS architectural `[rules]`
-/// findings. This is the ONE producer every
-/// surface drives — the CLI's TEXT report ([`StrictReport::to_text`]) and `--format json`
-/// ([`StrictReport::to_json`]) — so no two surfaces can drift.
+/// The whole structured `--strict-check` verdict for one root: annotation violations, dangling
+/// sidecars, `.annotation` files with trailing content, plus architectural `[rules]` findings. The
+/// ONE producer every surface drives — the CLI's TEXT report and `--format json` — so no two
+/// surfaces can drift.
 #[derive(Debug, Clone, Serialize)]
 pub struct StrictReport {
     /// True iff there are no annotation violations, no dangling sidecars, no `.annotation` file
@@ -419,12 +390,10 @@ impl StrictReport {
     }
 }
 
-/// Append at most `cap` rendered lines from `items`, then — when any were withheld — one
-/// overflow marker naming the count and pointing at the uncapped JSON. This is the
-/// strict-report counterpart of the renderer's `--max-per-node` truncation: humans get a
-/// bounded, scannable report; `--format json` serializes every finding. `cap` is never
-/// `Some(0)` (config normalizes 0 to `None` = no cap), so at least one line always shows
-/// when the list is non-empty.
+/// Append at most `cap` rendered lines from `items`, then one overflow marker naming the count and
+/// pointing at the uncapped JSON. The strict-report counterpart of the renderer's `--max-per-node`
+/// truncation: humans get a bounded report, `--format json` serializes every finding. `cap` is never
+/// `Some(0)`, since config normalizes 0 to no cap, so a non-empty list always shows at least one.
 fn push_capped<T>(
     out: &mut String,
     items: &[T],
@@ -445,12 +414,10 @@ fn push_capped<T>(
     }
 }
 
-/// The structured verdict for one root: annotation linting AND (when the root's config
-/// configures any `[rules]`) architectural dependency rules, folded into ONE report.
-/// This is the single composition every surface drives — the CLI's TEXT and JSON strict
-/// paths — so a verdict is identical whichever asks.
-/// Building the graph is skipped entirely when no rule is active (a repo with no
-/// `[rules]` does zero extra work).
+/// The structured verdict for one root: annotation linting AND, when the config sets any `[rules]`,
+/// architectural dependency rules, folded into ONE report. The single composition every surface
+/// drives, so a verdict is identical whichever asks. The graph build is skipped entirely when no
+/// rule is active, so a repo with no `[rules]` does zero extra work.
 pub(crate) fn check_structured(
     root: &Path,
     files: &[PathBuf],
@@ -509,13 +476,10 @@ pub(crate) fn check_structured(
     }
 }
 
-/// The structured verdict for a SINGLE explicitly-named file — annotation linting ONLY. A
-/// lone file has no package neighbourhood, so the directory-scale signals `check_structured`
-/// derives from the dependency graph (`[rules]`, the charter gate) and the directory-wide
-/// sidecar census do not apply and no graph is built. Reuses the ONE per-file analyzer
-/// [`check_annotations`], so a file checked this way is checked byte-identically to the same
-/// file checked inside its directory; only the composition (no graph) differs. `root` is the
-/// file's parent, used solely to relativize the displayed path.
+/// The structured verdict for a SINGLE explicitly-named file — annotation linting ONLY. A lone file
+/// has no package neighbourhood, so the directory-scale signals and the sidecar census do not apply
+/// and no graph is built. Reuses the ONE per-file analyzer, so a file checked this way is checked
+/// byte-identically to the same file checked inside its directory; only the composition differs.
 pub(crate) fn check_file(root: &Path, files: &[PathBuf], config: &Config) -> StrictReport {
     let (violations, annotated_count, _annotated_files) = check_annotations(root, files, config);
     StrictReport {
@@ -692,12 +656,10 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
     }
 }
 
-/// The human `detail` for an over-length annotation — `"the annotation is 240 characters, over
-/// the 200 limit"`.
-/// Rendered once here, at construction, so the JSON `detail` and the TEXT message carry
-/// byte-identical prose. The numbers themselves live structurally in `defect.length` /
-/// `defect.max`, which is what an agent branches on; this is only their human rendering, and it
-/// borrows [`annotation`]'s count pluralization so `1 character` never renders as `1 characters`.
+/// The human `detail` for an over-length annotation, rendered once here at construction so the JSON
+/// `detail` and the TEXT message carry byte-identical prose. The numbers live structurally in
+/// `defect.length`/`defect.max`, which is what an agent branches on; this borrows [`annotation`]'s
+/// pluralization so `1 character` never renders as `1 characters`.
 fn too_long_detail(length: usize, max: usize) -> String {
     format!(
         "the annotation is {}, over the {max} limit",
@@ -705,11 +667,9 @@ fn too_long_detail(length: usize, max: usize) -> String {
     )
 }
 
-/// Enforce every `.annotation` charter breadcrumb in the tree's directories against the ONE
-/// three-field grammar (via [`annotation::analyze_charter`]) — opting in means doing it right,
-/// so a malformed breadcrumb is a fatal violation, not a silent no-op. The directories checked
-/// are exactly those the tree shows (every ancestor of a code file), so render and enforcement
-/// agree on scope.
+/// Enforce every `.annotation` charter breadcrumb against the ONE three-field grammar — opting in
+/// means doing it right, so a malformed breadcrumb is fatal, not a silent no-op. The directories
+/// checked are exactly those the tree shows, so render and enforcement agree on scope.
 fn charter_violations(root: &Path, files: &[PathBuf], config: &Config) -> Vec<AnnotationViolation> {
     let mut out = Vec::new();
     for dir in tree_dirs(root, files) {
@@ -736,12 +696,10 @@ fn charter_violations(root: &Path, files: &[PathBuf], config: &Config) -> Vec<An
     out
 }
 
-/// One violation for a BARE (marker-less) `.annotation` body — a directory's charter or a
-/// file's sidecar. Both hold the same three-field line with no comment marker, so both report
-/// identically: at the path of the file that HOLDS the line, with `marker` empty, the bare
-/// exemplar as `example`, and a marker-less suggestion (the leading space a marker would add is
-/// trimmed). `subject` names the thing being annotated — a directory or a file — and seeds the
-/// stub when the body carried no reusable text. ONE builder, so the two scales cannot drift.
+/// One violation for a BARE (marker-less) `.annotation` body — a directory's charter or a file's
+/// sidecar. Both hold the same three-field line with no marker, so both report identically: at the
+/// path of the file that HOLDS the line, with `marker` empty and a marker-less suggestion. `subject`
+/// names the thing annotated and seeds the stub. ONE builder, so the two scales cannot drift.
 fn bare_violation(
     path: String,
     language: &str,
@@ -776,12 +734,10 @@ fn bare_violation(
     }
 }
 
-/// Every `<name>.annotation` sidecar in the tree that annotates nothing — the file it names is
-/// not beside it. Scanned per directory (the same directory set `charter_violations` walks)
-/// rather than over the walked file set, because a dangling sidecar is precisely the one no
-/// listed file points at. A sidecar whose named file EXISTS is never reported here: it either
-/// carries that file's contract (checked with the file, above) or, for a file that can hold its
-/// own first line, is an ordinary file the tree lists like any other.
+/// Every `<name>.annotation` sidecar in the tree that annotates nothing, because the file it names
+/// is not beside it. Scanned per directory rather than over the walked file set, because a dangling
+/// sidecar is precisely the one no listed file points at. A sidecar whose named file EXISTS is never
+/// reported here: it is checked with that file, or is an ordinary file the tree lists.
 fn orphan_sidecars(root: &Path, files: &[PathBuf]) -> Vec<OrphanSidecar> {
     let mut out = Vec::new();
     for dir in tree_dirs(root, files) {
@@ -950,11 +906,10 @@ fn packages_owning_annotations(
         .collect()
 }
 
-/// The opt-in `require_package_charter` gate: every manifest-bearing package that OWNS an
-/// annotated file but resolves NO concern charter (a `.annotation` breadcrumb, else a promoted
-/// entry-file annotation — [`charter::resolve_from_fs`]) is a fatal `RuleViolation`. Off by
-/// default (checked by the caller); a package may honestly omit a charter, but enabling the
-/// rule promotes the always-available census into a gate. Deterministic (sorted by message).
+/// The opt-in `require_package_charter` gate: a manifest-bearing package that OWNS an annotated file
+/// but resolves NO concern charter is a fatal `RuleViolation`. Off by default — a package may
+/// honestly omit a charter — but enabling the rule promotes the always-available census into a gate.
+/// Deterministic, sorted by message.
 fn package_charter_violations(
     graph: &graph::Graph,
     root_canon: &Path,
@@ -988,14 +943,10 @@ fn package_charter_violations(
         .collect()
 }
 
-/// Build a FILE-TAILORED suggestion: whatever descriptive text the file already carries
-/// (`seed`, from [`annotation::concern_seed`]) or its stem seeds the `Concern:` field, then
-/// the judgment fields are scaffolded as `<…>` placeholder slots. The check is form-only, so
-/// the stub is well-formed: applying it fixes the form defect instead of stacking a second one.
-/// It is not a finished annotation — the `<…>` slots are the two judgments (the boundary and
-/// the contract) an agent still has to write out, and a configured `max_annotation_length`
-/// applies to the stub like any other line (`<concern owned elsewhere>` alone is 25
-/// characters, and a reused `seed` carries whatever length the file already had).
+/// Build a FILE-TAILORED suggestion: the file's own descriptive text (`seed`) or its stem seeds
+/// `Concern:`, and the judgment fields are scaffolded as `<…>` slots. The check is form-only, so the
+/// stub is well-formed and applying it fixes the defect rather than stacking a second. It is not
+/// finished — the slots are judgments an agent writes — and a length bound applies to it as to any line.
 fn tailored_suggestion(marker: &str, path: &str, seed: Option<&str>) -> String {
     let concern = match seed {
         Some(s) => s.to_string(),

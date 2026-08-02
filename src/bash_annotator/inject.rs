@@ -3,12 +3,10 @@
 use super::lex::{lex, Kind, Token};
 use super::map::shape_of;
 
-/// How to spell the annotator so the rewritten command can actually run.
-///
-/// The annotator is this same binary, so this is `current_exe()` plus the verb. `None` is
-/// effectively unreachable (it needs `current_exe()` itself to fail) and the caller still treats it
-/// as "leave the command alone", which stays the correct answer for a process that cannot locate
-/// itself.
+/// How to spell the annotator so the rewritten command can actually run: `current_exe()` plus the
+/// verb, since the annotator is this same binary. `None` is effectively unreachable — it needs
+/// `current_exe()` itself to fail — and the caller then treats it as "leave the command alone",
+/// which stays the correct answer for a process that cannot locate itself.
 fn wrapper_command() -> Option<String> {
     // ALWAYS absolute: the command may itself have changed `PATH`, and since the annotator is the READER of the pipe, failing to start it gives the producer SIGPIPE — no output at all, exit 141.
     let found = std::env::current_exe().ok()?;
@@ -19,48 +17,22 @@ fn wrapper_command() -> Option<String> {
     ))
 }
 
-/// Downstream stages that leave the output still a list of path-bearing lines.
-///
-/// The annotator is the LAST stage of the pipeline, so these programs see the tool's RAW output
-/// and behave exactly as they would without this installed — `sort` orders the real paths, `uniq`
-/// compares the real lines. That is why the list can be permissive where an earlier design, which
-/// annotated BEFORE them, had to refuse `sort`, `uniq` and `sort -u` outright.
-///
-/// What matters now is only whether what reaches US is still a list of paths. Each entry here
-/// emits a subset, a reordering, or a re-numbering of the lines it read. `wc` is excluded because
-/// it emits a COUNT — a number that could itself resolve to a file — and a byte count (`head -c`)
-/// is excluded because it can cut a record in half.
-/// `sed` is deliberately absent: `sed s/a/b/` rewrites the TEXT of a line, so the path the
-/// annotator then reads is not the path the tool printed — it took the substituted name's
-/// contract and put it on the original's line. `grep` is present only as a FILTER; the flags that
-/// make it emit something other than whole matched lines are refused in `line_safe`.
+/// Downstream stages that leave the output still a list of path-bearing lines. The annotator is
+/// the LAST stage, so these see the tool's RAW output; each emits a subset, a reordering or a
+/// re-numbering of what it read. `wc` and `head -c` are excluded (a count, and a cut record),
+/// `sed` because it rewrites line TEXT, and `grep` is present only as a filter.
 const LINE_SAFE: &[&str] = &["head", "tail", "sort", "uniq", "cat", "nl", "tac", "grep"];
 
 /// The subset of `LINE_SAFE` that emits its input's lines IN ORDER, dropping only from the END.
-///
-/// `ls -R` and multi-operand `ls` name entries relative to the last `<dir>:` header they printed,
-/// so their output means what it says ONLY in the order printed. A stage that reorders (`sort`,
-/// `tac`) hoists headers away from their blocks, and one that drops from anywhere (`tail`,
-/// `grep -v`, `uniq`) can delete a header outright; either way the entries under it fall back to
-/// the base directory and take a same-named cwd file's contract.
-///
-/// Keeping the ORDER is necessary but not sufficient: the stage must also leave the line's TEXT
-/// alone. A header is recognised by ending in `:` and naming a directory, so `nl` and `cat -n` —
-/// which move nothing but prefix every line with a number and a tab — stop it being recognised at
-/// all. Only `cat` (identity) and `head` (a leading run) qualify, and `cat`'s own text-altering
-/// flags are refused in `line_safe`.
+/// `ls -R` names entries relative to the last `<dir>:` header printed, so reordering or dropping
+/// detaches a header from its block. Order alone is not enough — the TEXT must survive too, which
+/// is why `nl` and `cat -n` are out: a numbered line stops looking like a header.
 const ORDER_PRESERVING: &[&str] = &["cat", "head"];
 
-/// Stepped over when looking for the program a stage actually runs.
-///
-/// `command`, `sudo` and `env` are deliberately NOT here. Each changes how the program resolves:
-/// `command grep` and `\grep` are the canonical ways to say "the real binary, not the shell
-/// function", so honouring them means leaving the command alone; `sudo` runs under `secure_path`
-/// and a different `$HOME`; `env -i` clears the environment. Rewriting any of them either inverts
-/// the caller's intent or produces a command that exits 127.
-/// `exec` is deliberately absent: it REPLACES the shell, so `exec ls; echo x` never reaches the
-/// `echo`. Run inside our subshell it would replace only the subshell and the `echo` would start
-/// running — a change to what the command does, not to what it prints.
+/// Stepped over when looking for the program a stage actually runs. `command`, `sudo` and `env` are
+/// deliberately NOT here — each changes how the program resolves, so rewriting one inverts the
+/// caller's intent or produces a command that exits 127. `exec` is absent too: it REPLACES the
+/// shell, so inside our subshell a following `echo` would start running.
 const WRAPPERS: &[&str] = &["nohup", "nice", "stdbuf"];
 /// Same, but consumes one argument of its own first.
 const ARGFUL_WRAPPERS: &[&str] = &["timeout"];
@@ -204,11 +176,10 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
     Some((out, annotated))
 }
 
-/// Does this invocation print `<dir>:` block headers, making its output order load-bearing?
-///
-/// `ls` does so when recursing, and whenever it was given more than one operand. The operand
-/// count is approximated by counting non-flag words — an over-count only ever refuses a rewrite,
-/// which is free, while an under-count would let a wrong contract through.
+/// Does this invocation print `<dir>:` block headers, making its output order load-bearing? `ls`
+/// does when recursing, and whenever given more than one operand. The operand count is approximated
+/// by counting non-flag words: an over-count only refuses a rewrite, which is free, while an
+/// under-count would let a wrong contract through.
 fn header_scoped(prog: &str, words: &[&Token]) -> bool {
     if prog != "ls" {
         return false;
@@ -398,12 +369,10 @@ fn line_safe(prog: &str, words: &[&Token]) -> bool {
     }
 }
 
-/// The token that names the program a stage runs, and that name as written.
-///
-/// Only `nohup`, `nice`, `stdbuf`, `exec` and `timeout` are stepped over, and leading `VAR=value`
-/// assignments are skipped. `command`, `sudo` and `env` deliberately are NOT: each changes how the
-/// program resolves, and the caller who typed them is asking for exactly that. The name is
-/// returned verbatim — no directory is stripped — so the caller can require a bare name.
+/// The token that names the program a stage runs, and that name as written. Only `nohup`, `nice`,
+/// `stdbuf`, `exec` and `timeout` are stepped over, and leading `VAR=value` assignments skipped.
+/// `command`, `sudo` and `env` deliberately are NOT: each changes how the program resolves, and the
+/// caller who typed them is asking for that. The name is returned verbatim, no directory stripped.
 fn program_of<'a>(words: &[&'a Token]) -> Option<(&'a Token, String)> {
     let mut i = 0;
     while i < words.len() {

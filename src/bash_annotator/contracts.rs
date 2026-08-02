@@ -6,11 +6,10 @@ use std::path::{Path, PathBuf};
 use crate::annotation;
 use crate::config::{CliOverrides, Config};
 
-/// Path-keyed contracts and charters, memoised for one process.
-///
-/// Both lookups delegate to the `annotated-tree` library rather than re-deriving what a contract
-/// looks like: the grammar and the language table are the product's to define, and a wrapper that
-/// disagreed with the tool about a file's contract would be worse than one that showed none.
+/// Path-keyed contracts and charters, memoised for one process. Both lookups delegate to the
+/// `annotated-tree` library rather than re-deriving what a contract looks like: the grammar and the
+/// language table are the product's to define, and a wrapper that disagreed with the tool about a
+/// file's contract would be worse than one that showed none.
 pub struct Contracts {
     config: Option<Config>,
     files: HashMap<PathBuf, Option<String>>,
@@ -29,11 +28,9 @@ impl Contracts {
     }
 
     /// What a path declares about itself: a directory's charter, a file's first line, or `None`
-    /// when it declares nothing.
-    ///
-    /// `None` rather than a placeholder is deliberate. Output that enumerates a directory carries
-    /// every lockfile and build artifact, and a "(none)" beside each would bury the entries that
-    /// do speak.
+    /// when it declares nothing. `None` rather than a placeholder is deliberate — output that
+    /// enumerates a directory carries every lockfile and build artifact, and a "(none)" beside
+    /// each would bury the entries that do speak.
     pub fn describe(&mut self, path: &Path) -> Option<String> {
         if path.is_dir() {
             self.charter(path)

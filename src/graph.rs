@@ -25,11 +25,10 @@ pub struct DirDeps {
     pub external: Vec<String>,
 }
 
-/// The package-level internal-edge list, keyed by canonical name + ecosystem. This
-/// is the graph `build` already computes for directory keying; exposing it lets
-/// policy evaluation (`rules`) reason over edges, and blast-radius (`--since`) map
-/// files to their owning package, without re-walking or re-parsing. `dir` is the
-/// package's canonical directory, matching the `dir_deps` keys.
+/// The package-level internal-edge list, keyed by canonical name + ecosystem — the same one `build`
+/// already computes for directory keying. Exposing it lets `rules` reason over edges and `--since`
+/// map files to their owning package, without re-walking or re-parsing. `dir` is the package's
+/// canonical directory, matching the `dir_deps` keys.
 #[derive(Debug, Clone)]
 pub struct PackageEdges {
     pub name: String,
@@ -38,12 +37,10 @@ pub struct PackageEdges {
     pub dir: PathBuf,
 }
 
-/// A non-fatal issue found while building the graph: a manifest a parser could not
-/// read or parse. The map is still produced (just missing that package's edges), so the
-/// failure is surfaced as a located, dispatchable diagnostic — a stable `code`, the
-/// offending `path`, and a human `message` — mirroring [`crate::strict::AnnotationViolation`]
-/// so an agent branches on `code` instead of scraping prose. The CLI prints `message` to
-/// stderr; the `--format json` envelope carries the whole struct in `warnings`.
+/// A non-fatal issue found while building the graph: a manifest a parser could not read or parse.
+/// The map is still produced, just missing that package's edges, so the failure surfaces as a
+/// located diagnostic — stable `code`, offending `path`, human `message` — and an agent branches on
+/// `code`. The CLI prints `message` to stderr; `--format json` carries the struct in `warnings`.
 #[derive(Debug, Clone, Serialize)]
 pub struct Warning {
     pub code: &'static str,
@@ -68,19 +65,10 @@ struct Package {
     external: Vec<String>,
 }
 
-/// Scan `roots` for every known manifest, then resolve the graph. Directories are
-/// keyed by canonicalized absolute path. The manifest walk applies the SAME filter as
-/// the code-file walk (gitignore, hidden, `tests`, `-I` excludes), and `max_depth` bounds
-/// it to ONE level below the deepest row that walk can show (`walk::cap_manifest_depth`) —
-/// a package's manifest lives inside the package, one level under the row that names it, so
-/// this reads the manifest of every DISPLAYED directory and of no other. "What's graphed"
-/// is therefore exactly "what's shown": a shallow render gives a shallower graph of the same
-/// tree (a package below the cutoff is not a row and contributes no edges), without a
-/// visible row losing the dependency facts it is there to state. `None` scans every depth
-/// (`--strict-check`'s `[rules]` graph, which is not a
-/// rendered view). A multi-root run drives filter and cap from the PRIMARY (first) root's
-/// ignore settings, matching how the primary root's config already governs the shared
-/// render/rules choices.
+/// Scan `roots` for every known manifest, then resolve the graph. Directories are keyed by
+/// canonical absolute path. The manifest walk applies the SAME filter as the code-file walk, and
+/// `max_depth` bounds it one level below the deepest displayed row, so "what's graphed" is exactly
+/// "what's shown". `None` scans every depth; a multi-root run drives both from the PRIMARY root.
 pub fn build(
     roots: &[PathBuf],
     gitignore: bool,
@@ -194,11 +182,9 @@ pub fn build(
 }
 
 impl Graph {
-    /// The transitive reverse-dependency closure of `pkg` within ecosystem `eco`:
-    /// every package that (directly or indirectly) depends on `pkg`. This is the
-    /// "blast radius" — who could break if `pkg` changes — walked over the resolved
-    /// internal edges (the inverse of the `used_by` relation). The seed `pkg` itself
-    /// is NOT included; only its dependents. Cycle-safe via a visited set, so a
+    /// The transitive reverse-dependency closure of `pkg` within ecosystem `eco` — the "blast
+    /// radius", every package that directly or indirectly depends on it — walked over the resolved
+    /// internal edges. The seed itself is NOT included. Cycle-safe via a visited set, so a
     /// dependency cycle terminates instead of looping.
     pub fn reverse_closure(&self, pkg: &str, eco: Ecosystem) -> HashSet<String> {
         let mut result = HashSet::new();
@@ -219,11 +205,10 @@ impl Graph {
         result
     }
 
-    /// The set of package directories in the blast radius of a change set: for each
-    /// changed file, resolve its owning package (nearest ancestor package dir), take
-    /// that package's reverse-dependency closure, and map those dependents back to
-    /// their directories. The returned dirs are canonical, so a walked file is "in
-    /// the blast radius" iff it `starts_with` one of them.
+    /// The set of package directories in the blast radius of a change set: for each changed file,
+    /// resolve its owning package, take that package's reverse-dependency closure, and map those
+    /// dependents back to their directories. The returned dirs are canonical, so a walked file is in
+    /// the blast radius iff it `starts_with` one of them.
     pub fn blast_radius_dirs(&self, changed: &HashSet<PathBuf>) -> HashSet<PathBuf> {
         let mut affected: HashSet<(Ecosystem, String)> = HashSet::new();
         for file in changed {
@@ -385,7 +370,10 @@ mod tests {
             ("gateway", &["api"]),
         ]);
         assert_eq!(closure(&g, "core"), vec!["api", "gateway", "worker"]);
-        assert!(closure(&g, "gateway").is_empty(), "a leaf nothing depends on has an empty radius");
+        assert!(
+            closure(&g, "gateway").is_empty(),
+            "a leaf nothing depends on has an empty radius"
+        );
     }
 
     #[test]

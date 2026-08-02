@@ -8,32 +8,23 @@ use ignore::{DirEntry, WalkBuilder};
 use crate::config::Config;
 use crate::sidecar;
 
-/// The metadata filename a directory carries its concern charter in — a bare three-field
-/// annotation line whose only subject is the enclosing directory. Recognized as METADATA,
-/// not content: it is dot-hidden (so the walk below, which sets `.hidden(true)`, never emits
-/// it as a tree node) and extension-less (so `collect_code_files` never treats it as a code
-/// file). It is instead read directly by charter resolution (`crate::charter`), the one read
-/// the display filters must not hide. Named here, at the walk that defines what the tree shows,
-/// so "the file the tree omits" and "the file charter resolution reads" reference one constant.
-///
-/// The same name suffixed onto a FILE (`trials.csv.annotation`) is that file's sidecar
-/// (`crate::sidecar`) — one metadata name at both scales, and one exclusion criterion below.
+/// The metadata filename a directory carries its concern charter in — a bare three-field line whose
+/// only subject is the enclosing directory. METADATA, not content: dot-hidden and extension-less, so
+/// neither the walk nor `collect_code_files` emits it, and `crate::charter` reads it directly.
+/// Suffixed onto a FILE (`trials.csv.annotation`) the same name is that file's sidecar.
 pub const CHARTER_FILE: &str = ".annotation";
 
-/// Why a `.annotation` file never appears as its own row — the exclusion criterion a Report
-/// states so a reader can apply it to any path. It covers both scales: a directory's charter
-/// (dot-hidden, pruned by the walk's `hidden(true)`) and a file's `<name>.annotation` sidecar
-/// (dropped by [`collect_code_files`] below). Declared here, at the walk that enforces it, and
-/// rendered by `lib::run` rather than restated there.
+/// Why a `.annotation` file never appears as its own row — the exclusion criterion a Report states
+/// so a reader can apply it to any path. It covers both scales: a directory's charter, pruned as
+/// hidden, and a file's sidecar, dropped by [`collect_code_files`]. Declared here, at the walk that
+/// enforces it, and rendered by `lib::run` rather than restated there.
 pub const ANNOTATION_FILE_CRITERION: &str =
     "a `.annotation` file is never listed as its own row — a directory's `.annotation` charter \
      and a file's `<name>.annotation` sidecar are shown on the row of the path they annotate";
 
-/// The walk was aborted because a root exceeded its `max_files` cap. A typed
-/// boundary error (Fail-Fast): the walk stops before any model/graph/render work,
-/// and the caller decides how to surface it (`lib::run` exits with `exit::RUNAWAY_SCOPE`,
-/// on `--format json` after emitting the structured error envelope). Carries the `limit`
-/// and offending `root` — all a caller needs to phrase its diagnostic.
+/// The walk was aborted because a root exceeded its `max_files` cap. A typed boundary error: the
+/// walk stops before any model, graph or render work, and the caller decides how to surface it.
+/// Carries the `limit` and offending `root` — all a caller needs to phrase its diagnostic.
 #[derive(Debug, Clone)]
 pub struct LimitExceeded {
     pub limit: usize,
@@ -54,12 +45,10 @@ impl std::fmt::Display for LimitExceeded {
 // A real `std::error::Error` so a library consumer can bubble `collect_code_files` failures through `?` into `anyhow`/`Box<dyn Error>` like any other error, not just match the struct.
 impl std::error::Error for LimitExceeded {}
 
-/// The single directory-filtering policy shared by every walk of the tree: honor
-/// `.gitignore` (per `gitignore`), skip hidden files, prune `node_modules`/
-/// `__pycache__`/`.git`/`tests` (the last unless `include_tests`), and apply the
-/// `-I/--ignore` `excludes`. Both the code-file walk and the manifest/graph walk
-/// build on this so that "what's graphed" equals "what's shown" — they differ ONLY
-/// in which surviving entries they keep (known-extension files vs. manifest names).
+/// The single directory-filtering policy shared by every walk of the tree: honor `.gitignore`, skip
+/// hidden files, prune `node_modules`/`__pycache__`/`.git`/`tests`, and apply the `-I` excludes.
+/// Both the code-file walk and the manifest walk build on it, so "what's graphed" equals "what's
+/// shown" — they differ ONLY in which surviving entries they keep.
 pub fn configured_walk(
     root: &Path,
     gitignore: bool,
@@ -81,12 +70,10 @@ pub fn configured_walk(
     builder
 }
 
-/// Everything ONE walk of a root yields: the files to annotate, and every directory visited
-/// (the root itself included). Directories are carried alongside the files because a directory
-/// earns its row by being VISITED, not by holding a listable file somewhere beneath it — with
-/// the walk capped by `-L` nothing below the cutoff is visited, so "does a listable file lie
-/// under this directory?" can no longer be asked there, and answering it at one depth but not
-/// another would be worse than either rule. Both lists are in the walker's order.
+/// Everything ONE walk of a root yields: the files to annotate, and every directory visited. A
+/// directory earns its row by being VISITED, not by holding a listable file beneath it — with the
+/// walk capped by `-L` nothing below the cutoff is visited, so that question cannot be asked there,
+/// and answering it at one depth but not another would be worse. Both lists are in walker order.
 pub(crate) struct WalkedTree {
     pub files: Vec<PathBuf>,
     pub dirs: Vec<PathBuf>,
@@ -99,46 +86,26 @@ fn row_depth(max_depth: Option<usize>) -> Option<usize> {
     max_depth.map(|level| level.max(1))
 }
 
-/// Bound a walk at the deepest ROW the render can show, so the traversal STOPS there instead
-/// of visiting the whole tree and discarding it at render time. This governs what the map
-/// LISTS — every directory and file it yields is a row.
-///
-/// The manifest walk deliberately runs ONE level deeper ([`cap_manifest_depth`]). The two
-/// bounds are different numbers for different jobs and must not be collapsed back into one:
-/// this one decides which paths are listed, that one decides which rows can state their own
-/// dependency facts.
+/// Bound a walk at the deepest ROW the render can show, so the traversal STOPS there instead of
+/// visiting the whole tree and discarding it at render time. This governs what the map LISTS. The
+/// manifest walk deliberately runs ONE level deeper ([`cap_manifest_depth`]): different numbers for
+/// different jobs — this decides which paths are listed, that which rows state their own dep facts.
 pub(crate) fn cap_row_depth(builder: &mut WalkBuilder, max_depth: Option<usize>) {
     builder.max_depth(row_depth(max_depth));
 }
 
-/// Bound the MANIFEST walk one level below the deepest row ([`cap_row_depth`]) — because a
-/// package's manifest lives INSIDE the package, one level under the row that names it. At
-/// row depth N a package directory is listed only if it sits at depth ≤ N, and its
-/// `Cargo.toml`/`package.json`/`pyproject.toml`/`go.mod` therefore sits at depth ≤ N+1. So
-/// this bound reads the manifest of every directory the map DISPLAYS, and of no other:
-/// a package below the cutoff is not a row, its manifest is at depth ≥ N+2, and it
-/// contributes no edges — the `-L` cap still cuts the graph's input, it just no longer cuts
-/// a visible row's own facts out from under it.
-///
-/// This walk yields no rows (`crate::graph` keeps only manifests, and the model looks up
-/// dep facts by directory), so the extra level can never add a path to the map.
+/// Bound the MANIFEST walk one level below the deepest row ([`cap_row_depth`]), because a package's
+/// manifest lives INSIDE the package. So this reads the manifest of every DISPLAYED directory and
+/// of no other: a package below the cutoff is no row and contributes no edges. This walk yields no
+/// rows itself, so the extra level can never add a path to the map.
 pub(crate) fn cap_manifest_depth(builder: &mut WalkBuilder, max_depth: Option<usize>) {
     builder.max_depth(row_depth(max_depth).map(|deepest_row| deepest_row + 1));
 }
 
-/// Walk `root` once, down to `max_depth`, and collect what the tree shows: every directory
-/// visited, plus every file to annotate — those whose extension maps to a known language, PLUS
-/// any that match the `include` selector globs (the `--include` positive filter, letting an
-/// unrecognized or extensionless file into the tree), PLUS any that carry a `<name>.annotation`
-/// sidecar (writing the sidecar is itself the opt-in — see [`sidecar::annotates`]). Pass an
-/// EMPTY `GlobSet` for the recognized-languages-plus-sidecars behaviour (the strict-check path
-/// does, so linting never reaches a file whose comment grammar is unknown and which has no
-/// sidecar either). Sidecar files themselves are dropped, per [`ANNOTATION_FILE_CRITERION`].
-/// Directories named `node_modules`, `__pycache__`, `.git`, and `tests` (unless enabled) are
-/// pruned wholesale. Aborts with `LimitExceeded` the instant the (already-filtered) FILE count
-/// exceeds `config.limits.max_files`; a `None` cap never trips. The count is over what this
-/// capped walk visits — a file below the depth cutoff is never reached, so it can no longer
-/// abort a run that would never have shown it.
+/// Walk `root` once to `max_depth`, collecting every directory plus every file to annotate: known
+/// extensions, `include` glob matches, and files carrying a `<name>.annotation` sidecar. Pass an
+/// EMPTY `GlobSet` for recognized-languages-plus-sidecars. `node_modules`, `__pycache__`, `.git`
+/// and `tests` are pruned. Aborts with `LimitExceeded` once the filtered FILE count passes the cap.
 pub(crate) fn collect_tree(
     root: &Path,
     config: &Config,

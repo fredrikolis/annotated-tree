@@ -271,14 +271,10 @@ fn the_rewritten_pipeline_reraises_the_tools_own_exit_code() {
     );
 }
 
-/// A path a listing names is OPENED to read its first line, and a path is not always a file whose
-/// first line arrives. Opening a FIFO blocks until someone writes to it, and reading a character
-/// device (`/dev/ptmx`, `/dev/tty`) blocks until it has something to say — so `ls` over a directory
-/// holding either never returns, and the agent loses the whole tool call to a harness timeout
-/// rather than merely losing the contracts.
-///
-/// Not a `SHAPES` row: a row that hangs cannot report anything, so this one runs the annotator
-/// under `timeout` and fails on the timeout's own exit code.
+/// A path a listing names is OPENED to read its first line, and not every path is a file whose
+/// first line arrives: a FIFO blocks until someone writes, a character device until it has
+/// something to say — so `ls` over a directory holding either never returns and the agent loses the
+/// whole call. Not a `SHAPES` row: a row that hangs cannot report, so this runs under `timeout`.
 #[test]
 fn a_path_that_is_not_a_regular_file_is_never_read() {
     if !have_ls() {
@@ -313,18 +309,10 @@ fn a_path_that_is_not_a_regular_file_is_never_read() {
     );
 }
 
-/// THE ANNOTATION TABLE — which file each printed line is ABOUT.
-///
-/// Rounds 3 and 4 each fixed one shape and broke another, because each was written and tested
-/// alone: making `ls docs` resolve against its operand broke `ls FILE DIR` and every
-/// operand-prefixed grep path, and adding `sole_file` for unprefixed grep left matched content
-/// outranking it. These only hold simultaneously, so they are asserted simultaneously, and every
-/// mismatch is reported in one run.
-///
-/// Columns: the argv, substrings that MUST appear, substrings that must NOT, and why the row is
-/// here.
-/// One row of the annotation table: what to run, what must and must not appear, and why the row
-/// exists. Named fields rather than a tuple — a reader should not have to count positions.
+/// THE ANNOTATION TABLE — which file each printed line is ABOUT. Rounds 3 and 4 each fixed one
+/// shape and broke another because each was tested alone, so these hold simultaneously or not at
+/// all, and every mismatch is reported in one run. Columns: the argv, substrings that MUST appear,
+/// substrings that must NOT, and why the row is here. Named fields so nobody counts positions.
 struct Shape {
     args: &'static [&'static str],
     must: &'static [&'static str],

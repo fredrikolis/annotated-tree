@@ -26,15 +26,10 @@ pub fn named_target(path: &Path) -> Option<PathBuf> {
     Some(path.with_file_name(stem))
 }
 
-/// The file `path` is a sidecar FOR, or `None` when it is not a sidecar at all.
-///
-/// A sidecar annotates only a file that maps to no comment marker. That is the whole reason
-/// an Annotation's location stays determined by the path it annotates: a file that CAN hold a
-/// first-line comment must, so there is never a second place to look and no precedence rule to
-/// diagnose. `foo.rs.annotation` beside a `foo.rs` is therefore not a sidecar — it is an
-/// ordinary file, and the tree lists it like any other. Neither is one whose named file is
-/// absent: that is a dangling path, reported by `--strict-check`, not an annotation of
-/// anything.
+/// The file `path` is a sidecar FOR, or `None` when it is not a sidecar at all. A sidecar annotates
+/// only a file that maps to no comment marker, which is what keeps an Annotation's location
+/// determined by the path it annotates. So `foo.rs.annotation` beside a `foo.rs` is an ordinary
+/// file, and one whose named file is absent is a dangling path `--strict-check` reports.
 pub fn target_of(path: &Path, config: &Config) -> Option<PathBuf> {
     let target = named_target(path)?;
     let annotatable = target.is_file() && config.language_for_path(&target).is_none();
@@ -49,11 +44,10 @@ pub fn annotates(file: &Path, config: &Config) -> bool {
     config.language_for_path(file).is_none() && path_for(file).is_file()
 }
 
-/// The raw body of `file`'s sidecar, or `None` when there is no sidecar file. Read DIRECTLY,
-/// never through the code-file walk, for the same reason [`crate::charter::read_charter_file`]
-/// is: the walk deliberately hides this row. Returned untrimmed so a caller can tell an EMPTY
-/// sidecar (an opt-in file with nothing in it — a defect `--strict-check` reports) from an
-/// absent one.
+/// The raw body of `file`'s sidecar, or `None` when there is none. Read DIRECTLY rather than
+/// through the code-file walk, for the reason [`crate::charter::read_charter_file`] is: the walk
+/// deliberately hides this row. Returned untrimmed so a caller can tell an EMPTY sidecar — a defect
+/// `--strict-check` reports — from an absent one.
 pub fn body(file: &Path) -> Option<String> {
     std::fs::read_to_string(path_for(file)).ok()
 }

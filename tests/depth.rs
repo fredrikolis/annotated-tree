@@ -99,15 +99,10 @@ fn a_directory_with_nothing_listable_below_is_listed_at_every_depth() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// `-L LEVEL` cuts the input to the dependency-graph analyzer at the level BELOW the deepest
-/// row, not at the row itself: a package's manifest lives inside the package, one level under
-/// the row that names it, so a row that IS displayed states its own dependency facts. What the
-/// cap still cuts is a package the render does not show — it is no row, its manifest is two
-/// levels past the cutoff, and it contributes no resolved edge.
-///
-/// The fixture puts `a/` and `b/` at depth 1 (rows under `-L 1`, manifests at depth 2) and
-/// `nested/c/` at depth 2 (a row only from `-L 2` up, manifest at depth 3). `a` declares a
-/// path dependency on both.
+/// `-L LEVEL` cuts the graph analyzer's input one level BELOW the deepest row, since a package's
+/// manifest lives inside the package — so a displayed row always states its own dependency facts,
+/// and only a package the render does not show is cut. The fixture puts `a/` and `b/` at depth 1
+/// and `nested/c/` at depth 2, with `a` declaring a path dependency on both.
 #[test]
 fn a_displayed_row_keeps_its_deps_while_a_package_below_the_cutoff_is_dropped() {
     let dir = temp_dir("graph");

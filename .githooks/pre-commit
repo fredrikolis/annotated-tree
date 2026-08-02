@@ -59,7 +59,7 @@ fi
 # `///`, leaving doc-comment volume unbounded. The fork adds `file-comments` and is proposed
 # upstream; when that merges and releases, this becomes a version pin again.
 LINT_REPO="https://github.com/fredrikolis/cargo-lint-extra"
-LINT_REV="848bc0c616e94c16c32607be9603a770f55bbebe"
+LINT_REV="7a232179e45414108d28047acd6315d9a2c4946b"
 LINT_ROOT="target/lint-tools/${LINT_REV:0:12}"
 LINT_BIN="$LINT_ROOT/bin/cargo-lint-extra"
 

@@ -12,12 +12,10 @@ enum Want {
 }
 use Want::{Leave, Rewrite};
 
-/// THE DECISION TABLE.
-///
-/// One row per command form, which is how a decision surface should be frozen: a gap is then
-/// visible as a missing row rather than as a test nobody happened to write. Every row is here
-/// because a reviewer found the behaviour wrong, or because it guards a property the design rests
-/// on — the third field says which.
+/// THE DECISION TABLE. One row per command form, which is how a decision surface should be frozen:
+/// a gap is then visible as a missing row rather than as a test nobody happened to write. Every row
+/// is here because a reviewer found the behaviour wrong, or because it guards a property the design
+/// rests on — the third field says which.
 const CASES: &[(&str, Want, &str)] = &[
     // ---- the mapped tools, plainly -------------------------------------------------------
     ("grep -rn foo .", Rewrite, "the base case"),

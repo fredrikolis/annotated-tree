@@ -2,13 +2,10 @@
 
 use std::path::PathBuf;
 
-/// The only signal cargo gives a package for reaching the person running `cargo install`.
-///
-/// It is a blunt one: it fires on every build, not only on an install, so it is spent only when
-/// BOTH halves hold — the machine runs Claude Code, and the hook is not on yet. A developer who
-/// has already set it up, and anyone with no Claude Code at all, never sees it. Nothing here
-/// installs, reads a secret, or writes: `--install-claude-hook` remains something a user
-/// chooses to run.
+/// The only signal cargo gives a package for reaching the person running `cargo install`, and a
+/// blunt one: it fires on every build, so it is spent only when BOTH halves hold — the machine runs
+/// Claude Code, and the hook is not on yet. Nothing here installs, reads a secret, or writes;
+/// `--install-claude-hook` remains something a user chooses to run.
 fn main() {
     // Re-run when the thing being checked changes, or the warning would linger until a clean build long after the hook was switched on.
     println!("cargo:rerun-if-env-changed=HOME");

@@ -6,25 +6,10 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
-/// The set of files that changed under `root` relative to `since` (a git ref such
-/// as `HEAD`, a branch, or a commit SHA), returned as absolute, canonical paths so
-/// they compare byte-for-byte against the walked file set.
-///
-/// Scope is the developer's *full working delta*, the union of:
-///   * `git diff --name-only <since>` — every tracked file whose working-tree
-///     content differs from `<since>` (staged and unstaged alike, since `git diff`
-///     against a commit compares the working tree to that commit), and
-///   * `git ls-files --others --exclude-standard --full-name` — untracked,
-///     non-ignored files (`--full-name` keeps them repo-root-relative like `diff`).
-///
-/// Rationale: "what did I touch since `<since>`" must include brand-new files a
-/// review cares about most, not just edits to already-tracked ones; `--exclude-standard`
-/// keeps `.gitignore`d noise out. Deleted paths naturally drop out — they no longer
-/// exist, so they canonicalize away and never match a walked file.
-///
-/// Fail-Fast (never a silent empty set): a missing `git`, a non-repo `root`, or a
-/// bad `<since>` ref each surface as an explicit error, so an empty result always
-/// means "nothing changed", never "git quietly failed".
+/// Files changed under `root` relative to `since`, as absolute canonical paths so they compare
+/// byte-for-byte against the walked set: the union of `git diff --name-only` and `git ls-files
+/// --others --exclude-standard --full-name`, so new files count and deleted ones canonicalize
+/// away. Fail-fast — a missing git, non-repo root or bad ref errors rather than returning empty.
 pub fn changed_files(root: &Path, since: &str) -> Result<HashSet<PathBuf>> {
     // `rev-parse --show-toplevel` doubles as the is-this-a-git-repo probe and gives us the base to resolve git's repo-root-relative paths against.
     let toplevel = git(root, &["rev-parse", "--show-toplevel"])?;

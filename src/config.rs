@@ -99,19 +99,14 @@ pub struct Display {
     pub ascii: bool,
     pub gitignore: bool,
     pub include_tests: bool,
-    /// Show at most this many subdirectories AND this many files per directory,
-    /// replacing the overflow with a `[+N folders and F files]` marker. `None`
-    /// means "no cap" (only via `--full`/`--max-per-node 0`). A display concern,
-    /// so it lives here, not in `Limits` — it truncates the rendered tree, it does
-    /// not bound the walk (every file is still visited).
+    /// Show at most this many subdirectories AND files per directory, replacing the overflow with a
+    /// `[+N folders and F files]` marker; `None` means no cap. A display concern, so it lives here
+    /// rather than in `Limits` — it truncates the rendered tree, it does not bound the walk.
     pub max_per_node: Option<usize>,
-    /// Glob selectors that ADD files of any type to the walk beyond the recognized-language
-    /// set (the `--include`/`[display] include` positive filter). A file is listed when its
-    /// extension maps to a known language OR it matches one of these; an unrecognized match
-    /// shows its annotation via marker-agnostic extraction. Empty means the default behaviour
-    /// (recognized languages only). Compiled to a `GlobSet` at the walk call site (via
-    /// [`crate::util::build_globset`]); kept as patterns here so config resolution stays
-    /// glob-free and a bad pattern surfaces at the walk, next to `-I`'s.
+    /// Glob selectors that ADD files of any type beyond the recognized-language set. A file is
+    /// listed when its extension maps to a known language OR matches one of these; an unrecognized
+    /// match shows its annotation via marker-agnostic extraction. Compiled to a `GlobSet` at the
+    /// walk call site, so a bad pattern surfaces there, next to `-I`'s.
     pub include: Vec<String>,
 }
 
@@ -135,21 +130,18 @@ pub struct Language {
     pub pattern: Option<Regex>,
 }
 
-/// The canonical, marker-free annotation body — one concrete, self-conforming instance of
-/// the fixed three-field format. The FORMAT is invariant, so the per-language example is
-/// DERIVED from (this body + the language's comment marker), never stored/configured. Kept
-/// distinct from [`crate::strict::EXPECTED`]'s abstract `{placeholder}` template: this is a
-/// filled, valid line, that is the fill-in contract.
+/// The canonical, marker-free annotation body — one concrete, self-conforming instance of the fixed
+/// three-field format. The FORMAT is invariant, so a per-language example is DERIVED from this body
+/// plus the language's marker, never configured. Distinct from [`crate::strict::EXPECTED`]'s
+/// abstract template: this is a filled, valid line, that is the fill-in contract.
 const EXAMPLE_BODY: &str =
     "Concern: runs the core loop | Non-concern: transport | IO: (Job) -> Result";
 
 impl Language {
     /// A full, conformant annotation line for this language — [`EXAMPLE_BODY`] wrapped in the
-    /// language's comment marker (line token, else block open/close, else docstring delimiter)
-    /// — shown verbatim in `--help` and `--strict-check` diagnostics. Derived rather than
-    /// configured because the format is invariant; a tested invariant
-    /// ([`tests::builtin_examples_are_self_conforming`]) guarantees it round-trips through the
-    /// extractor+validator as `Outcome::Ok`.
+    /// language's comment marker — shown verbatim in `--help` and `--strict-check` diagnostics.
+    /// Derived rather than configured because the format is invariant, and a tested invariant
+    /// guarantees it round-trips through the extractor and validator as `Outcome::Ok`.
     pub fn example(&self) -> String {
         if let Some(line) = &self.line {
             format!("{line} {EXAMPLE_BODY}")
@@ -322,21 +314,17 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
 }
 
 /// A representative conformant annotation line for `--help`'s ANNOTATION FORMAT block: the
-/// canonical [`EXAMPLE_BODY`] with the default `//` line marker (the help text separately
-/// notes how the marker varies by language). Derived from the same body every language's
-/// [`Language::example`] wraps, so `--help` and `--strict-check` cannot advertise different
-/// exemplars.
+/// canonical [`EXAMPLE_BODY`] with the default `//` marker, the help text separately noting how the
+/// marker varies. Derived from the same body every language's [`Language::example`] wraps, so
+/// `--help` and `--strict-check` cannot advertise different exemplars.
 pub fn builtin_example() -> String {
     format!("// {EXAMPLE_BODY}")
 }
 
 /// Resolve the `[rules]` table. Takes the CLI overrides because `max_annotation_length` has a
-/// `--max-length` flag, which must win over the merged config layers like every other CLI
-/// value (built-in < user < repo < CLI). A resolved bound of `0` normalizes to `None` (no
-/// bound) exactly as [`resolve_max_per_node`] does for its own numeric knob: an empty field is
-/// already fatal, so a literal bound of 0 could only mean "fail every annotation", which is
-/// never what a caller asks for — and it doubles as the way to switch the shipped bound (200,
-/// from the built-in layer) off from the command line.
+/// `--max-length` flag, which must win over the merged layers like every other CLI value. A
+/// resolved bound of `0` normalizes to `None`, as [`resolve_max_per_node`] does: an empty field is
+/// already fatal, so a literal 0 could only mean "fail everything" — and it is how you switch it off.
 fn resolve_rules(raw: RawRules, cli: &CliOverrides) -> Rules {
     Rules {
         deny: raw

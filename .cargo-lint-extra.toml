@@ -20,24 +20,16 @@ max_ratio = 0.20
 max_consecutive = 1
 
 # Per FILE, where inline-comments cannot see: it inspects function bodies only and never counts
-# `///`, so module headers, item docs and impl blocks are unbounded without this.
-#
-# What this DOES bound: `//` runs anywhere in the file, including outside function bodies where
-# inline-comments is blind, plus the `//` share of the file.
-#
-# What it deliberately does NOT bound: doc-comment volume. Both doc knobs are off after measuring
-# what they cost here. A run cap fights rustdoc convention — this crate's `//!` front page is a
-# published API doc whose example is fenced CODE, so any cap either permits an essay or demands
-# deleting real documentation. And with docs counted, no achievable ratio separates a documented
-# API surface from an essay: `exit.rs` is 12 lines of `pub const` and would be over 30% at its
-# leanest. Doc quality stays a review concern, like annotation truth — the gate guarantees form,
-# never worth.
+# `///`, so module headers, item docs and impl blocks are unbounded without it. Doc comments are
+# counted and doc runs capped: a one-or-two-line doc per item clears both easily, and what does
+# not clear them is an essay. Fenced examples count as code, not prose, so a doctest costs
+# nothing.
 [rules.file-comments]
 level = "deny"
 max_ratio = 0.30
-count_doc_comments = false
+count_doc_comments = true
 max_consecutive = 1
-max_doc_consecutive = 0
+max_doc_consecutive = 4
 
 # Off deliberately, not by omission: these arrived with the pinned revision and are performance
 # and style opinions this repo has not adopted. Left on they would fail commits over choices

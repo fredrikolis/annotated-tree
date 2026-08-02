@@ -149,10 +149,9 @@ fn strict_check_accepts_a_single_file() {
     );
 }
 
-/// `--strict-check --format json` is the machine-consumable counterpart to the TEXT
-/// report: the same verdict, structured. Freeze the shape (not the whole fixture) —
-/// `passed`/counts at the envelope, and each violation carrying the fields an agent
-/// acts on (category, real line, a conformant example). The exit code stays 1 on
+/// `--strict-check --format json` is the machine-consumable counterpart to the TEXT report: the
+/// same verdict, structured. Freeze the shape, not the whole fixture — `passed`/counts at the
+/// envelope, and each violation carrying the fields an agent acts on. The exit code stays 1 on
 /// failure, matching the text path.
 #[test]
 fn strict_check_json_emits_structured_violations() {
@@ -313,10 +312,9 @@ fn md_format_surfaces_package_headings() {
     }
 }
 
-/// A FAILING `--strict-check` prints the annotation guide inline on stdout by default (the
-/// teaching rides on the surface the agent already reads); `--no-guide` suppresses it; a
-/// PASSING run never shows it. Assert the guide's load-bearing invariants — the enforced
-/// template, the GOOD/FAILS contrast, and the brevity doctrine — rather than byte-freezing
+/// A FAILING `--strict-check` prints the annotation guide inline on stdout by default; `--no-guide`
+/// suppresses it, and a PASSING run never shows it. Assert the guide's load-bearing invariants — the
+/// enforced template, the GOOD/FAILS contrast, the brevity doctrine — rather than byte-freezing
 /// instructional prose. Uses a throwaway fixture with one unannotated file.
 #[test]
 fn strict_failure_prints_guide_on_stdout() {

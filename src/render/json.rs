@@ -1,13 +1,9 @@
 // Concern: serializes the canonical map as the versioned, machine-readable JSON contract | Non-concern: building the map or human formatting | IO: (CodebaseMap) -> String
 
 //! # Public JSON schema (version 1)
-//!
-//! The output is a stable, versioned contract other programs parse, so its shape
-//! is documented here (the external-consumer exception to self-documenting code). The
-//! exact same text is exposed at runtime via `--schema` and defined ONCE in
-//! [`SCHEMA_DOC`] (an embedded file), so this rustdoc and the `--schema` output can
-//! never drift apart:
-//!
+//! The output is a stable, versioned contract other programs parse, so its shape is documented
+//! here — the external-consumer exception to self-documenting code. That text is exposed at
+//! runtime via `--schema` and defined ONCE in [`SCHEMA_DOC`], so the two cannot drift apart:
 #![doc = concat!("```text\n", include_str!("json_schema.txt"), "```")]
 
 use serde::Serialize;
@@ -20,26 +16,20 @@ use super::Renderer;
 /// Current schema version. Bump on any breaking change to the shape above.
 const SCHEMA_VERSION: u32 = 1;
 
-/// The human-readable wire schema (map document, sub-shapes, `warnings`, and the failure
-/// error envelope) as text — the SAME string embedded in this module's rustdoc above. The
-/// `--schema` flag prints it so an agent can fetch the contract programmatically; sourcing
-/// both surfaces from this one embedded file keeps the advertised schema from drifting.
+/// The wire schema as text — the SAME string embedded in this module's rustdoc above, so the
+/// rustdoc and what `--schema` prints are sourced from one file and cannot drift.
 pub const SCHEMA_DOC: &str = include_str!("json_schema.txt");
 
 pub struct JsonRenderer;
 
-/// The versioned envelope. `roots`/`warnings` borrow the map, so serialization is
-/// zero-copy over the canonical model. `warnings` is omitted when empty, consistent with
-/// the schema's absent-key convention — so a clean run's output is byte-for-byte unchanged.
+/// The versioned envelope. `roots`/`warnings` borrow the map, so serialization is zero-copy, and
+/// `warnings` is omitted when empty — a clean run's output stays byte-for-byte unchanged.
 #[derive(Serialize)]
 struct Document<'a> {
     schema: u32,
     roots: &'a [DirNode],
-    /// Layer-0 annotation-coverage signal: present ONLY when some listed code file lacks an
-    /// annotation, carrying a stable dispatch `code` plus the `{annotated, total}` counts an
-    /// agent converges on. Omitted at full coverage (absent-key convention), so a
-    /// fully-annotated repo's document is byte-for-byte unchanged — the structured
-    /// counterpart of the text map's self-extinguishing coverage note.
+    /// Present ONLY when some listed code file lacks an annotation, so a fully-annotated repo's
+    /// document is byte-for-byte unchanged — the structured counterpart of the text map's note.
     #[serde(skip_serializing_if = "Option::is_none")]
     coverage: Option<CoverageReport>,
     #[serde(skip_serializing_if = "slice_is_empty")]
@@ -57,9 +47,7 @@ struct CoverageReport {
     total: u32,
 }
 
-/// `skip_serializing_if` predicate for the borrowed `warnings` slice (serde hands the
-/// closure a reference to the field, i.e. `&&[Warning]`, which `<[_]>::is_empty` can't
-/// take directly).
+/// Serde hands the predicate `&&[Warning]`, which `<[_]>::is_empty` cannot take directly.
 fn slice_is_empty<T>(s: &&[T]) -> bool {
     s.is_empty()
 }
@@ -83,11 +71,9 @@ impl Renderer for JsonRenderer {
     }
 }
 
-/// The failure counterpart to [`Document`]: the same versioned envelope carrying an
-/// `error` object instead of `roots`. Emitted to stdout on a failed `--format json` run
-/// so an agent parses one dispatch `code`
-/// rather than scraping prose off stderr. `path` is omitted (not null) when unknown,
-/// consistent with the success schema's key-presence convention.
+/// The failure counterpart to [`Document`]: the same envelope carrying an `error` object instead of
+/// `roots`, so an agent parses one dispatch `code` rather than scraping prose off stderr. `path` is
+/// omitted rather than null when unknown, per the success schema's key-presence convention.
 #[derive(Serialize)]
 struct ErrorDocument<'a> {
     schema: u32,
@@ -102,10 +88,8 @@ struct ErrorBody<'a> {
     path: Option<&'a str>,
 }
 
-/// Serialize a structured error envelope (schema-1) for a failed run. `code` is a stable
-/// key from [`crate::exit::code`]; `message` is human detail; `path` names the offender
-/// when known. Every failure path that emits `--format json` calls this, so the wire
-/// error shape lives in ONE place.
+/// Serialize a structured error envelope for a failed run. Every failure path that emits
+/// `--format json` calls this, so the wire error shape lives in ONE place.
 pub fn render_error(code: &str, message: &str, path: Option<&str>) -> String {
     let document = ErrorDocument {
         schema: SCHEMA_VERSION,

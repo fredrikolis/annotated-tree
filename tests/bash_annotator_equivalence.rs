@@ -3,24 +3,10 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// THE COMMAND TABLE — append to it.
-///
-/// This is the cheap way to report a bug in this tool: add the command you typed. Every entry is
-/// run twice, once as written and once as the hook rewrites it, and the two must agree. A row that
-/// fails is a defect, and it does not matter whether the command is eligible for rewriting — an
-/// ineligible one must come back untouched, which this checks just as strictly.
-///
-/// WHAT THIS CAN AND CANNOT CATCH. It compares BYTES, so it catches structural damage: a
-/// reordering (`| sort`), a dropped or invented line, a changed exit code, a rewrite that is not
-/// valid shell (a trailing `#` comment, a leading redirect), an annotator that fails to start and
-/// leaves the producer on SIGPIPE. Four of the five MAJOR findings from three review rounds were
-/// of that kind and would have been caught here in 0.7s.
-///
-/// It CANNOT catch a contract that belongs to the wrong file. Appending `docs/a.rs`'s contract to
-/// a line about `./a.rs` is still an append, and this sees only that something was appended — a
-/// mutation test confirmed it stays green with such a bug reintroduced. That class is the
-/// `SHAPES` table's job in `bash_annotator_run.rs`, which asserts WHICH contract a line carries. The two
-/// tables are complementary, and neither is sufficient alone.
+/// THE COMMAND TABLE — append to it. Every entry runs twice, as written and as rewritten, and
+/// the two must agree BYTE for byte; an ineligible command must come back untouched. That catches
+/// structural damage but NOT a contract belonging to the wrong file, since appending the wrong
+/// contract is still an append — `SHAPES` in `bash_annotator_run.rs` owns that class.
 const COMMANDS: &[&str] = &[
     // plain shapes
     "ls",

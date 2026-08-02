@@ -16,23 +16,17 @@ use crate::sidecar;
 #[derive(Serialize)]
 pub struct CodebaseMap {
     pub roots: Vec<DirNode>,
-    /// Non-fatal manifest-parse warnings from the graph walk. NOT part of the tree — the
-    /// model builder never sets it; the shared `build_codebase_map` pipeline attaches the
-    /// graph's warnings here so the JSON renderer can surface them in the envelope's
-    /// `warnings` array. The text/md
-    /// renderers ignore it (they iterate `roots` only), so their output is unchanged.
+    /// Non-fatal manifest-parse warnings from the graph walk. NOT part of the tree — the model
+    /// builder never sets it; `build_codebase_map` attaches the graph's warnings here so the JSON
+    /// renderer can surface them in the envelope. The text and markdown renderers iterate `roots`
+    /// only, so their output is unchanged.
     pub warnings: Vec<crate::graph::Warning>,
 }
 
-/// Annotation coverage across every code file the tree lists: how many carry a first-line
-/// annotation (`annotated`) out of the `total`. This is the Layer-0 motivation signal — a
-/// code file with no annotation is invisible to an agent reading the tree — surfaced on the
-/// unconditional map surfaces (the text footer note and the JSON `coverage` object) so it
-/// reaches agents that never invoke `--strict-check`. Counted over the `FileNode`s actually
-/// in the tree (post `--max-per-node` truncation); `--strict-check` stays the authoritative,
-/// untruncated per-file lister. Coverage is a HAS-ANY-annotation measure (a non-conforming
-/// comment still renders in the tree, so the file is visible) — distinct from the strict
-/// report's `annotated_count`, which counts strict conformance.
+/// Annotation coverage across every code file the tree lists. Surfaced on the unconditional map
+/// surfaces so it reaches agents that never invoke `--strict-check`, and counted over the
+/// `FileNode`s actually in the tree (post-truncation). A HAS-ANY-annotation measure, distinct from
+/// the strict report's `annotated_count`, which counts strict conformance.
 pub struct Coverage {
     pub annotated: u32,
     pub total: u32,
@@ -91,11 +85,10 @@ fn accumulate_coverage(dir: &DirNode, coverage: &mut Coverage) {
 #[derive(Serialize)]
 pub struct DirNode {
     pub name: String,
-    /// The directory's concern charter, resolved most-explicit-first (a `.annotation`
-    /// breadcrumb, else the promoted annotation of the code entry file). `None` — and omitted
-    /// from JSON — for a charter-less directory, so such a tree stays byte-for-byte unchanged
-    /// and the schema stays additive under `schema: 1`. Rendered on the directory row beside
-    /// the observed dep facts: authored intent cross-checked against the graph.
+    /// The directory's concern charter, resolved most-explicit-first. `None` — and omitted from
+    /// JSON — for a charter-less directory, so such a tree stays byte-for-byte unchanged and the
+    /// schema stays additive under `schema: 1`. Rendered on the directory row beside the observed
+    /// dep facts: authored intent cross-checked against the graph.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub charter: Option<Charter>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -124,11 +117,10 @@ pub struct FileNode {
     pub annotation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub age_secs: Option<i64>,
-    /// True when `annotation` came from the `<name>.annotation` SIDECAR beside this file
-    /// rather than from its own first line — the one case where a real file (the sidecar)
-    /// carries no row of its own. This is where a JSON consumer reads the exclusion criterion
-    /// off the data, the way the text map reads it off the note. Omitted when false, so an
-    /// in-file annotation serializes byte-identically.
+    /// True when `annotation` came from the `<name>.annotation` SIDECAR rather than the file's own
+    /// first line — the one case where a real file carries no row of its own. This is where a JSON
+    /// consumer reads the exclusion criterion off the data, as the text map reads it off the note.
+    /// Omitted when false, so an in-file annotation serializes byte-identically.
     #[serde(skip_serializing_if = "is_false")]
     pub sidecar: bool,
 }
@@ -145,15 +137,10 @@ struct RawNode {
     files: BTreeMap<String, PathBuf>,
 }
 
-/// Build the canonical model for one root. `files` and `dirs` are absolute paths under
-/// `root` as the walk yielded them; `graph` is keyed by canonicalized directory path. All
-/// annotation and mtime reads happen here — renderers are pure over the returned tree.
-///
-/// Every WALKED directory gets a node, whether or not a listable file lies beneath it. The
-/// walk is what defines the tree's contents (`crate::walk`), and under a `-L` cap it stops
-/// at the cutoff — so "has a listable descendant" is a question the deepest rows can no
-/// longer answer, and asking it at one depth but not another would be the worse rule. An
-/// empty directory is therefore listed at every depth.
+/// Build the canonical model for one root. All annotation and mtime reads happen here, so renderers
+/// stay pure over the returned tree. Every WALKED directory gets a node whether or not a listable
+/// file lies beneath it: under a `-L` cap the walk stops at the cutoff, so "has a listable
+/// descendant" is a question the deepest rows cannot answer. An empty directory is listed at every depth.
 pub fn build(
     root: &Path,
     files: &[PathBuf],
@@ -282,13 +269,10 @@ fn convert(
     }
 }
 
-/// Resolve a directory's charter from the already-built tree, most-explicit-first: a
-/// `.annotation` breadcrumb (its presence overrides, even if malformed — then `None` here and
-/// `--strict-check` flags it), else the promoted annotation of the code entry file. Promotion
-/// REUSES the already-extracted `FileNode.annotation` (no re-parse) — a crate's `src/lib.rs`
-/// (else `src/main.rs`), or a direct-child module/package/index/doc entry file. The one
-/// annotation grammar splits it (`charter::from_line`); the entry-file tables live in
-/// `charter`, so the model and the strict-check filesystem resolver share both.
+/// Resolve a directory's charter from the already-built tree, most-explicit-first: a `.annotation`
+/// breadcrumb — whose presence overrides even when malformed — else the promoted annotation of the
+/// code entry file, REUSING the already-extracted `FileNode.annotation`. The entry-file tables live
+/// in `charter`, so the model and the strict-check filesystem resolver share them.
 fn resolve_charter(abs_dir: &Path, dirs: &[DirNode], files: &[FileNode]) -> Option<Charter> {
     if let Some(content) = charter::read_charter_file(abs_dir) {
         return charter::from_file_body(&content);
@@ -333,11 +317,9 @@ fn dir_deps(abs_dir: &Path, graph: &HashMap<PathBuf, DirDeps>) -> Option<DirDeps
     graph.get(abs_dir).cloned()
 }
 
-/// Resolve a file's annotation, and whether it came from a sidecar. A bounded head-only read
-/// for a file that can hold a comment; an unreadable file, or one with no leading annotation,
-/// yields `None` (graceful, never fatal).
-///
-/// A sidecar's presence WINS over a marker-agnostic read of the file's own head — the same
+/// Resolve a file's annotation, and whether it came from a sidecar. A bounded head-only read for a
+/// file that can hold a comment; an unreadable file, or one with no leading annotation, yields
+/// `None`. A sidecar's presence WINS over a marker-agnostic read of the file's own head — the same
 /// most-explicit-first rule by which a directory's `.annotation` overrides a promoted entry line.
 fn file_annotation(abs: &Path, config: &Config) -> (Option<String>, bool) {
     if let Some(lang) = config.language_for_path(abs) {

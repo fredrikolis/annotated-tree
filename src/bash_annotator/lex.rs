@@ -16,12 +16,10 @@ pub struct Token {
     pub end: usize,
 }
 
-/// The tokens, plus the three constructs that make a command unmodellable.
-///
-/// Lexing rather than pattern-matching is not fastidiousness. String tests on shell syntax get
-/// three things wrong, each silently skipping commands that were perfectly eligible:
-/// `2>/dev/null` is a *stderr* redirect, a `|` inside `grep "a\|b"` is part of a quoted token, and
-/// `||` is "or else" rather than a pipe.
+/// The tokens, plus the three constructs that make a command unmodellable. Lexing rather than
+/// pattern-matching is not fastidiousness: string tests on shell syntax get three things wrong,
+/// each silently skipping eligible commands — `2>/dev/null` is a stderr redirect, a `|` inside
+/// `grep "a\|b"` is part of a quoted token, and `||` is "or else" rather than a pipe.
 pub struct Lexed {
     pub tokens: Vec<Token>,
     /// `$( )` or a backtick: a second command this does not model.

@@ -4,19 +4,16 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
 
-/// The command written into the settings file. A bare name, resolved from `PATH` by the harness,
-/// so the entry stays valid when the binary is reinstalled somewhere else. (The annotator inside a
-/// rewritten pipeline uses an ABSOLUTE path instead — see `inject::wrapper_command`, where a bare
-/// name that failed to resolve made the producer take SIGPIPE. Here the harness runs the command
-/// directly, so there is no pipe to break and the reinstall-proof spelling wins.)
+/// The command written into the settings file: a bare name, resolved from `PATH` by the harness, so
+/// the entry stays valid when the binary is reinstalled elsewhere. The annotator inside a rewritten
+/// pipeline uses an ABSOLUTE path instead, because a bare name that failed to resolve made the
+/// producer take SIGPIPE; here the harness runs the command directly, so there is no pipe to break.
 const HOOK_COMMAND: &str = "annotated-tree bash-annotator --rewrite-tool-call";
 
 /// The entries we install, as `(hook event, matcher)`. Both run the SAME command — the injector
-/// branches on the event name it is handed — so `is_ours` recognises either one.
-///
-/// `SessionStart` names every source Claude Code has, alternation and all, because the announcement
-/// is worth exactly one telling per context: `compact` is the one that matters, since a session
-/// long enough to be compacted would otherwise lose it and never hear it again.
+/// branches on the event name it is handed — so `is_ours` recognises either. `SessionStart` names
+/// every source Claude Code has because the announcement is worth one telling per context, and
+/// `compact` is the one that matters: a compacted session would otherwise never hear it again.
 const ENTRIES: &[(&str, &str)] = &[
     ("PreToolUse", "Bash"),
     ("SessionStart", "startup|resume|clear|compact|fork"),
@@ -51,12 +48,10 @@ pub fn default_path() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".claude").join("settings.json"))
 }
 
-/// Is this one of OUR entries? Matched on a SUBSTRING, the `--rewrite-tool-call` flag, which no
+/// Is this one of OUR entries? Matched on a SUBSTRING — the `--rewrite-tool-call` flag, which no
 /// other program's hook entry can contain — so an entry written as an absolute path is still
-/// recognised as ours and is not duplicated or orphaned. A final-path-segment match cannot be used
-/// once the command carries a verb and a flag after the path: the last `/`-separated segment is
-/// then the whole `annotated-tree bash-annotator --rewrite-tool-call` tail for a bare entry and
-/// for an absolute one alike, so it would compare equal by accident rather than by rule.
+/// recognised and is not duplicated or orphaned. A final-path-segment match cannot serve once the
+/// command carries a verb and flag: that tail is identical for a bare entry and an absolute one.
 fn is_ours(entry: &Value) -> bool {
     entry
         .get("hooks")
@@ -113,11 +108,10 @@ fn write(path: &Path, root: &Map<String, Value>) -> Result<(), String> {
     std::fs::rename(&tmp, path).map_err(|e| format!("cannot replace {}: {e}", path.display()))
 }
 
-/// Add every entry in [`ENTRIES`], keeping every other key. Running it again changes nothing.
-///
-/// Each event is considered on its own, so an adopter who installed when there was only a
-/// `PreToolUse` entry gains the `SessionStart` one on a re-install rather than being told the hook
-/// is already present. The file is written only if something was actually added.
+/// Add every entry in [`ENTRIES`], keeping every other key; running it again changes nothing. Each
+/// event is considered on its own, so an adopter who installed when there was only a `PreToolUse`
+/// entry gains the `SessionStart` one on a re-install rather than being told the hook is already
+/// present. The file is written only if something was actually added.
 pub fn install(path: &Path) -> Result<Outcome, String> {
     let mut root = read(path)?;
     let mut added = false;

@@ -51,10 +51,9 @@ pub fn from_line(text: &str) -> Option<Charter> {
 }
 
 /// A [`Charter`] from the WHOLE body of an `.annotation` file, or `None` when the file holds
-/// anything but whitespace past its first line. `.annotation` is ONE bare line, so a body with
-/// prose under it resolves to NO charter and the directory row stays silent — "render, don't
-/// reason", with `--strict-check` reporting the file. This is the file-scale twin of
-/// [`from_line`], which stays the line-scale entry the entry-file promotion path uses.
+/// anything but whitespace past its first line. `.annotation` is ONE bare line, so prose under it
+/// resolves to NO charter and the directory row stays silent — "render, don't reason", with
+/// `--strict-check` reporting the file. The file-scale twin of [`from_line`].
 pub fn from_file_body(body: &str) -> Option<Charter> {
     annotation::content_past_first_line(body)
         .is_none()
@@ -89,11 +88,10 @@ pub fn read_charter_file(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(CHARTER_FILE)).ok()
 }
 
-/// Resolve `dir`'s charter from the FILESYSTEM (the strict-check path, which holds no built
-/// tree): `.annotation` breadcrumb first (its presence overrides, even if it fails to parse —
-/// most-explicit-wins), else the promoted annotation of the code entry file. Re-reads the entry
-/// file's head via [`annotation::extract`]; the model path instead reuses the already-extracted
-/// `FileNode.annotation` (no re-parse). Both share [`from_line`] and the entry-file tables.
+/// Resolve `dir`'s charter from the FILESYSTEM (the strict-check path, which holds no built tree):
+/// `.annotation` breadcrumb first — its presence overrides even if it fails to parse — else the
+/// promoted annotation of the code entry file. Re-reads that head via [`annotation::extract`], where
+/// the model path reuses the already-extracted `FileNode.annotation`.
 pub fn resolve_from_fs(dir: &Path, config: &Config) -> Option<Charter> {
     if let Some(content) = read_charter_file(dir) {
         return from_file_body(&content);
