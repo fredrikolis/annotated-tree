@@ -246,7 +246,7 @@ ann_problems=("${check_problems[@]}")
 # Fires only when a human-facing doc is in the diff. A reminder to run a neutral, fresh-context
 # review against docs/communication-style.md and attest; the hook cannot stop a determined agent
 # from rubber-stamping, so this is a nudge, not a guarantee. The keys are that doc's rule names.
-if printf '%s\n' "$staged" | grep -qE '^(README\.md|README_APPENDIX\.md)$'; then
+if printf '%s\n' "$staged" | grep -qE '^(README\.md|README_APPENDIX\.md|CONTRIBUTING\.md)$'; then
 	style_reviewer=$(named_reviewer "Style-Reviewer")
 	check_review "Style-" \
 		"Matter-of-fact" \
