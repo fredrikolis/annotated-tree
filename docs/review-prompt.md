@@ -70,9 +70,10 @@ what the author meant is a steering vector, not context.
 == GATE C — COMMUNICATION STYLE ==
 
   ----------------------------------------------------------------------
-  Review 'git diff --cached README.md README_APPENDIX.md' against
-  docs/communication-style.md, one changed line at a time. Give EVERY rule in
-  its table one line:
+  Read docs/communication-style.md. It names the docs it governs; diff those
+  paths with `git diff --cached -- <paths>` and take the list from there, never
+  from the author. Review each changed line against EVERY rule in its table,
+  one line per rule:
   '- <Rule>: none | N/A — <why> | <SEVERITY> — <file:line, the finding>'.
   MAJOR    = one of the three checkable rules — a flag, example, or link that
              teaches the reader something that is not there. Verify against
