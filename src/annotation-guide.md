@@ -13,10 +13,11 @@ Example:  {EXAMPLE}
 BREVITY — every field states WHAT, never why, how, or when: no mechanism, rationale, or
 conditions in any of them. Naming WHERE an excluded concern lives is OPTIONAL — add the
 pointer only when the tree does not already show the owner. An agent ingests a whole
-workspace's map in one pass; brevity buys that. Never raise the length bound to fit a
-line — the bound is the detector, and a bigger number only hides what it found. A line
-that will not fit is an ARCHITECTURE defect: write it denser AND split the file that
-owns two jobs.
+workspace's map in one pass; brevity buys that. The bound is 200 characters over the whole
+annotation, comment marker excluded (`--max-length` / `[rules] max_annotation_length`).
+Never raise it to fit a line — the bound is the detector, and a bigger number only hides
+what it found. A line that will not fit is an ARCHITECTURE defect: write it denser AND
+split the file that owns two jobs.
 
 GOOD   // Concern: memoizes lookups | Non-concern: eviction (LRU owns it) | IO: (Key) -> Value
 FAILS  // Concern: memoizes lookups | IO: (Key) -> Value
@@ -44,3 +45,8 @@ HOW TO FIND THE NON-CONCERN
   holds. One line there too. Writing one is what lists the file at all. A file that can hold a
   comment must.
   YAML frontmatter, like a shebang, keeps line 1: put the annotation on the line after it.
+
+REWRITING MANY AT ONCE — strip them first: `strip -R -y <dir>`. Shown an existing line, you
+  will edit it instead of reading the code, and a sweep returns reworded versions of the old
+  lines. Removing them first forces you back to the source. Nothing is written without `-y`,
+  and a directory needs `-R`.
