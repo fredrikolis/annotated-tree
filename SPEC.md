@@ -5,6 +5,10 @@ The register of decisions annotated-tree is willing to freeze: a vocabulary of p
 entities and the invariants over them. How any of them is enforced — the gates, the hooks,
 the tests — lives with the enforcement, not here.
 
+**Intentionally under-specified.** Anything no clause forbids is admissible. A new capability
+needs no clause admitting it — only the absence of one it breaks, so read this to find what a
+change would violate, never to find permission for it.
+
 ## Vocabulary
 
 - **run** — one execution of the tool against one Workspace, from the arguments it is given
@@ -18,6 +22,8 @@ the tests — lives with the enforcement, not here.
 - **accessory** — anything annotated-tree offers that helps an agent consume Annotations outside a
   Report, such as adding them to another program's output. It performs no run and emits no Report,
   so nothing below governs it.
+- **maintenance** — a run that edits the Annotations of its own Workspace rather than only
+  reporting on them.
 
 ## TREE
 
@@ -45,4 +51,5 @@ annotates, and no Annotation appears anywhere else.
 **CORE3** — Every Annotation is recoverable by reading a fixed position in the artifact that
 carries it.
 
-**CORE4** — Every run creates, changes, or removes no artifact anywhere other than its Report.
+**CORE4** — Every run other than a maintenance creates, changes, or removes no artifact anywhere
+other than its Report.

@@ -34,12 +34,10 @@ COMMIT-MSG — semantic, attestation-based (quality + staleness)
   blocked: it lands alone via `--no-verify`. Judging a yardstick against itself is circular.
 
   Gate A — standards review. Require a non-empty `Reviewer:` line; one `- <Principle>: ` line per
-  rubric principle (the judgment-call subset of your standards doc) whose payload is `none`,
-  `N/A — reason`, or a severity plus the finding; and `MAJOR: <n>`, `MODERATE: <n>`, `MINOR: <n>`
-  counts, each read from the LAST match so body prose cannot shadow the trailer.
-    MAJOR — violates an AUTO-REJECT blocker, or breaks a stated contract or invariant.
-    MODERATE — a real principle violation that must be fixed, but breaks nothing already shipped.
-    MINOR — a nit; fixing it is the author's discretion.
+  principle in your standards doc whose payload is `none`, `N/A — reason`, or a severity plus the
+  finding; and `MAJOR: <n>`, `MODERATE: <n>`, `MINOR: <n>` counts, each read from the LAST match so
+  body prose cannot shadow the trailer. The prompt that reviewer is handed, and what the three
+  severities mean, live in ONE place — `docs/review-prompt.md`, which the hook prints on failure.
   Iterate fix -> re-review until no MAJOR and no MODERATE remains. A missing line, a blocker above
   0, or a line whose severity contradicts a declared 0, fails. `MINOR:` is required and NEVER
   gated, so a real nit has a home instead of being inflated. A severity, not a score: it drives the

@@ -42,11 +42,9 @@ fail() {
 	echo "commit-msg: NEUTRAL-REVIEW GATE FAILED" >&2
 	printf '  - %s\n' "$@" >&2
 	echo "" >&2
-	echo "  Run a neutral reviewer (a reviewer separate from the author) over this change," >&2
-	echo "  against the principles this gate scopes — docs/repo-standards.md states them." >&2
-	echo "  Give EVERY principle a severity, 'none', or 'N/A — reason'. Then iterate" >&2
-	echo "  fix -> re-review until no MAJOR and no MODERATE remains (MINOR is the author's" >&2
-	echo "  discretion: fixed, or consciously left). Attest the final round:" >&2
+	tail -n +2 docs/review-prompt.md >&2
+	echo "" >&2
+	echo "  Then attest the final round:" >&2
 	echo "      Reviewer: <name of the neutral reviewer>" >&2
 	echo "      - KISS: none" >&2
 	echo "      - SoC: MODERATE — <the finding, one line>" >&2
@@ -109,18 +107,23 @@ problems=()
 reviewer=$(grep -E '^Reviewer:' "$msg_file" | tail -n1 | sed -E 's/^Reviewer:[[:space:]]*//' || true)
 [ -n "${reviewer// /}" ] || problems+=("no non-empty 'Reviewer:' line naming the neutral reviewer")
 
-# The reviewable set — the judgment-call subset of docs/repo-standards.md's principles.
-# Excluded: first-line annotations, which are owned entirely by their own two gates
-# (pre-commit `--strict-check` for presence/form, and the annotation-review attestation
-# below for quality + staleness), plus principles that are meta or structurally N/A for
-# a synchronous Rust CLI. Add any back here if a change warrants it.
+# Every principle in docs/repo-standards.md's summary table. A subset would decide in advance
+# which principles a change could possibly breach, and the one most likely to matter for a given
+# diff is the one a narrower list drops. `N/A — reason` is the answer where one does not apply.
 categories=(
+	"Evidence-Based"
 	"KISS"
 	"YAGNI"
 	"SoC"
-	"DRY"
+	"Dependency Inversion"
+	"Minimal API"
+	"Agent UX"
+	"Remove-then-Replace"
+	"File Size"
 	"DbC"
+	"Canonical Representation"
 	"Fail Fast"
+	"DRY"
 )
 
 # Is there any substance left in a payload once its leading separators are gone? Deletes
