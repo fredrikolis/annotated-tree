@@ -83,7 +83,7 @@ SoC is not a layering rule — it is the *ownership* rule, and it recurses at ev
 | Scale | Does its job | Stays out of others' jobs |
 |-------|--------------|---------------------------|
 | Package / crate | Owns one capability | No reaching into another package's internals |
-| File / module | Owns one concern | No neighbor's work (see File Annotations `Non-concern:`) |
+| File / module | Owns one concern | No neighbor's work (see src/annotation-guide.md) |
 | Class / type | One reason to change (→ SRP) | No knowledge of another type's internals |
 | Function | One thing, one level of abstraction | No reaching across a call boundary to fix a caller's mistake |
 | Variable / name | Holds one meaning | Not recycled for a second purpose (no reused `tmp`, no overloaded flag) |
@@ -357,84 +357,6 @@ def process_user(user):
 
 ---
 
-### Documentation: Self-Documenting Code
-
-**Well-written code documents itself. Docstrings = DRY violation.**
-
-**Write docstrings ONLY when**:
-
-- External consumer requires it (API doc generators, decorators, frameworks)
-- Public library interface (consumed outside your control)
-- Complex algorithm requiring mathematical/domain explanation
-
-**Do NOT write docstrings for**:
-
-- Internal functions/methods (code you control)
-- Obvious implementations (name + signature + body tell the story)
-- Simple business logic (refactor unclear code instead)
-
-**Why docstrings harm**:
-
-| Cost | Impact |
-|------|--------|
-| Refactoring penalty | Change code → change docstring (2x maintenance) |
-| DRY violation | Same information in signature, types, implementation, AND docstring |
-| Reduced readability | More lines to scan, signal buried in noise |
-| Staleness risk | Code evolves, docstrings lag, lies accumulate |
-
-**Anti-patterns**:
-
-```python
-# BAD: Docstring repeats obvious information
-def calculate_total(items: list[Item]) -> float:
-    """Calculate total price of items.
-
-    Args:
-        items: List of items to calculate total for
-
-    Returns:
-        Total price as float
-    """
-    return sum(item.price for item in items)
-
-# GOOD: Self-documenting
-def calculate_total(items: list[Item]) -> float:
-    return sum(item.price for item in items)
-```
-
-**Exceptions requiring docstrings**:
-
-```python
-# GOOD: FastAPI uses docstrings for OpenAPI docs (external consumer)
-@app.post("/users")
-async def create_user(user: UserCreate) -> User:
-    """Create new user account with email verification."""
-    ...
-
-# GOOD: Public library, complex algorithm
-def optimized_levenshtein_distance(s1: str, s2: str) -> int:
-    """Compute edit distance using Wagner-Fischer O(mn) algorithm.
-
-    Uses space optimization: O(min(m,n)) instead of O(mn).
-    See: Wagner & Fischer (1974) for proof of correctness.
-    """
-    ...
-```
-
-**Decision flow**:
-
-```
-Need to document?
-  ├─ Unclear what code does? → Refactor code (better names, extract methods)
-  ├─ Decorator/framework reads docstring? → Write docstring
-  ├─ Public library API? → Write docstring
-  └─ Internal implementation? → No docstring
-```
-
-**Philosophy**: Code expresses intent through structure, naming, types. Docstrings duplicate. Invest in clarity, not commentary.
-
----
-
 ## Summary
 
 | Principle                     | Essence                             | Violation Signal                          |
@@ -452,7 +374,6 @@ Need to document?
 | **Canonical Representation**  | One internal form, convert at edges | Two representations mixed in the core     |
 | **Fail Fast**                 | Errors at source                    | Silent fallbacks masking problems         |
 | **DRY**                       | Single source of truth              | Duplicated business logic                 |
-| **Documentation**             | Self-documenting code               | Docstrings for internal functions         |
 
 ---
 
