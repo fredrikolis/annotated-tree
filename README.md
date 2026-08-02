@@ -326,16 +326,20 @@ Same prebuilt binary on every channel.
   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/fredrikolis/annotated-tree/releases/latest/download/annotated-tree-installer.sh | sh
   ```
 
-annotated-tree makes no network request of its own. It reads files and writes to stdout; the one
-file it ever writes is the settings file `bash-annotator --install-claude-hook` edits. The only
-program it starts is `git`, for `--since`, and only with local commands.
+**annotated-tree makes no network request of its own.** The only program it starts is `git`, for
+`--since`, and only with local commands. It reads files and writes to stdout. Two commands write
+to disk:
+
+- `bash-annotator --install-claude-hook` and `--uninstall-claude-hook`, which edit one file: your
+  Claude Code settings.
+- `strip`, which rewrites the files you name, or with `-R` every annotated file in a directory.
 
 ### The commands
 
 `annotated-tree [PATHS]...` prints the annotated tree. The main flags are below. Run
 `--help` for the full, exact reference.
 
-| Capability | Flag |
+| Capability | Flag or command |
 |---|---|
 | Annotated tree + dependency graph | *(default)* |
 | Structured output for tooling and agents | `--format json` (versioned schema), `md` |
@@ -344,6 +348,23 @@ program it starts is `git`, for `--since`, and only with local commands.
 | Bound the whole annotation's length *(200 by default)* | `--max-length <N>`, `0` to disable |
 | Cap entries shown per directory (big corpora) | `--max-per-node <N>`, `--full` |
 | Runaway-scope guard | `--max-files <N>` |
+| Remove first-line annotations in bulk | `strip [-R] [-y] <PATH>...` |
+
+**An agent shown an existing annotation edits that line instead of reading the code**, so strip the
+contracts you want rewritten first. `strip` also removes annotations from a tree that should not
+carry them.
+
+- It lists the files it would change, and **writes nothing until you pass `-y`**.
+- A directory needs `-R`. Without it, `strip` exits 2.
+- Under `-R`, `strip` skips what the tree render skips: gitignored paths, `tests/`, and
+  `node_modules`.
+- `-I` narrows `strip` on files you name as well as files it walks.
+- It deletes a line only when the whole line is a conforming annotation.
+- `strip` takes the blank line under the annotation with it.
+- A line that opens with one delimiter and ends in something else, such as `<!-- ... --><div>`,
+  keeps its annotation.
+- A `.annotation` charter or sidecar is reported and skipped. The whole file is the annotation, so
+  removing it means deleting the file yourself.
 
 ### Put the contracts in your agent's search results
 

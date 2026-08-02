@@ -1,4 +1,4 @@
-// Concern: extracts a file's first-line annotation, checks its form and length, and whether an `.annotation` holds more | Non-concern: which files to visit | IO: (head, Language?, bound) -> Outcome
+// Concern: reads a file's annotation, locates the line wholly given to one, checks form, length and `.annotation` contents | Non-concern: which files to visit | IO: (head, lang, bound) -> Outcome, line
 
 use std::path::Path;
 
@@ -23,6 +23,38 @@ pub fn extract(path: &Path, lang: &Language) -> Option<String> {
 pub fn extract_any(path: &Path) -> Option<String> {
     let head = read_head(path)?;
     extract_any_from(&head)
+}
+
+/// The 0-based line that consists SOLELY of a conforming Annotation, or `None` when no line does.
+/// An Annotation is a span, not a line — `<!-- … -->` can close mid-line with markup after it, and
+/// a docstring can open on one line and close on another — so a position is reported only when the
+/// opener starts the line, the closer ends it, and what lies between is exactly the Annotation.
+pub(crate) fn sole_annotation_line(text: &str, lang: &Language) -> Option<usize> {
+    // A `pattern` language matches anywhere while [`locate`] reports line 1 regardless, so no position is knowable and the one below would be a guess at another line's expense.
+    if lang.pattern.is_some() || !matches!(analyze(text, lang, None), Outcome::Ok) {
+        return None;
+    }
+    let annotation = extract_from(text, lang)?;
+    let (line_no, raw) = first_meaningful_line(text)?;
+    let line = raw.trim();
+
+    // Delimiters in `locate`'s order, so the two cannot disagree about which opened a line.
+    let body = lang
+        .docstring
+        .iter()
+        .find_map(|delim| {
+            line.strip_prefix(delim.as_str())
+                .and_then(|rest| rest.strip_suffix(delim.as_str()))
+        })
+        .or_else(|| {
+            lang.block.as_ref().and_then(|(open, close)| {
+                line.strip_prefix(open.as_str())
+                    .and_then(|rest| rest.strip_suffix(close.as_str()))
+            })
+        })
+        .or_else(|| lang.line.as_deref().and_then(|m| line.strip_prefix(m)))?;
+
+    (body.trim() == annotation).then_some(line_no - 1)
 }
 
 /// Marker-agnostic extraction over already-read text: locate the first meaningful line and, if it

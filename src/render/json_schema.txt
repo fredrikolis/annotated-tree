@@ -83,3 +83,14 @@ never empty + prose-only stderr; an agent parsing stdout always gets a dispatch 
     "path":    string              // OMITTED unless an offending path is known
   }
 }
+
+strip (--format json, the `strip` verb)
+  { "schema": 1,
+    "strip": { "applied": bool,           // false on the listing pass; true after -y
+               "scanned": int,            // files considered
+               "files": [ { "path": "as given on the command line",
+                            "code": null                    // the annotation was removed
+                                    | "excluded"            // -I matched it
+                                    | "symlink"             // named symlink, not followed
+                                    | "unreadable"
+                                    | "unwritable" } ] } }

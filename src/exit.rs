@@ -13,6 +13,8 @@ pub const PRECONDITION: i32 = 4;
 
 pub mod code {
     pub const NOT_A_DIRECTORY: &str = "not_a_directory";
+    pub const USAGE: &str = "usage";
+    pub const NOT_FOUND: &str = "not_found";
     pub const SCOPE_EXCEEDED: &str = "scope_exceeded";
     pub const GIT_ERROR: &str = "git_error";
     pub const PRECONDITION: &str = "precondition";

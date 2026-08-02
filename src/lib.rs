@@ -1,4 +1,4 @@
-// Concern: the library surface — run(), which drives config, the walk and either tree or strict output, plus the reusable primitives | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code
+// Concern: the library surface — run(), which drives config, the walk, and tree, strict or maintenance output, plus the primitives | Non-concern: argv parsing | IO: (Cli, writer) -> exit_code + edits
 // Deliberately synchronous: a one-shot batch traversal with no concurrent I/O wait to overlap. The `ignore` crate parallelizes the disk work across a thread pool.
 
 //! # `annotated-tree` as a library
@@ -41,6 +41,7 @@ pub(crate) mod render;
 pub(crate) mod rules;
 pub(crate) mod sidecar;
 pub(crate) mod strict;
+pub(crate) mod strip;
 pub(crate) mod util;
 pub mod walk;
 
@@ -140,7 +141,11 @@ impl Failure {
 /// error envelope (code from [`exit::code`]) is written to `out` first, so an agent parsing stdout
 /// gets a dispatch key instead of empty output; other formats surface the failure as prose on `err`.
 pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
-    // Dispatched FIRST: an accessory verb points at no Workspace and emits no Report, so nothing in SPEC.md governs it.
+    // A maintenance, which CORE4 exempts. It takes the same overrides and `-I` globs every other run does, on named files as well as walked ones: a destructive verb where the flag that narrows it went half-inert would be the worst of both.
+    if let Some(cli::Command::Strip(args)) = &cli.command {
+        return Ok(strip::dispatch(args, cli, out, err));
+    }
+    // An accessory: it points at no Workspace and emits no Report, so nothing in SPEC.md governs it.
     if let Some(cli::Command::BashAnnotator(args)) = &cli.command {
         return bash_annotator::dispatch(args, out, err);
     }

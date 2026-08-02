@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the -L cap — what a capped walk visits, counts, lists and graphs, and that --strict-check ignores it | Non-concern: unit-level logic | IO: (fixtures) -> asserted stdout
+// Concern: freezes what a -L capped run visits, counts, lists and graphs, and that --strict-check ignores the cap | Non-concern: the depth arithmetic | IO: (fixtures) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

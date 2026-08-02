@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the public library surface — config, the walk, both extractors, and a hand-built map through render | Non-concern: glyph details | IO: (temp tree) -> asserted values
+// Concern: freezes the public library surface — config, the walk, both extractors, and a hand-built map through render | Non-concern: the CLI that also drives them | IO: (temp tree) -> asserted values
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};

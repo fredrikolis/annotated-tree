@@ -111,8 +111,8 @@ pub struct Cli {
     #[arg(long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
-    /// Print the JSON wire contract to stdout and exit: the map document, the strict-check
-    /// report, and the error and warning shapes.
+    /// Print the JSON wire contract to stdout and exit: the map document, the strip report, the
+    /// strict-check report, and the error and warning shapes.
     #[arg(long)]
     pub schema: bool,
 
@@ -129,6 +129,24 @@ pub struct Cli {
 pub enum Command {
     /// Put each file's contract in your agent's Bash tool results.
     BashAnnotator(BashAnnotator),
+    /// Remove first-line annotations from FILEs, and from DIRs under -R.
+    Strip(Strip),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct Strip {
+    /// Files to strip; directories need -R.
+    #[arg(required = true, value_name = "PATH")]
+    pub paths: Vec<std::path::PathBuf>,
+
+    /// Descend into directories.
+    #[arg(short = 'R', short_alias = 'r', long)]
+    pub recursive: bool,
+
+    /// Actually edit the files. Without it, the ones that would change are listed and nothing
+    /// is written.
+    #[arg(short = 'y', long)]
+    pub yes: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -188,7 +206,8 @@ fn exit_codes_block() -> String {
 EXIT CODES:
     {}  clean run (tree rendered, or --strict-check passed)
     {}  --strict-check found at least one violation
-    {}  usage error — bad flag or value, or an unusable bash-annotator invocation
+    {}  usage error — bad flag or value, an unusable bash-annotator invocation, or a
+       directory given to strip without -R
     {}  a root exceeded --max-files; nothing written
     {}  precondition/environment error (missing dir, git/--since failure, bad config, I/O)",
         exit::SUCCESS,

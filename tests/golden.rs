@@ -1,4 +1,4 @@
-// Concern: end-to-end tests freezing the tool's stdout for the text, JSON, Markdown, strict-check and guide surfaces | Non-concern: unit-level logic | IO: (sample tree, fixtures) -> asserted output
+// Concern: freezes the tool's output across the text, JSON, Markdown, strict-check and guide surfaces | Non-concern: what the sample tree contains | IO: (sample tree, fixtures) -> pass/fail
 
 use std::path::PathBuf;
 
