@@ -102,75 +102,44 @@ const COMMANDS: &[&str] = &[
     "ls | nl -ba",
     "ls | tail -n +2",
     "grep -rn Concern a.rs",
-    // the exit code the pipeline would have had. `exit ${PIPESTATUS[n]}` names the stage that was
-    // last before the annotator, which is right only while bash derives a pipeline's status from
-    // that same stage. Under `pipefail` it derives it from the RIGHTMOST FAILING stage instead, and
-    // the appended annotator always succeeds — so the failure the agent branches on is erased.
+    // Under `pipefail` bash derives a pipeline's status from the RIGHTMOST FAILING stage, and the appended annotator always succeeds — so the failure the agent branches on is erased.
     "set -o pipefail; grep -rl zzznomatch . | sort",
     "set -o pipefail; ls nosuchentry | sort",
-    // `set -e` masks the same defect, because the failing pipeline ends the subshell before the
-    // `exit` line is reached. Here so a fix is not judged by the shape that already passes.
+    // `set -e` masks the same defect, because the failing pipeline ends the subshell before the `exit` line is reached. Here so a fix is not judged by the shape that already passes.
     "set -euo pipefail; ls nosuchentry | sort",
-    // The subshell collapses a pipeline into ONE simple command, so the array the agent reads
-    // afterwards describes the subshell rather than the stages it wrapped.
+    // The subshell collapses a pipeline into ONE simple command, so the array the agent reads afterwards describes the subshell rather than the stages it wrapped.
     "ls nosuchentry | sort; echo ${PIPESTATUS[0]}",
-    // COMPOUND commands. The stage model has no notion of `if`/`for`/`while`, so the body of one
-    // reads as a free-standing stage and IS rewritten — a subshell spliced inside a loop body must
-    // still be valid shell, must expand the loop variable the same way twice, and must not disturb
-    // the redirect that feeds the loop.
+    // The stage model has no notion of `if`/`for`/`while`, so a loop body reads as a free-standing stage and IS rewritten.
     "if [ -d docs ]; then ls docs; fi",
     "for f in docs src; do ls $f; done",
-    // …except that neither of those two rows rewrites anything: after `; then` and `; do` the
-    // stage's FIRST word is `then`/`do`, so `program_of` never reaches `ls` and the rows are
-    // silent about the property their comment names. A NEWLINE is what makes a compound body a
-    // free-standing stage, and these forms ARE rewritten — one subshell per iteration.
+    // After `; then` and `; do` the first word is `then`/`do`, so `program_of` never reaches `ls` and these rows are silent about the property they name.
     "for f in docs src\ndo\nls $f\ndone",
     "if [ -d docs ]\nthen\nls docs\nfi",
     "echo start; ls; echo end",
     "ls; ls docs",
-    // A backslash-newline is a LINE CONTINUATION, not a separator: the word it splits must be
-    // forwarded to the annotator as the raw source the shell rejoins, or the operand is lost.
+    // A backslash-newline is a LINE CONTINUATION, not a separator: the word it splits must be forwarded to the annotator as the raw source the shell rejoins, or the operand is lost.
     "ls \\\n   docs",
     "ls |& cat",
     "ls *.rs",
     "ls -s",
-    // A redirect-only stage has no words, so the pipeline grouping steps OVER it and joins the
-    // stage after the pipe to the previous pipeline. Here so that the stitched span stays valid
-    // shell and the redirect keeps happening.
+    // A redirect-only stage has no words, so the pipeline grouping steps OVER it and joins the stage after the pipe to the previous pipeline. Here so that the stitched span stays valid shell and the redirect keeps happening.
     "ls; > out.txt | cat",
-    // The two argv mis-parses reported as `SHAPES` rows. Structurally these are clean appends,
-    // which is exactly why this table cannot see what is wrong with them — kept so the pair is
-    // findable from either table.
+    // The two argv mis-parses reported as `SHAPES` rows. Structurally these are clean appends, which is exactly why this table cannot see what is wrong with them — kept so the pair is findable from either table.
     "grep -d skip a.rs Makefile",
     "grep -rh -e -l -e Concern .",
-    // Header-scoped `ls` piped into a stage that reorders or drops lines. Byte-wise these are
-    // perfect appends; the contracts they append belong to other files. `bash_annotator_inject.rs`
-    // holds the rows that assert the decision, and this pair records that equivalence alone
-    // would have shipped the defect.
+    // Byte-wise these are perfect appends, but the contracts they append belong to other files — equivalence alone would have shipped the defect.
     "ls docs src | grep -v zzz",
     "ls -R | sort",
     "ls -R | tail -3",
-    // The same defect reached two ways the round-5 guard does not cover: a glob that expands to
-    // several `ls` operands, and an ORDER_PRESERVING stage that rewrites the text of every line.
-    // Byte-wise both are perfect appends — `bash_annotator_inject.rs` holds the rows that assert the
-    // decision, and these record that this table is blind to them too.
+    // Byte-wise both are perfect appends, so this table is blind to them; `bash_annotator_inject.rs` holds the rows that assert the decision.
     "ls */ | sort",
     "ls -R | nl",
     "ls docs src | cat -n",
-    // A COMPOUND command's `| stage` belongs to the WHOLE loop, not to the body — and the stage
-    // model, which has no notion of `done`, sees only a free-standing `ls $f` in the body and
-    // rewrites THAT. The annotator then runs INSIDE the loop, so the stage after `done` reads
-    // annotated text rather than the tool's raw output: the one arrangement the whole "annotator
-    // is LAST" design exists to prevent. `sort -u` over two identical `a.rs` lines collapses them
-    // to one; annotated they carry docs/'s and src/'s different contracts and no longer collapse.
+    // The annotator ends up INSIDE the loop, so the stage after `done` reads annotated text rather than raw output — the one arrangement the "annotator is LAST" design exists to prevent.
     "for f in docs src\ndo\nls $f\ndone | sort -u",
-    // A column layout selected by the SEPARATE-token spelling of `--format`. Byte-wise this is a
-    // clean append, which is exactly why this table cannot see that the contract belongs to one of
-    // the four names on the line rather than to the line. `bash_annotator_run.rs` holds the row that
-    // asserts no line may carry a contract at all; this one records that equivalence is blind.
+    // A clean append byte-wise, which is why this table cannot see that the contract belongs to one of four names on the line rather than to the line.
     "ls --format across",
-    // The same layout selected by an ABBREVIATED option name, which GNU ls accepts. Structurally
-    // clean here too; `bash_annotator_run.rs` holds the row that asserts the contract is wrong.
+    // The same layout selected by an ABBREVIATED option name, which GNU ls accepts. Structurally clean here too; `bash_annotator_run.rs` holds the row that asserts the contract is wrong.
     "ls --form across",
 ];
 
@@ -266,13 +235,11 @@ fn every_rewritten_command_agrees_with_the_command_the_agent_wrote() {
         eprintln!("SKIPPED: no bash on this host");
         return;
     }
-    // Collect every disagreement rather than stopping at the first, so one run reports the whole
-    // truth about the table.
+    // Collect every disagreement rather than stopping at the first, so one run reports the whole truth about the table.
     let mut wrong: Vec<String> = Vec::new();
     let mut actually_rewritten = 0;
     for (i, cmd) in COMMANDS.iter().enumerate() {
-        // A FRESH tree per side: a command that writes a file would otherwise be seen by the
-        // second run and not the first, and the two would differ for a reason that is not a bug.
+        // A FRESH tree per side: a command that writes a file would otherwise be seen by the second run and not the first, and the two would differ for a reason that is not a bug.
         let raw_dir = fixture(&format!("raw{i}"));
         let new_dir = fixture(&format!("new{i}"));
         let (raw_out, raw_code) = shell(&raw_dir, cmd);
@@ -320,8 +287,7 @@ fn every_rewritten_command_agrees_with_the_command_the_agent_wrote() {
         COMMANDS.len(),
         wrong.join("\n")
     );
-    // Guard against the whole table passing because NOTHING is being rewritten — a broken
-    // annotator lookup would otherwise turn this into a very thorough test of `bash`.
+    // Guard against the whole table passing because NOTHING is being rewritten — a broken annotator lookup would otherwise turn this into a very thorough test of `bash`.
     assert!(
         actually_rewritten >= 25,
         "only {actually_rewritten} of {} commands were rewritten at all; this table is not \

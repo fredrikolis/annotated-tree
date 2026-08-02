@@ -13,8 +13,7 @@ impl Renderer for MdRenderer {
     fn render(&self, map: &CodebaseMap) -> String {
         let mut out = String::new();
         for root in &map.roots {
-            // The root's own name is not printed — its contents are shown
-            // directly, matching the text renderer's `tree`-style default.
+            // The root's own name is not printed — its contents are shown directly, matching the text renderer's `tree`-style default.
             render_children(root, 0, &mut out);
         }
         out.truncate(out.trim_end().len());
@@ -31,8 +30,7 @@ fn render_children(node: &DirNode, depth: usize, out: &mut String) {
     for file in &node.files {
         out.push_str(&file_bullet(&file.name, file.annotation.as_deref()));
     }
-    // One trailing bullet folds both elided counts, reusing the text renderer's
-    // phrasing (DRY) so the two views stay in sync.
+    // One trailing bullet folds both elided counts, reusing the text renderer's phrasing (DRY) so the two views stay in sync.
     let marker = super::elision_summary(node.elided_dirs, node.elided_files);
     if let Some(summary) = &marker {
         out.push_str(&format!("- _{summary}_\n"));
@@ -45,9 +43,7 @@ fn render_children(node: &DirNode, depth: usize, out: &mut String) {
 fn render_dir(dir: &DirNode, depth: usize, out: &mut String) {
     let level = (depth + 2).min(MAX_HEADING_LEVEL);
     out.push_str(&format!("{} {}/\n\n", "#".repeat(level), dir.name));
-    // Charter (authored intent) first, dep facts (observed) folded in behind `·` — the same
-    // charter-then-deps order the text view uses. Absent both, the heading stands alone,
-    // byte-for-byte as before.
+    // Charter (authored intent) first, dep facts (observed) folded in behind `·` — the same charter-then-deps order the text view uses. Absent both, the heading stands alone, byte-for-byte as before.
     let charter = dir.charter.as_ref().map(|c| c.line());
     let deps = dir.deps.as_ref().and_then(|d| d.annotation());
     let summary = match (charter, deps) {

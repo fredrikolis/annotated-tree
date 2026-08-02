@@ -86,8 +86,7 @@ fn ascii_is_default_with_glyphs_substituted() {
 
 #[test]
 fn strict_check_reports_offenders() {
-    // `--no-guide` keeps this golden pinned to the report itself; the guide that a bare
-    // failing `--strict-check` prints is covered by `strict_failure_prints_guide_on_stdout`.
+    // `--no-guide` keeps this golden pinned to the report itself; the guide that a bare failing `--strict-check` prints is covered by `strict_failure_prints_guide_on_stdout`.
     assert_golden("strict_check.txt", &["--strict-check", "--no-guide"], 1);
 }
 
@@ -133,9 +132,7 @@ fn strict_check_accepts_a_single_file() {
     let (_out, code) = check(&bad);
     assert_eq!(code, 1, "a malformed single file fails strict-check");
 
-    // A file whose extension maps to no language is a precondition error: in text mode
-    // `run()` returns `Err` (the binary renders it as `error:` prose and exits PRECONDITION),
-    // never a silent pass or a lint failure.
+    // A file whose extension maps to no language is a precondition error: in text mode `run()` returns `Err` (the binary renders it as `error:` prose and exits PRECONDITION), never a silent pass or a lint failure.
     let cli = Cli::parse_from([
         "annotated-tree",
         "--strict-check",
@@ -172,8 +169,7 @@ fn strict_check_json_emits_structured_violations() {
         "one annotation gap (only the intentionally-malformed utils.py)"
     );
     assert_eq!(doc["files_checked"], serde_json::json!(20), "files checked");
-    // The convergence numerator: 19 of the 20 files carry a conforming annotation; only
-    // the one malformed file does not.
+    // The convergence numerator: 19 of the 20 files carry a conforming annotation; only the one malformed file does not.
     assert_eq!(
         doc["annotated_count"],
         serde_json::json!(19),
@@ -182,8 +178,7 @@ fn strict_check_json_emits_structured_violations() {
 
     let violations = doc["violations"].as_array().expect("violations array");
     assert_eq!(violations.len(), 1, "one record per annotation gap");
-    // The Python util has a comment but not the three-field shape — a malformed_annotation
-    // at line 1, echoing the offending content and a conformant example to copy.
+    // The Python util has a comment but not the three-field shape — a malformed_annotation at line 1, echoing the offending content and a conformant example to copy.
     let py = violations
         .iter()
         .find(|v| v["path"] == serde_json::json!("packages/core/acme_core/utils.py"))
@@ -202,8 +197,7 @@ fn strict_check_json_emits_structured_violations() {
         "the example is a conformant annotation line: {:?}",
         py["example"]
     );
-    // The machine-coded delta an agent branches on: the comment carries NONE of the three
-    // keyed fields, so all are missing; `length`/`max` are absent when they do not apply.
+    // The machine-coded delta an agent branches on: the comment carries NONE of the three keyed fields, so all are missing; `length`/`max` are absent when they do not apply.
     assert_eq!(
         py["defect"]["missing"],
         serde_json::json!(["concern", "non_concern", "io"]),
@@ -235,10 +229,7 @@ fn strict_check_json_emits_structured_violations() {
         "no recommended-only fields (all three are required): {:?}",
         py["expected"]["recommended"]
     );
-    // The file-tailored scaffold: reuses the file's own text as the Concern seed, opens
-    // with the language marker, and leaves the judgment slots as `<…>` placeholders —
-    // which mark what an agent should replace, on a line whose FORM already conforms (this
-    // run sets no length bound, which would apply to the stub like any other line).
+    // The `<…>` slots mark what an agent should replace, on a line whose FORM already conforms.
     let suggestion = py["suggestion"].as_str().expect("suggestion string");
     assert!(
         suggestion.starts_with("# Concern: small helpers used across the engine")

@@ -10,15 +10,9 @@ use super::map::shape_of;
 /// as "leave the command alone", which stays the correct answer for a process that cannot locate
 /// itself.
 fn wrapper_command() -> Option<String> {
-    // ALWAYS absolute, never the bare name. The rewritten command runs in the agent's shell, whose
-    // `PATH` the command itself may have changed — `export PATH=/usr/bin; ls` left a bare name
-    // unresolvable, and because the annotator is the READER of the pipe, failing to start it made
-    // the producer take SIGPIPE: no output at all, exit 141. An absolute path cannot be stranded.
+    // ALWAYS absolute: the command may itself have changed `PATH`, and since the annotator is the READER of the pipe, failing to start it gives the producer SIGPIPE — no output at all, exit 141.
     let found = std::env::current_exe().ok()?;
     let path = found.to_string_lossy().into_owned();
-    // ALWAYS quoted. A conditional rule has to enumerate every shell metacharacter and will miss
-    // one — `$`, `(` and whitespace each produced a broken command — and quoting a plain path
-    // costs nothing.
     Some(format!(
         "'{}' bash-annotator --annotate-tool-output",
         path.replace('\'', "'\\''")
@@ -81,12 +75,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         return None;
     }
 
-    // A COMPOUND command's redirect and pipe belong to the whole construct, not to any stage
-    // inside it, and `split_stages` has no notion of nesting: `for f in docs` newline `do`
-    // newline `ls $f` newline `done > out.txt` would rewrite the BODY, writing contracts into
-    // the agent's file, and `… done | sort -u` would put a stage AFTER the annotator, voiding the
-    // one guarantee that makes downstream stages safe. `{ }` is the same construct spelled with
-    // braces. A keyword only counts in COMMAND POSITION, so `grep -rn for src` stays a search.
+    // A compound command's redirect and pipe belong to the whole construct, but `split_stages` has no notion of nesting — so `done > out.txt` would rewrite the BODY and write contracts into the agent's file. Command position only: `grep -rn for src` stays a search.
     const COMPOUND: &[&str] = &[
         "{", "}", "for", "while", "until", "if", "then", "else", "elif", "fi", "do", "done",
         "case", "esac", "select", "function",
@@ -100,10 +89,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         return None;
     }
 
-    // Wrapping a pipeline in a subshell makes it ONE command in the parent's pipeline, so the
-    // caller's `${PIPESTATUS[i]}` afterwards describes the subshell rather than the stages. `$?`
-    // is preserved; the array cannot be. A command that reads it is left alone rather than
-    // answered with a number that is quietly wrong.
+    // A subshell makes the pipeline ONE command to the parent, so `${PIPESTATUS[i]}` would describe the subshell, not the stages. `$?` survives; the array cannot.
     if command.contains("PIPESTATUS") {
         return None;
     }
@@ -111,8 +97,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
     let annotator = wrapper_command()?;
     let stages = split_stages(&lexed.tokens);
 
-    // Group stages into PIPELINES. A pipeline is the unit that matters now: the annotator is
-    // appended to its end, so every stage inside it sees the tool's raw output.
+    // The pipeline, not the stage, is the unit: the annotator is appended to its END, so every stage inside it sees the tool's raw output.
     let mut pipelines: Vec<Vec<usize>> = Vec::new();
     for (i, st) in stages.iter().enumerate() {
         if st.piped_in {
@@ -137,17 +122,14 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         if shape_of(&prog).is_none() {
             continue;
         }
-        // The annotator frames records by NEWLINE. A producer asked for NUL-delimited output emits
-        // one unbroken run instead, so there are no lines to append to and nothing may be added.
+        // The annotator frames records by NEWLINE, so NUL-delimited output arrives as one unbroken run with no lines to append to.
         if producer.words.iter().any(|t| match &t.kind {
             Kind::Word(w) => nul_delimited(&prog, w),
             _ => false,
         }) {
             continue;
         }
-        // The pipeline's stdout must be what the model reads. A redirect anywhere in it, or a
-        // stage that consumes its input as arguments, takes the answer somewhere else — and
-        // appending the annotator BEFORE a redirect would write contracts into the agent's file.
+        // The pipeline's stdout must be what the model reads, and appending the annotator BEFORE a redirect would write contracts into the agent's file.
         if pipe
             .iter()
             .any(|&i| stages[i].redirected || stages[i].consumes_args)
@@ -164,9 +146,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         {
             continue;
         }
-        // A producer whose lines are scoped by `<dir>:` headers needs MORE than line safety from
-        // what follows: it needs the order kept and nothing dropped from the middle, or a header
-        // ends up detached from the entries it scoped and each one resolves against the base.
+        // Header-scoped output needs MORE than line safety downstream: drop or reorder a line and a `<dir>:` header detaches from the entries it scoped, which then resolve against the base.
         if header_scoped(&prog, &producer.words)
             && pipe[1..]
                 .iter()
@@ -178,8 +158,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
             continue;
         }
 
-        // The span of the pipeline AS WRITTEN. Taken from token offsets so the agent's own
-        // spacing, quoting and globs are reproduced byte for byte inside the parentheses.
+        // Taken from token offsets so the agent's own spacing, quoting and globs are reproduced byte for byte inside the parentheses.
         let (Some(from), Some(to)) = (
             pipe.iter().filter_map(|&i| stages[i].start).min(),
             pipe.iter().map(|&i| stages[i].end).max(),
@@ -187,13 +166,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
             continue;
         };
 
-        // The producer's argv, from its program token onward — `timeout 5 grep …` describes a
-        // `grep` run, not a `timeout` one — so the annotator reads the flag rules that decide
-        // which base a bare name resolves against rather than guessing them.
-        // Forwarded as RAW SOURCE TEXT, not as re-quoted lexed words, so the shell performs the
-        // SAME expansion for the annotator that it performs for the tool. Re-quoting turned
-        // `ls "$d"` into the literal `'$d'`, which resolved to nothing, dropped the base back to
-        // the cwd, and put a same-named cwd file's contract on the line.
+        // From the program token onward (`timeout 5 grep …` describes a `grep` run) and forwarded as RAW SOURCE TEXT, so the shell expands it identically for the annotator — re-quoting turned `ls "$d"` into a literal `'$d'` that resolved to nothing and put a cwd file's contract on the line.
         let argv: Vec<&str> = producer
             .words
             .iter()
@@ -202,16 +175,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
             .map(|t| &command[t.start..t.end])
             .collect();
 
-        // Re-raise the status the command would have had. Without `pipefail` that is the stage
-        // that was LAST before the annotator was appended, so `grep`'s exit 1 on no-match
-        // survives and `ls | sort` still reports sort's. WITH `pipefail` bash takes the rightmost
-        // FAILING stage instead, and a bare `exit ${PIPESTATUS[n]}` erased exactly the no-match
-        // exit this is here to protect — `pipefail` may also have been set by an earlier command
-        // in the agent's persistent shell, so it cannot be ruled out by reading this one.
-        //
-        // `PIPESTATUS` is captured FIRST: any later command, an assignment included, replaces it.
-        // The subshell keeps `exit` from ending the agent's own shell, and wraps only the
-        // pipeline, so a `cd` earlier in the command still persists.
+        // Re-raise the status the command would have had: `pipefail` may have been set by an earlier command in the agent's persistent shell, so it cannot be ruled out by reading this one. `PIPESTATUS` is captured FIRST because any later command replaces it.
         let n = pipe.len() - 1;
         edits.push((
             from,
@@ -257,17 +221,14 @@ fn header_scoped(prog: &str, words: &[&Token]) -> bool {
             _ => None,
         })
         .collect();
-    // `--recur` IS `--recursive` to getopt_long, and matching only the full spelling let an
-    // abbreviation past the guard that the full spelling stops.
+    // `--recur` IS `--recursive` to getopt_long, so matching only the full spelling lets an abbreviation past the guard.
     let recursive = args.iter().any(|w| {
         *w == "--recursive"
             || (w.len() >= 5 && "--recursive".starts_with(*w))
             || (w.starts_with('-') && !w.starts_with("--") && w.contains('R'))
     });
     let operands: Vec<&&str> = args.iter().filter(|w| !w.starts_with('-')).collect();
-    // A glob or a variable is ONE word HERE and many operands by the time the shell has run —
-    // `ls */ | sort` reaches the annotator as a multi-directory listing whose headers `sort` has
-    // already hoisted. Counting source words alone missed exactly that.
+    // A glob or variable is ONE word here and many operands once the shell has run: `ls */ | sort` arrives as a multi-directory listing whose headers `sort` already hoisted.
     let may_expand = operands
         .iter()
         .any(|w| w.contains(['*', '?', '[', '{', '$', '~']));
@@ -280,13 +241,7 @@ fn nul_delimited(prog: &str, w: &str) -> bool {
         w.split('=').next().unwrap_or(w),
         "--null" | "--null-data" | "--print0" | "--zero" | "--zero-terminated"
     );
-    // `find`'s output-shaping predicates are words, not clusters, and each stops its lines being
-    // plain paths: `-printf '%f'` prints BARE names from nested directories, which then resolve
-    // against the cwd and take a same-named cwd file's contract; `-ls` prints a stat line;
-    // `-fprint*` divert to a file; and `-printx` — a bfs predicate, which matters because bfs is
-    // what `find` resolves to in a Claude Code session — ESCAPES whitespace and quotes, so
-    // `./a\ b.rs` no longer names the file and the suffix scan falls back to a shorter name that
-    // does. `-Z`/`-z` hide inside a grep cluster.
+    // `find`'s output-shaping predicates are words, not clusters, and each stops its lines being plain paths — `-printf '%f'` prints BARE names, `-ls` a stat line, `-printx` escapes whitespace. `-Z`/`-z` hide inside a grep cluster.
     long || (prog == "find"
         && matches!(
             w,
@@ -322,7 +277,6 @@ struct Stage<'a> {
 fn split_stages<'a>(tokens: &'a [Token]) -> Vec<Stage<'a>> {
     let mut stages: Vec<Stage<'a>> = vec![new_stage()];
     let mut expect_target = false;
-    // Did the previous token leave the command syntactically incomplete?
     let mut continues = false;
     for t in tokens {
         if let Kind::Op(op) = &t.kind {
@@ -339,26 +293,18 @@ fn split_stages<'a>(tokens: &'a [Token]) -> Vec<Stage<'a>> {
                 next.piped_in = true;
                 stages.push(next);
             }
-            // After `|`, `&&` or `||` bash treats a newline as a line CONTINUATION. Splitting on
-            // it produced an empty stage, `program_of` returned None, and every multi-line
-            // pipeline — `grep -rn foo . |` newline `head -20`, which agents write constantly —
-            // was refused.
+            // After `|`, `&&` or `||` bash treats a newline as a line CONTINUATION; splitting on it yields an empty stage and refuses every multi-line pipeline.
             Kind::Op(op) if op == "\n" && continues => {}
             Kind::Op(op) if matches!(op.as_str(), ";" | "&&" | "||" | "&" | "\n") => {
                 stages.push(new_stage());
             }
             Kind::Op(op) => {
-                // `2>` and `2>&1` touch stderr only; everything else in the family takes stdout
-                // somewhere the model will not read.
+                // `2>` and `2>&1` touch stderr only; everything else in the family takes stdout somewhere the model will not read.
                 if !op.starts_with('2') && op.contains('>') {
                     stages.last_mut().unwrap().redirected = true;
                 }
-                // The word after ANY redirect names the destination, not an argument. Counting it
-                // as one forwarded `/dev/null` to the annotator as `ls 2>/dev/null`'s operand.
+                // The word after ANY redirect names a destination, not an argument — `2>&1` included, whose `1` lexes separately and once made a directory named `1` the operand.
                 if op.contains('>') || op.contains('<') {
-                    // EVERY redirect names a destination in the next word, `2>&1` included — its
-                    // `1` lexes separately, and counting it as an argument made a directory named
-                    // `1` the operand and rebased every name in the listing.
                     expect_target = true;
                     let s = stages.last_mut().unwrap();
                     s.start.get_or_insert(t.start);
@@ -373,8 +319,7 @@ fn split_stages<'a>(tokens: &'a [Token]) -> Vec<Stage<'a>> {
                     expect_target = false;
                     continue;
                 }
-                // All four spellings of find's run-a-program family, not just the two that
-                // happened to be written down.
+                // All four spellings of find's run-a-program family.
                 if matches!(w.as_str(), "-exec" | "-execdir" | "-ok" | "-okdir") {
                     s.consumes_args = true;
                 }
@@ -415,10 +360,7 @@ fn line_safe(prog: &str, words: &[&Token]) -> bool {
             .iter()
             .any(|f| f.starts_with('-') && !f.starts_with("--") && f.contains(c))
     };
-    // A stage can take stdout away with a FLAG rather than with `>`, and it can redefine the
-    // record as NUL-terminated rather than newline-terminated. Either breaks a guarantee stated
-    // in terms of lines reaching the model, and neither is specific to one program, so both are
-    // refused before any per-program rule runs.
+    // A stage can divert stdout with a FLAG rather than `>`, or reframe the record as NUL-terminated — neither is program-specific, so both are refused before any per-program rule runs.
     let diverts_or_reframes = |f: &&str| -> bool {
         let name = f.split('=').next().unwrap_or(f);
         matches!(
@@ -433,13 +375,9 @@ fn line_safe(prog: &str, words: &[&Token]) -> bool {
     match prog {
         // A byte count can cut a record in half.
         "head" | "tail" => !short_has('c') && !flags.iter().any(|f| f.starts_with("--bytes")),
-        // `cat` is only identity without flags. `-n`/`-b` number the lines, and `-A`/`-e`/`-t`/
-        // `-v`/`-E`/`-T` render invisible characters — each rewrites the text of the line the
-        // annotator then has to read a path out of.
+        // `cat` is identity only without flags: `-n`/`-b` number the lines and `-A`/`-e`/`-t`/`-v`/`-E`/`-T` render invisible characters, each rewriting the text a path must be read out of.
         "cat" => flags.is_empty(),
-        // A filter may only DROP lines. `-c` emits a count — the very thing `wc` is refused for —
-        // `-o` emits the matched fragment rather than the line, and `-l`/`-L` over a STREAM emit
-        // the literal `(standard input)` rather than any path at all.
+        // A filter may only DROP lines: `-c` emits a count, `-o` the matched fragment, and `-l`/`-L` over a STREAM emit the literal `(standard input)` rather than any path.
         "grep" => {
             !short_has('c')
                 && !short_has('o')

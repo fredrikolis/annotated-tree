@@ -173,12 +173,7 @@ pub fn build(
             insert(&mut raw, rel, path);
         }
     }
-    // Canonical Representation: `graph` keys directories by canonical path, so
-    // canonicalize the root ONCE here and descend by joining child names onto it. The
-    // walk never follows symlinks, so `canon_root.join(child…)` is itself canonical —
-    // every directory node looks `graph` up directly, with no per-node canonicalize
-    // syscall. File paths (used for the annotation/mtime reads) come from `raw` and
-    // stay exactly as walked, untouched.
+    // `graph` keys directories by canonical path, and the walk never follows symlinks, so joining child names onto a once-canonicalized root stays canonical — no per-node canonicalize syscall.
     let canon_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let now = SystemTime::now();
     convert(&raw, &canon_root, graph, config, now, max_depth, 0)
@@ -224,13 +219,10 @@ fn convert(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
 
-    // At the depth cutoff a directory is still listed (name + deps) but its
-    // contents are not expanded — mirroring the original render's early return.
+    // At the depth cutoff a directory is still listed (name + deps) but its contents are not expanded — mirroring the original render's early return.
     let pruned = max_depth.is_some_and(|limit| depth >= limit) && depth > 0;
     if pruned {
-        // A depth-pruned directory still shows its own row, so a `.annotation` breadcrumb
-        // still resolves (a filesystem read needing no children); entry-file promotion cannot,
-        // as the subtree is unexpanded — so only the explicit override can surface here.
+        // A depth-pruned directory still shows its own row, so a `.annotation` breadcrumb still resolves (a filesystem read needing no children); entry-file promotion cannot, as the subtree is unexpanded — so only the explicit override can surface here.
         return DirNode {
             name,
             charter: charter::read_charter_file(abs_dir).and_then(|c| charter::from_file_body(&c)),
@@ -272,9 +264,7 @@ fn convert(
         })
         .collect();
 
-    // Resolve the charter BEFORE truncation reads from the full child set — entry-file
-    // promotion reaches into the already-built children (a crate's `src/lib.rs`, a package's
-    // `__init__.py`), which a display cap could otherwise elide out from under it.
+    // Resolve the charter BEFORE truncation reads from the full child set — entry-file promotion reaches into the already-built children (a crate's `src/lib.rs`, a package's `__init__.py`), which a display cap could otherwise elide out from under it.
     let charter = resolve_charter(abs_dir, &dirs, &files);
 
     let cap = config.display.max_per_node;
@@ -339,27 +329,22 @@ fn truncate<T>(mut items: Vec<T>, cap: Option<usize>) -> (Vec<T>, u32) {
 }
 
 fn dir_deps(abs_dir: &Path, graph: &HashMap<PathBuf, DirDeps>) -> Option<DirDeps> {
-    // `abs_dir` is already canonical (descended from the canonicalized root), so this
-    // is a direct lookup — no per-node canonicalize syscall.
+    // `abs_dir` is already canonical (descended from the canonicalized root), so this is a direct lookup — no per-node canonicalize syscall.
     graph.get(abs_dir).cloned()
 }
 
 /// Resolve a file's annotation, and whether it came from a sidecar. A bounded head-only read
 /// for a file that can hold a comment; an unreadable file, or one with no leading annotation,
 /// yields `None` (graceful, never fatal).
+///
+/// A sidecar's presence WINS over a marker-agnostic read of the file's own head — the same
+/// most-explicit-first rule by which a directory's `.annotation` overrides a promoted entry line.
 fn file_annotation(abs: &Path, config: &Config) -> (Option<String>, bool) {
     if let Some(lang) = config.language_for_path(abs) {
         return (annotation::extract(abs, lang), false);
     }
-    // No known language, so the file may carry a `<name>.annotation` sidecar — and its
-    // presence WINS over a marker-agnostic read of the file's own head, the same
-    // most-explicit-first rule by which a directory's `.annotation` overrides a promoted
-    // entry-file line. Without a sidecar the file is here only because `--include` opted it
-    // in, so fall back to reading its head with no marker known.
     let body = sidecar::body(abs)
-        // A sidecar carrying prose past its one line resolves to NO annotation, exactly as a
-        // directory charter does: the row stays silent rather than carrying a newline into it,
-        // and `--strict-check` reports the file.
+        // A sidecar carrying prose past its one line resolves to NO annotation, exactly as a directory charter does: the row stays silent rather than carrying a newline into it, and `--strict-check` reports the file.
         .filter(|text| annotation::content_past_first_line(text).is_none())
         .map(|text| text.trim().to_string())
         .filter(|text| !text.is_empty());

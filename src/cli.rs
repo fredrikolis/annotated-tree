@@ -232,15 +232,13 @@ impl Cli {
             include_tests: self.include_tests.then_some(true),
             include: self.include.clone(),
             config_file: self.config.clone(),
-            // `--no-limit`/`--force` wins over `--max-files`; either present means
-            // the CLI spoke (outer Some), so env/config are not consulted.
+            // `--no-limit`/`--force` wins over `--max-files`; either present means the CLI spoke (outer Some), so env/config are not consulted.
             max_files: if self.no_limit {
                 Some(None)
             } else {
                 self.max_files.map(Some)
             },
-            // `--full` wins over `--max-per-node`; either present means the CLI
-            // spoke (outer Some), so config/default are not consulted.
+            // `--full` wins over `--max-per-node`; either present means the CLI spoke (outer Some), so config/default are not consulted.
             max_per_node: if self.full {
                 Some(None)
             } else {

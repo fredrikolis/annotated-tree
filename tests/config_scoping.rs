@@ -36,8 +36,7 @@ fn run(paths: &[&Path], extra: &[&str]) -> String {
 
 #[test]
 fn explicit_config_flag_takes_effect_and_bypasses_discovery() {
-    // The dir holds a `.foo` and a `.bar` file — both unknown to the built-in config,
-    // so neither shows unless a config layer teaches its extension.
+    // The dir holds a `.foo` and a `.bar` file — both unknown to the built-in config, so neither shows unless a config layer teaches its extension.
     let dir = temp_dir("config-flag");
     let src = dir.join("src");
     std::fs::create_dir_all(&src).unwrap();
@@ -74,8 +73,7 @@ fn explicit_config_flag_takes_effect_and_bypasses_discovery() {
         out.contains("thing.foo"),
         "--config's language must take effect (thing.foo shown):\n{out}"
     );
-    // ...and it REPLACED discovery: the discovered `.bar` language was not consulted,
-    // so the `.bar` file stays an unknown (invisible) extension.
+    // ...and it REPLACED discovery: the discovered `.bar` language was not consulted, so the `.bar` file stays an unknown (invisible) extension.
     assert!(
         !out.contains("other.bar"),
         "--config must bypass the discovered .annotated-tree.toml (.bar not shown):\n{out}"
@@ -86,9 +84,7 @@ fn explicit_config_flag_takes_effect_and_bypasses_discovery() {
 
 #[test]
 fn multi_root_run_scopes_config_per_root() {
-    // Root A opts into showing tests via its own `.annotated-tree.toml`; root B has no
-    // config. A single `annotated-tree A B` invocation must apply each root's config to
-    // ITS OWN tree — A's `include_tests` must not leak onto B.
+    // Root A opts into showing tests via its own `.annotated-tree.toml`; root B has no config. A single `annotated-tree A B` invocation must apply each root's config to ITS OWN tree — A's `include_tests` must not leak onto B.
     let root_a = temp_dir("multi-a");
     let root_b = temp_dir("multi-b");
 

@@ -30,8 +30,7 @@ fn run_stdout(dir: &Path) -> String {
 #[test]
 fn dangling_workspace_dep_is_marked_unresolved() {
     let dir = temp_dir("dangling");
-    // `@acme/ghost` is declared as a workspace dep but no package by that name
-    // exists in the tree — a dangling internal edge.
+    // `@acme/ghost` is declared as a workspace dep but no package by that name exists in the tree — a dangling internal edge.
     std::fs::write(
         dir.join("pkg/package.json"),
         r#"{"name": "@acme/app", "dependencies": {"@acme/ghost": "workspace:*"}}"#,

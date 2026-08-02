@@ -29,8 +29,7 @@ fn check(name: &str, args: &[&str], files: &[(&str, &str)]) -> (String, i32) {
 
 #[test]
 fn wording_is_never_a_finding() {
-    // Form only: filler words, a Non-concern pointing at the file itself, and `<…>`
-    // placeholder slots are all present and non-empty, so every one of them PASSES.
+    // Form only: filler words, a Non-concern pointing at the file itself, and `<…>` placeholder slots are all present and non-empty, so every one of them PASSES.
     let (out, code) = check(
         "wording",
         &["--no-guide"],
@@ -58,10 +57,7 @@ fn wording_is_never_a_finding() {
 
 #[test]
 fn the_emitted_suggestion_itself_passes() {
-    // The sharpest single assertion for this change: the file-tailored stub the report prints
-    // is itself a well-formed line, so applying it clears the form defect instead of stacking
-    // a second one. Its `<…>` slots are still unwritten judgments, and a length bound would
-    // apply to the stub like any other line.
+    // The stub the report prints is itself a well-formed line, so applying it clears the form defect instead of stacking a second one.
     let (json, code) = check(
         "suggestion",
         &["--format", "json"],
@@ -86,8 +82,7 @@ fn the_emitted_suggestion_itself_passes() {
 
 #[test]
 fn an_empty_field_fails_and_the_text_says_which() {
-    // Without the detail clause the human line claims `concern` is missing while `Concern:`
-    // is plainly visible in `found` — the defect the carrier exists to fix.
+    // Without the detail clause the human line claims `concern` is missing while `Concern:` is plainly visible in `found` — the defect the carrier exists to fix.
     let (out, code) = check(
         "empty-text",
         &["--no-guide"],
@@ -191,8 +186,7 @@ fn the_length_bound_fires_only_past_the_limit() {
 
 #[test]
 fn the_length_bound_is_machine_readable_and_covers_charters() {
-    // A `.annotation` charter line is held to the SAME bound as a file annotation, and the
-    // structured surface carries the annotation's length plus the bound, as two numbers.
+    // A `.annotation` charter line is held to the SAME bound as a file annotation, and the structured surface carries the annotation's length plus the bound, as two numbers.
     let long = "z".repeat(30);
     let (json, code) = check(
         "len-json",
@@ -240,8 +234,7 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
         v.get("suggestion").is_none(),
         "no stub is emitted for an over-length annotation — the key is absent, not null: {v}"
     );
-    // Charters and file annotations reach that suppression by separate paths, so asserting it on
-    // the charter alone leaves the ordinary case — a commented file — unguarded.
+    // Charters and file annotations reach that suppression by separate paths, so asserting it on the charter alone leaves the ordinary case — a commented file — unguarded.
     let file = doc["violations"]
         .as_array()
         .expect("violations array")
@@ -257,8 +250,7 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
 
 #[test]
 fn malformed_outranks_too_long() {
-    // At most one outcome per file: an over-length line that also has an empty field stays
-    // `malformed_annotation` — structure is the more basic defect.
+    // At most one outcome per file: an over-length line that also has an empty field stays `malformed_annotation` — structure is the more basic defect.
     let long = "w".repeat(40);
     let (json, code) = check(
         "precedence",
@@ -284,8 +276,7 @@ fn malformed_outranks_too_long() {
 
 #[test]
 fn a_clean_tree_carries_no_warnings_surface() {
-    // The advisory channel is gone: the JSON document has no `warnings` key at all, and the
-    // TEXT report has no `Found N warning(s)` block.
+    // The advisory channel is gone: the JSON document has no `warnings` key at all, and the TEXT report has no `Found N warning(s)` block.
     let files: &[(&str, &str)] = &[("ok.rs", "// Concern: a | Non-concern: b | IO: c\n")];
     let (json, code) = check("no-warn-json", &["--format", "json"], files);
     assert_eq!(code, 0);
@@ -305,10 +296,7 @@ fn a_clean_tree_carries_no_warnings_surface() {
 
 #[test]
 fn a_comment_wrapped_charter_names_the_marker_and_suggests_the_bare_line() {
-    // A `.annotation` file is the one place the line is written bare, so wrapping it in the
-    // marker every other annotation carries is the easy mistake. Reporting "the separators
-    // are missing" is the one diagnosis that cannot be true when they are plainly there, and
-    // a stub seeded from the wrapped text embeds the marker, so it cannot be pasted either.
+    // "The separators are missing" is the one diagnosis that cannot be true when they are plainly there, and a stub seeded from the wrapped text embeds the marker, so it cannot be pasted either.
     let (out, code) = check(
         "wrapped-charter",
         &["--no-guide"],
@@ -337,10 +325,7 @@ fn a_comment_wrapped_charter_names_the_marker_and_suggests_the_bare_line() {
 
 #[test]
 fn yaml_frontmatter_keeps_line_one_and_the_annotation_still_counts() {
-    // A Claude Code skill (and any static-site page) must keep its frontmatter at line 1, so
-    // requiring the annotation above it made shipping skills and enforcing --strict-check
-    // mutually exclusive. The block is skipped like a shebang; an unclosed `---` is not a
-    // block, so a document that merely opens with a horizontal rule is unaffected.
+    // Frontmatter must keep line 1, so requiring the annotation above it made shipping Claude Code skills and enforcing `--strict-check` mutually exclusive.
     let (out, code) = check(
         "frontmatter",
         &["--no-guide"],
@@ -369,9 +354,7 @@ fn yaml_frontmatter_keeps_line_one_and_the_annotation_still_counts() {
 
 #[test]
 fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
-    // An `.annotation`'s stray lines reach no report surface, on any of the three shapes that
-    // produce them — and the malformed-first-line cases prove the precedence rule: without it,
-    // `found:` and `suggestion:` echo the stray line and ONE finding prints as THREE lines.
+    // An `.annotation`'s stray lines reach no report surface, on any of the three shapes that produce them — and the malformed-first-line cases prove the precedence rule: without it, `found:` and `suggestion:` echo the stray line and ONE finding prints as THREE lines.
     let files = &[
         ("main.rs", "// Concern: a | Non-concern: b | IO: none\n"),
         (
@@ -407,8 +390,7 @@ fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
         assert!(!out.contains(stray), "{stray} reached the report:\n{out}");
     }
 
-    // Three artifacts, three findings, each located and each on ONE line. Sorted by path, so the
-    // report is deterministic regardless of walk order.
+    // Three artifacts, three findings, each located and each on ONE line. Sorted by path, so the report is deterministic regardless of walk order.
     for located in [
         "broken/.annotation:2: holds more than the one line",
         "noisy/.annotation:2: holds more than the one line",
@@ -421,8 +403,7 @@ fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
         "{out}"
     );
 
-    // And NOTHING was diagnosed about any of their parts — including the two whose first line is
-    // malformed, which is the whole point of the precedence rule.
+    // And NOTHING was diagnosed about any of their parts — including the two whose first line is malformed, which is the whole point of the precedence rule.
     assert!(
         out.contains("All 4 files passed"),
         "no annotation violation: main.rs, noisy/inner.rs, broken/inner.rs and trials.csv are the \

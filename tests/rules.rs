@@ -31,8 +31,7 @@ fn deny_rule_over_a_forbidden_edge_fails_strict_check() {
         out.contains("rule: denied dependency: web must not depend on core"),
         "the report must name the violated deny rule:\n{out}"
     );
-    // Annotations in the fixture are all valid, so the failure is the rule alone: none
-    // of the annotation-linter's prose (`annotation::validate`) may leak into the report.
+    // Annotations in the fixture are all valid, so the failure is the rule alone: none of the annotation-linter's prose (`annotation::validate`) may leak into the report.
     assert!(
         !out.contains("missing annotation") && !out.contains("annotation missing required"),
         "no annotation errors expected, only the rule finding:\n{out}"
@@ -41,9 +40,7 @@ fn deny_rule_over_a_forbidden_edge_fails_strict_check() {
 
 #[test]
 fn forbid_cycles_over_a_real_cycle_fails_strict_check() {
-    // The fixture's alpha <-> beta Cargo path dependencies form a cycle, which
-    // `[rules] forbid_cycles = true` flags. This freezes that the config flag actually
-    // reaches the strict report (not just the pure algorithm in src/rules.rs).
+    // The fixture's alpha <-> beta Cargo path dependencies form a cycle, which `[rules] forbid_cycles = true` flags. This freezes that the config flag actually reaches the strict report (not just the pure algorithm in src/rules.rs).
     let (out, code) = run_strict_check("cycle");
 
     assert_eq!(
@@ -58,8 +55,7 @@ fn forbid_cycles_over_a_real_cycle_fails_strict_check() {
         out.contains("alpha") && out.contains("beta"),
         "the cycle finding must name both packages in the loop:\n{out}"
     );
-    // The fixture's annotations are all valid, so the failure is the rule alone: none
-    // of the annotation-linter's prose (`annotation::validate`) may leak into the report.
+    // The fixture's annotations are all valid, so the failure is the rule alone: none of the annotation-linter's prose (`annotation::validate`) may leak into the report.
     assert!(
         !out.contains("missing annotation") && !out.contains("annotation missing required"),
         "no annotation errors expected, only the rule finding:\n{out}"

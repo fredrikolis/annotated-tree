@@ -121,11 +121,7 @@ pub(crate) fn dispatch(
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> Result<i32> {
-    // `trailing_var_arg` is what lets `--annotate-tool-output grep -rn --color=never foo .` reach
-    // us with the producer's flags intact, and its one cost is paid here: clap no longer rejects a
-    // mistyped flag, it swallows it into `args`. Falling through would make `--install-claud-hook`
-    // indistinguishable from a successful run — no output, exit 0 — which is exactly what the
-    // hand-rolled guard in the retired binary existed to prevent.
+    // `trailing_var_arg` reaches us with the producer's flags intact, and its cost is paid here: clap swallows a mistyped flag into `args` instead of rejecting it, so falling through would make `--install-claud-hook` indistinguishable from success.
     let set = modes(args);
     if set.len() != 1 {
         if set.len() > 1 {
@@ -202,9 +198,7 @@ fn hook_file(
             writeln!(out, "{}", outcome.describe(&path))?;
             Ok(exit::SUCCESS)
         }
-        // A settings file that cannot be read, parsed or replaced is a precondition failure, and
-        // takes the code the taxonomy already has for one. Never 1: on this binary that is
-        // `--strict-check found at least one violation`, which `--help` advertises.
+        // A settings file that cannot be read, parsed or replaced is a precondition failure, and takes the code the taxonomy already has for one. Never 1: on this binary that is `--strict-check found at least one violation`, which `--help` advertises.
         Err(e) => {
             writeln!(err, "annotated-tree bash-annotator: {e}")?;
             Ok(exit::PRECONDITION)
@@ -245,8 +239,7 @@ const SESSION_ANNOUNCEMENT: &str = concat!(
 /// ALWAYS [`exit::SUCCESS`]. A PreToolUse hook's exit 2 BLOCKS the tool call; other nonzero codes
 /// surface as errors. Neither is an acceptable way to say "nothing to do here".
 fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
-    // A hook is fed JSON on stdin. Run by hand from a terminal there is nothing to read, so say so
-    // instead of blocking forever on a pipe that will never carry anything.
+    // A hook is fed JSON on stdin. Run by hand from a terminal there is nothing to read, so say so instead of blocking forever on a pipe that will never carry anything.
     if std::io::stdin().is_terminal() {
         writeln!(
             err,
@@ -263,8 +256,7 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
     let Ok(payload) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return Ok(exit::SUCCESS);
     };
-    // Claude Code stamps the event name on every payload. Matched before `tool_name` because a
-    // SessionStart event carries no tool at all.
+    // Claude Code stamps the event name on every payload. Matched before `tool_name` because a SessionStart event carries no tool at all.
     if payload.get("hook_event_name").and_then(|v| v.as_str()) == Some("SessionStart") {
         writeln!(
             out,
@@ -291,13 +283,7 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
 
     let mut updated = input.clone();
     updated.insert("command".into(), serde_json::Value::String(rewritten));
-    // No `permissionDecision`: "allow" would SKIP PERMISSION CHECKS for the whole Bash command,
-    // including anything `&&`-joined to the eligible stage. `updatedInput` needs no decision.
-    //
-    // And no `additionalContext`. PreToolUse fires BEFORE the command runs, so an explanation
-    // attached here is repeated on every eligible call and is often about contracts that never
-    // appear — a `grep` over unannotated files would carry the whole speech and annotate nothing.
-    // SESSION_ANNOUNCEMENT says it once instead.
+    // No `permissionDecision`: "allow" would SKIP PERMISSION CHECKS for the whole Bash command, including anything `&&`-joined to the eligible stage. No `additionalContext` either — it would repeat on every call, often about contracts that never appear.
     writeln!(
         out,
         "{}",
@@ -335,9 +321,7 @@ fn annotate_tool_output(
     }
     let stdin = std::io::stdin();
     let mut input = stdin.lock();
-    // `annotate` returns a hardcoded 0, never the producer's status. That status is re-raised by
-    // the shell snippet `inject` emits, which runs in the agent's own shell — which is how
-    // `grep`'s exit 1 on no-match survives a rewrite.
+    // `annotate` returns a hardcoded 0, never the producer's status. That status is re-raised by the shell snippet `inject` emits, which runs in the agent's own shell — which is how `grep`'s exit 1 on no-match survives a rewrite.
     let _ = run::annotate(&args.args, &mut input, out);
     Ok(exit::SUCCESS)
 }

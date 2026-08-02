@@ -10,8 +10,7 @@ use std::path::PathBuf;
 /// installs, reads a secret, or writes: `--install-claude-hook` remains something a user
 /// chooses to run.
 fn main() {
-    // Re-run when the thing being checked changes, or the warning would linger until a clean
-    // build long after the hook was switched on.
+    // Re-run when the thing being checked changes, or the warning would linger until a clean build long after the hook was switched on.
     println!("cargo:rerun-if-env-changed=HOME");
     println!("cargo:rerun-if-changed=build.rs");
 
@@ -24,17 +23,14 @@ fn main() {
         claude_dir.join("settings.json").display()
     );
 
-    // (a) Is this a Claude Code machine at all? No `~/.claude` and no `claude` on PATH means the
-    // hook has nothing to attach to, and the line would be noise.
+    // (a) Is this a Claude Code machine at all? No `~/.claude` and no `claude` on PATH means the hook has nothing to attach to, and the line would be noise.
     let on_path = std::env::var_os("PATH")
         .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join("claude").is_file()));
     if !claude_dir.is_dir() && !on_path {
         return;
     }
 
-    // (b) Is the hook already on? A plain substring search over the settings file, deliberately
-    // dependency-free — a build script is the wrong place to take a JSON dependency, and a false
-    // POSITIVE here only costs a line that was never printed.
+    // (b) Is the hook already on? A plain substring search over the settings file, deliberately dependency-free — a build script is the wrong place to take a JSON dependency, and a false POSITIVE here only costs a line that was never printed.
     let installed = std::fs::read_to_string(claude_dir.join("settings.json"))
         .is_ok_and(|s| s.contains("--rewrite-tool-call"));
     if installed {

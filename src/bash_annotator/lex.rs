@@ -59,11 +59,7 @@ pub fn lex(src: &str) -> Lexed {
         }
         let start = i;
 
-        // A COMMENT runs to end of line. `#` only opens one at a token boundary, which is where
-        // this loop always is — inside a word it is an ordinary character (`file#1`). Emitting no
-        // token for it keeps it out of every stage, so the annotator is spliced BEFORE it rather
-        // than into it: appending after a `#` commented out the closing `)` and left the agent
-        // with a bash syntax error and no output at all.
+        // `#` opens a comment only at a token boundary; inside a word it is ordinary (`file#1`). Emitting no token splices the annotator BEFORE it, since appending after a `#` comments out the closing `)`.
         if b[i] == b'#' {
             while i < b.len() && b[i] != b'\n' {
                 i += 1;
@@ -71,8 +67,7 @@ pub fn lex(src: &str) -> Lexed {
             continue;
         }
 
-        // Redirection, with an optional leading file descriptor: `>`, `>>`, `2>`, `1>>`, `2>&1`.
-        // `<<` and `<<-` open a heredoc; everything after is data this cannot model.
+        // Redirection, with an optional leading file descriptor: `>`, `>>`, `2>`, `1>>`, `2>&1`. `<<` and `<<-` open a heredoc; everything after is data this cannot model.
         if src.get(i..i + 2) == Some("<<") {
             heredoc = true;
             tokens.push(op(src, i, i + 2));
@@ -95,10 +90,7 @@ pub fn lex(src: &str) -> Lexed {
             continue;
         }
 
-        // Two-character control operators first, so `||` never lexes as two `|`.
-        // `get`, not `&src[i..i + 2]`: a byte index inside a multi-byte character panics.
-        // `|&` pipes stdout AND stderr. Lexed as `|` then `&` it read as a pipe followed by a
-        // command separator, which made the downstream stage look like a fresh command.
+        // Two-character operators first, so `||` never lexes as two `|`. `get`, not `&src[i..i + 2]`: a byte index inside a multi-byte character panics.
         if matches!(
             src.get(i..i + 2),
             Some("||") | Some("&&") | Some(";;") | Some("|&")
@@ -114,12 +106,7 @@ pub fn lex(src: &str) -> Lexed {
             continue;
         }
 
-        // A word. Quoting and escaping are resolved into `text`; the span stays raw.
-        //
-        // Accumulated as BYTES, not chars. Pushing `b[i] as char` decodes each byte as its own
-        // Latin-1 character, so every multi-byte character was mangled — an em-dash in a search
-        // pattern came back out as three replacement characters. Harmless while the text was only
-        // ever compared, corrupting once it is forwarded to the annotator.
+        // Accumulated as BYTES: `b[i] as char` decodes each byte as its own Latin-1 character, mangling every multi-byte one — harmless while the text is only compared, corrupting once it is forwarded.
         let mut text: Vec<u8> = Vec::new();
         while i < b.len() {
             let c = b[i];

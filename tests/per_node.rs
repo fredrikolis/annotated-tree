@@ -28,9 +28,7 @@ fn temp_tree(tag: &str, n_dirs: usize, n_files: usize) -> PathBuf {
 }
 
 fn run_capture(dir: &Path, extra: &[&str]) -> (String, String, i32) {
-    // Every assertion pins the cap via a CLI flag (`--max-per-node`/`--full`), which
-    // outranks the built-in default of 50, so this in-process harness needs no env
-    // manipulation (unsafe under edition 2024).
+    // Every assertion pins the cap via a CLI flag (`--max-per-node`/`--full`), which outranks the built-in default of 50, so this in-process harness needs no env manipulation (unsafe under edition 2024).
     let mut argv = vec!["annotated-tree".to_string()];
     argv.extend(extra.iter().map(|s| s.to_string()));
     argv.push(dir.to_string_lossy().into_owned());
@@ -50,8 +48,7 @@ fn run_capture(dir: &Path, extra: &[&str]) -> (String, String, i32) {
 fn files_over_cap_render_single_marker_and_full_expands() {
     let dir = temp_tree("files", 0, 60);
 
-    // Soft truncation: exit 0, the tree IS rendered, overflow folds into one marker
-    // naming its own escape hatch.
+    // Soft truncation: exit 0, the tree IS rendered, overflow folds into one marker naming its own escape hatch.
     let (out, _err, code) = run_capture(&dir, &["--max-per-node", "5"]);
     assert_eq!(code, 0, "per-node cap never aborts");
     assert!(
@@ -105,8 +102,7 @@ fn combined_marker_folds_dirs_and_files_into_one_row() {
 
 #[test]
 fn json_exposes_distinct_elision_counts() {
-    // JSON keeps the breakdown as two structured integers (unlike the folded text
-    // marker), and the visible arrays are truncated to the cap.
+    // JSON keeps the breakdown as two structured integers (unlike the folded text marker), and the visible arrays are truncated to the cap.
     let dir = temp_tree("json", 10, 60);
 
     let (out, _err, code) = run_capture(&dir, &["--format", "json", "--max-per-node", "5"]);
@@ -132,8 +128,7 @@ fn json_exposes_distinct_elision_counts() {
 
 #[test]
 fn default_and_full_omit_elision_fields_in_json() {
-    // Omitted-when-zero: a small tree under the default cap carries neither field,
-    // keeping default JSON byte-identical for existing consumers.
+    // Omitted-when-zero: a small tree under the default cap carries neither field, keeping default JSON byte-identical for existing consumers.
     let dir = temp_tree("small", 2, 3);
 
     let (out, _err, _code) = run_capture(&dir, &["--format", "json"]);

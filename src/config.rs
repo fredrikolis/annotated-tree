@@ -168,9 +168,7 @@ impl Language {
 pub struct Config {
     pub display: Display,
     pub limits: Limits,
-    // Architectural `[rules]` are a strict-check concern the internal crate consumes; kept
-    // crate-private so making `Config` a public type does not leak the internal `Rules` shape
-    // into the library API (the low-level walk/annotation consumer never needs it).
+    // Architectural `[rules]` are a strict-check concern the internal crate consumes; kept crate-private so making `Config` a public type does not leak the internal `Rules` shape into the library API (the low-level walk/annotation consumer never needs it).
     pub(crate) rules: Rules,
     languages: Vec<Language>,
     ext_to_lang: HashMap<String, usize>,
@@ -243,9 +241,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
         dd.gitignore = sd.gitignore.or(dd.gitignore);
         dd.include_tests = sd.include_tests.or(dd.include_tests);
         dd.max_per_node = sd.max_per_node.or(dd.max_per_node);
-        // `include` is a whole list, so a layer that sets it REPLACES (not appends) — the same
-        // precedence `[rules] deny` uses, so a repo file can fully re-state the selectors rather
-        // than inherit a user file's. CLI selectors are folded in additively later, in `resolve`.
+        // `include` is a whole list, so a layer that sets it REPLACES (not appends) — the same precedence `[rules] deny` uses, so a repo file can fully re-state the selectors rather than inherit a user file's. CLI selectors are folded in additively later, in `resolve`.
         dd.include = sd.include.or_else(|| dd.include.take());
     }
     if let Some(sl) = src.limits {
@@ -254,8 +250,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
     }
     if let Some(sr) = src.rules {
         let dr = dst.rules.get_or_insert_with(Default::default);
-        // `deny` is a whole list, so a layer that sets it replaces (not appends);
-        // the flags overlay per the standard `.or()` precedence.
+        // `deny` is a whole list, so a layer that sets it replaces (not appends); the flags overlay per the standard `.or()` precedence.
         dr.deny = sr.deny.or_else(|| dr.deny.take());
         dr.forbid_cycles = sr.forbid_cycles.or(dr.forbid_cycles);
         dr.forbid_orphans = sr.forbid_orphans.or(dr.forbid_orphans);
@@ -269,9 +264,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
 
 fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     let disp = raw.display.unwrap_or_default();
-    // Selectors are config-first, then CLI: a config `[display] include` sets a baseline and
-    // each `--include` on the command line ADDS to it, so a run can widen the tree beyond what
-    // the repo file already opts in without having to re-state it.
+    // Selectors are config-first, then CLI: a config `[display] include` sets a baseline and each `--include` on the command line ADDS to it, so a run can widen the tree beyond what the repo file already opts in without having to re-state it.
     let mut include = disp.include.clone().unwrap_or_default();
     include.extend(cli.include.iter().cloned());
     let display = Display {
@@ -445,9 +438,7 @@ mod tests {
 
     #[test]
     fn builtin_example_matches_rust_derived() {
-        // `--help` sources its exemplar from `builtin_example()`; it must equal the `//`
-        // (Rust/Go/TS) language's DERIVED example, so help and the per-file diagnostic
-        // advertise the same body from the one `EXAMPLE_BODY` source.
+        // `--help` sources its exemplar from `builtin_example()`; it must equal the `//` (Rust/Go/TS) language's DERIVED example, so help and the per-file diagnostic advertise the same body from the one `EXAMPLE_BODY` source.
         let raw: RawConfig = toml::from_str(DEFAULT_CONFIG).unwrap();
         let config = resolve(raw, &CliOverrides::default()).unwrap();
         let rust = config

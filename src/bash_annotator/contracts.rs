@@ -18,10 +18,10 @@ pub struct Contracts {
 }
 
 impl Contracts {
+    /// A config failure degrades to "no contracts" rather than aborting: the wrapped tool's
+    /// own output is still worth delivering, and swallowing it would lose the user's answer.
     pub fn new() -> Self {
         Contracts {
-            // A config failure degrades to "no contracts" rather than aborting: the wrapped tool's
-            // own output is still worth delivering, and swallowing it would lose the user's answer.
             config: Config::load(Path::new("."), &CliOverrides::default()).ok(),
             files: HashMap::new(),
             dirs: HashMap::new(),
@@ -46,8 +46,7 @@ impl Contracts {
         if let Some(hit) = self.files.get(path) {
             return hit.clone();
         }
-        // Marker-based first, then marker-agnostic, so an extensionless or unrecognised file
-        // still shows the line it declared.
+        // Marker-based first, then marker-agnostic, so an extensionless or unrecognised file still shows the line it declared.
         let found = self
             .config
             .as_ref()

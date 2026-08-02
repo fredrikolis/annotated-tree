@@ -40,9 +40,7 @@ fn wraps(command: &serde_json::Value, pipeline: &str) -> bool {
     };
     c.starts_with(&format!("( {pipeline} | "))
         && c.contains("bash-annotator --annotate-tool-output")
-        // The exit code is recovered from PIPESTATUS and re-raised; the exact expression is not
-        // frozen here (bash_annotator_equivalence.rs checks the CODE against the unrewritten command,
-        // which is the property that matters), only that the subshell ends by re-raising one.
+        // The exit code is recovered from PIPESTATUS and re-raised; the exact expression is not frozen here (bash_annotator_equivalence.rs checks the CODE against the unrewritten command, which is the property that matters), only that the subshell ends by re-raising one.
         && c.contains("PIPESTATUS")
         && c.contains("exit $__rc )")
 }
@@ -58,9 +56,7 @@ fn a_rewrite_is_returned_in_the_shape_the_harness_reads() {
         wraps(&hook_out["updatedInput"]["command"], "ls src"),
         "unexpected rewrite: {hook_out}"
     );
-    // No `additionalContext` here. PreToolUse fires before the command runs, so an explanation
-    // attached to a rewrite is repeated on every eligible call and describes contracts that may
-    // never be printed. SessionStart carries it once instead.
+    // No `additionalContext` here. PreToolUse fires before the command runs, so an explanation attached to a rewrite is repeated on every eligible call and describes contracts that may never be printed. SessionStart carries it once instead.
     assert!(
         hook_out.get("additionalContext").is_none(),
         "the per-call explanation is back: {hook_out}"
@@ -75,8 +71,7 @@ fn a_session_start_event_is_answered_with_the_announcement_once() {
     assert_eq!(code, 0);
     let hook_out = &json(&out)["hookSpecificOutput"];
     assert_eq!(hook_out["hookEventName"], "SessionStart");
-    // The wire contract is that SOMETHING is said, not what. The wording is prose and will keep
-    // improving; freezing it here only breaks this test every time it does.
+    // The wire contract is that SOMETHING is said, not what. The wording is prose and will keep improving; freezing it here only breaks this test every time it does.
     assert!(
         hook_out["additionalContext"]
             .as_str()
@@ -89,8 +84,7 @@ fn a_session_start_event_is_answered_with_the_announcement_once() {
 
 #[test]
 fn a_session_start_event_never_reaches_the_rewriter() {
-    // `hook_event_name` is matched first, so a SessionStart payload that also happened to carry a
-    // `tool_name` is still answered as a SessionStart.
+    // `hook_event_name` is matched first, so a SessionStart payload that also happened to carry a `tool_name` is still answered as a SessionStart.
     let (out, code) = hook(
         r#"{"hook_event_name":"SessionStart","source":"compact","tool_name":"Bash","tool_input":{"command":"ls src"}}"#,
     );
@@ -102,9 +96,7 @@ fn a_session_start_event_never_reaches_the_rewriter() {
 
 #[test]
 fn no_permission_decision_is_ever_emitted() {
-    // `permissionDecision: "allow"` means SKIP PERMISSION CHECKS, and it applies to the WHOLE Bash
-    // command — so `ls . && rm -rf x`, whose `ls` stage is eligible, would have the destructive
-    // half waved through too. `updatedInput` needs no decision, so none is sent.
+    // `permissionDecision: "allow"` means SKIP PERMISSION CHECKS, and it applies to the WHOLE Bash command — so `ls . && rm -rf x`, whose `ls` stage is eligible, would have the destructive half waved through too. `updatedInput` needs no decision, so none is sent.
     let (out, _) = hook(r#"{"tool_name":"Bash","tool_input":{"command":"ls . && rm -rf /tmp/x"}}"#);
     let v = json(&out);
     assert!(
@@ -151,11 +143,9 @@ fn silence_means_no_opinion() {
 
 #[test]
 fn malformed_input_exits_zero_and_says_nothing() {
-    // A PreToolUse hook's exit 2 BLOCKS the tool call, and other nonzero codes surface as errors.
-    // Neither is an acceptable way to say "I could not read that", so the only exit code is 0.
     for event in ["not json at all", "", "{}", r#"{"tool_name":"Bash"}"#] {
         let (out, code) = hook(event);
-        assert_eq!(code, 0, "nonzero exit would disrupt the agent: {event:?}");
+        assert_eq!(code, 0, "exit 2 blocks the tool call and other nonzero codes surface as errors: {event:?}");
         assert_eq!(out, "", "expected silence for {event:?}");
     }
 }

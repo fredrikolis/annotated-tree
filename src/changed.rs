@@ -26,16 +26,11 @@ use anyhow::{bail, Context, Result};
 /// bad `<since>` ref each surface as an explicit error, so an empty result always
 /// means "nothing changed", never "git quietly failed".
 pub fn changed_files(root: &Path, since: &str) -> Result<HashSet<PathBuf>> {
-    // `rev-parse --show-toplevel` doubles as the is-this-a-git-repo probe and gives
-    // us the base to resolve git's repo-root-relative paths against.
+    // `rev-parse --show-toplevel` doubles as the is-this-a-git-repo probe and gives us the base to resolve git's repo-root-relative paths against.
     let toplevel = git(root, &["rev-parse", "--show-toplevel"])?;
     let toplevel = PathBuf::from(toplevel.trim());
 
-    // A bad ref fails here (Fail-Fast) rather than yielding an empty diff.
-    // Both commands must emit REPO-ROOT-relative paths so they resolve against
-    // `toplevel` identically: `diff` already does; `ls-files` needs `--full-name`
-    // (without it, its paths are relative to the cwd `root`, which mis-resolves an
-    // untracked file when `root` is a subdirectory of the repo).
+    // Both commands must emit REPO-ROOT-relative paths to resolve against `toplevel` identically: `ls-files` needs `--full-name`, or its cwd-relative paths mis-resolve an untracked file when `root` is a subdirectory.
     let diff = git(root, &["diff", "--name-only", since])?;
     let untracked = git(
         root,
@@ -49,8 +44,7 @@ pub fn changed_files(root: &Path, since: &str) -> Result<HashSet<PathBuf>> {
             continue;
         }
         let abs = toplevel.join(line);
-        // Canonicalize so paths match the walked set; a path that no longer exists
-        // (e.g. a deletion) simply won't intersect the walk, so keep the join.
+        // Canonicalize so paths match the walked set; a path that no longer exists (e.g. a deletion) simply won't intersect the walk, so keep the join.
         out.insert(abs.canonicalize().unwrap_or(abs));
     }
     Ok(out)

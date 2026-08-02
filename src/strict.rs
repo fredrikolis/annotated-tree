@@ -179,9 +179,7 @@ impl AnnotationViolation {
     fn message(&self) -> String {
         match self.category {
             Category::MissingAnnotation => {
-                // Name the language and the exact marker to add, show a conformant
-                // example, and — when a foreign/wrong-marker line was present — echo
-                // it so the fix is unambiguous (e.g. "you used `;` not `--`").
+                // Echoing the offending line is what makes the fix unambiguous, e.g. "you used `;` not `--`".
                 let mut msg = format!(
                     "{}:{}: missing annotation [{}] — add a `{}` comment.",
                     self.path, self.line, self.language, self.marker,
@@ -195,10 +193,7 @@ impl AnnotationViolation {
                 msg
             }
             Category::MalformedAnnotation => {
-                // `detail` is interpolated right after the language marker (the same slot the
-                // too-long message uses), so it reads as the diagnosis rather than as a
-                // comment on the trailing suggestion. A plainly-absent key carries no
-                // `detail`, and then this renders exactly as it always has.
+                // Interpolated right after the language marker, the same slot the too-long message uses, so it reads as the diagnosis rather than as a note on the trailing suggestion.
                 let diagnosis = match &self.detail {
                     Some(detail) => format!("{detail}; "),
                     None => String::new(),
@@ -354,10 +349,7 @@ impl StrictReport {
                 self.violations.len(),
                 self.files_checked
             ));
-            // The length bound ships ON, so an adopter can hit it having configured nothing:
-            // name the escape in the same output that failed them. Once per report, not per
-            // violation — the remedy is identical for every over-length annotation, and repeating
-            // it on each line would drown the findings.
+            // The bound ships ON, so name the escape in the same output that failed them — once per report, since repeating an identical remedy per violation would drown the findings.
             if let Some(max) = self.violations.iter().find_map(|v| v.defect.max) {
                 out.push_str(&format!(
                     "note: the annotation length bound is {max} — change it with `[rules] max_annotation_length = <N>` or `--max-length <N>`, or disable it with `--max-length 0`\n"
@@ -365,15 +357,12 @@ impl StrictReport {
             }
             code = crate::exit::STRICT_FAILURE;
         }
-        // Progress, not just a terminal error count: how far the tree is toward every
-        // code file carrying an annotation. An agent watches this converge.
+        // Progress rather than a terminal error count — an agent watches this converge.
         out.push_str(&format!(
             "{} of {} files annotated\n",
             self.annotated_count, self.files_checked
         ));
-        // A dangling sidecar is a path problem, not an annotation problem, so it gets its own
-        // `path: message` lines rather than being folded into the violation list an agent
-        // reads as "fix this annotation".
+        // A dangling sidecar is a path problem, not an annotation one, so it stays out of the list an agent reads as "fix this annotation".
         if !self.orphan_sidecars.is_empty() {
             push_capped(
                 &mut out,
@@ -388,9 +377,7 @@ impl StrictReport {
             ));
             code = crate::exit::STRICT_FAILURE;
         }
-        // Content past line 1 is a defect of the FILE, not of any Annotation part, so it gets its
-        // own located lines beside the dangling sidecars rather than being folded into the
-        // violation list an agent reads as "fix this annotation".
+        // Content past line 1 is a defect of the FILE, not of any Annotation part, so it lands beside the dangling sidecars.
         if !self.trailing_content.is_empty() {
             push_capped(
                 &mut out,
@@ -405,8 +392,7 @@ impl StrictReport {
             ));
             code = crate::exit::STRICT_FAILURE;
         }
-        // Architectural rule findings append as `rule: <message>` lines — line-per-finding,
-        // nonzero exit when any exist.
+        // Architectural rule findings append as `rule: <message>` lines, one per finding.
         if !self.rule_violations.is_empty() {
             push_capped(
                 &mut out,
@@ -475,13 +461,8 @@ pub(crate) fn check_structured(
     let orphan_sidecars = orphan_sidecars(root, files);
     let trailing_content = trailing_contents(root, files, config);
     let mut rule_violations = Vec::new();
-    // The dependency graph feeds ONE signal: the architectural `[rules]` findings. No rule
-    // configured, no graph build — a repo with no `[rules]` does zero extra work.
     if config.rules.is_active() {
-        // Same filter as the file walk: the rules graph sees exactly the manifests the
-        // tree would show (gitignore/hidden/`tests`/`-I` honored). UNCAPPED by depth
-        // (`None`), like the file walk feeding this check: `--strict-check` is a gate over
-        // the whole tree, not a rendered view, so `-L` never shrinks what it evaluates.
+        // Same filter as the file walk but UNCAPPED by depth: `--strict-check` is a gate over the whole tree, not a rendered view, so `-L` never shrinks what it evaluates.
         let graph = graph::build(
             &[root.to_path_buf()],
             config.display.gitignore,
@@ -489,10 +470,7 @@ pub(crate) fn check_structured(
             excludes,
             None,
         );
-        // `PackageEdges::dir` is canonicalized/absolute; canonicalize the root once so
-        // the location relativizes to the same unix path shape as annotation `path`s
-        // (falling back to the full dir if it lies outside the root, mirroring
-        // `check_annotations`' `strip_prefix(root).unwrap_or(path)`).
+        // `PackageEdges::dir` is absolute, so the root is canonicalized once to relativize into the same unix path shape annotation `path`s use.
         let root_canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
         rule_violations = rules::evaluate(&graph.packages, &config.rules)
             .into_iter()
@@ -505,10 +483,7 @@ pub(crate) fn check_structured(
                     .map(|d| crate::util::to_unix_path(d.strip_prefix(&root_canon).unwrap_or(&d))),
             })
             .collect();
-        // Opt-in gate: a manifest-bearing package that owns annotated files but resolves no
-        // concern charter FAILS the check. Modeled on `forbid_orphans` (a `[rules]` toggle →
-        // a fatal `RuleViolation`), so it rides the existing rule-violation surface. Off by
-        // default; the charter census is always available, this turns it into a gate.
+        // Modeled on `forbid_orphans` — a `[rules]` toggle yielding a fatal `RuleViolation` — so it rides the existing rule-violation surface and turns the always-available charter census into a gate.
         if config.rules.require_package_charter {
             rule_violations.extend(package_charter_violations(
                 &graph,
@@ -566,18 +541,12 @@ fn check_annotations(
 ) -> (Vec<AnnotationViolation>, usize, Vec<String>) {
     let mut violations: Vec<AnnotationViolation> = Vec::new();
     let mut annotated_count = 0usize;
-    // Root-relative unix paths of the files that CARRY an annotation (any comment, even a
-    // non-conforming one) — the input to the `require_package_charter` rule, which only fires
-    // on a package whose files are actually annotated.
+    // Files carrying ANY comment, conforming or not — `require_package_charter` only fires on a package whose files are actually annotated.
     let mut annotated_files: Vec<String> = Vec::new();
     for path in files {
         let rel = rel_of(root, path);
         let Some(lang) = config.language_for_path(path) else {
-            // No comment marker, so this file's contract lives in a `<name>.annotation`
-            // sidecar when it has one — checked by the same three-field grammar as a
-            // directory charter, and reported at the SIDECAR's path, which is the file an
-            // author edits to fix it. With no sidecar there is nothing to lint: the file is
-            // in the set only because `--include` opted it in, and its grammar is unknown.
+            // No comment marker, so the contract lives in a sidecar and is reported at the SIDECAR's path — the file an author edits. With none there is nothing to lint: the file is here only because `--include` opted it in, and its grammar is unknown.
             if let Some(body) = sidecar::body(path) {
                 annotated_files.push(rel.clone());
                 // Same precedence as a directory charter — reported once, by `trailing_contents`.
@@ -601,9 +570,7 @@ fn check_annotations(
         };
         let mk = marker(lang);
 
-        // Per-branch facts, assembled ONCE below (shared `expected`, marker, hint + the
-        // tailored suggestion). A conforming annotation is counted and skipped; every other
-        // outcome maps to a violation via the shared `defect_parts`.
+        // Every non-conforming outcome maps to a violation through the shared `defect_parts`, so the per-branch facts are assembled exactly once.
         let Some((line, category, defect, found, seed, detail)) = defect_parts(
             annotation::analyze_file(path, lang, config.rules.max_annotation_length),
         ) else {
@@ -612,9 +579,7 @@ fn check_annotations(
             continue;
         };
 
-        // A malformed or over-length outcome still CARRIES a comment (only `Missing` does
-        // not), so the file counts as annotated for the charter rule's purpose — a package
-        // whose files carry annotations is a package that owes a charter.
+        // A malformed or over-length outcome still CARRIES a comment, and a package whose files carry annotations is one that owes a charter.
         if !matches!(category, Category::MissingAnnotation) {
             annotated_files.push(rel.clone());
         }
@@ -637,8 +602,7 @@ fn check_annotations(
         });
     }
 
-    // A present `.annotation` breadcrumb is an OPT-IN charter, so its shape is enforced by the
-    // very same grammar — a malformed one is a violation, never a silent no-op.
+    // A present `.annotation` is an OPT-IN charter held to the very same grammar: malformed is a violation, never a silent no-op.
     violations.extend(charter_violations(root, files, config));
 
     violations.sort_by(|a, b| (&a.path, a.line).cmp(&(&b.path, b.line)));
@@ -666,8 +630,7 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
     use annotation::Outcome;
     match outcome {
         Outcome::Ok => None,
-        // Echo the offending non-comment / wrong-marker line (trimmed); `None` for an empty /
-        // unreadable head. Nothing usable to seed a concern from (stem fallback downstream).
+        // `None` for an empty or unreadable head, which leaves nothing to seed a concern from (stem fallback downstream).
         Outcome::Missing { line, raw } => Some((
             line,
             Category::MissingAnnotation,
@@ -684,9 +647,7 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
             None,
             None,
         )),
-        // A comment exists but does not carry three non-empty fields: reuse its text as the
-        // concern seed; `missing` names which keyed fields are absent or empty, and `detail`
-        // (when the checker set one) says which of those two it was.
+        // A comment exists but lacks three non-empty fields: its text seeds the concern, `missing` names the absent or empty keys, and `detail` says which of the two.
         Outcome::Malformed {
             line,
             actual,
@@ -707,10 +668,7 @@ fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
                 detail,
             ))
         }
-        // The shape is right but the annotation as a whole is over the bound. No concern seed,
-        // hence no suggestion: the only text to seed one from is the over-length annotation
-        // itself — a stub would restate the defect and replace conforming fields with
-        // placeholders. The remedy is to shorten the line.
+        // No seed, hence no suggestion: the only text to seed from is the over-length annotation itself, so a stub would restate the defect and replace conforming fields with placeholders.
         Outcome::TooLong {
             line,
             actual,
@@ -758,9 +716,7 @@ fn charter_violations(root: &Path, files: &[PathBuf], config: &Config) -> Vec<An
         let Some(content) = charter::read_charter_file(&dir) else {
             continue;
         };
-        // Content past line 1 is reported ONCE, by `trailing_contents`, and suppresses the part
-        // diagnosis: `found:` and `suggestion:` would otherwise carry the stray line into a
-        // report whose contract is one finding per line.
+        // Reported ONCE by `trailing_contents`, which suppresses the part diagnosis: `found:` and `suggestion:` would otherwise carry the stray line into a report whose contract is one finding per line.
         if annotation::content_past_first_line(&content).is_some() {
             continue;
         }
@@ -793,10 +749,7 @@ fn bare_violation(
     (line, category, defect, found, seed, detail): DefectParts,
 ) -> AnnotationViolation {
     let seed = seed.as_deref().filter(|s| !s.is_empty());
-    // An over-length body gets no stub, for the same reason a file annotation does not — see
-    // `defect_parts`. A body someone WRAPPED in a comment marker gets the line from inside the
-    // wrapper verbatim: seeding a stub from the wrapped text would embed the marker, which is
-    // the one thing a suggestion must not do when the marker IS the defect.
+    // A WRAPPED body gets the line from inside the wrapper verbatim: seeding from the wrapped text would embed the marker, the one thing a suggestion must not do when the marker IS the defect.
     let suggestion = (!matches!(category, Category::AnnotationTooLong)).then(|| {
         found
             .as_deref()

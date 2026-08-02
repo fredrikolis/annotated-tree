@@ -30,8 +30,7 @@ fn age_flag_puts_a_relative_age_token_on_every_file_line() {
     assert_eq!(code, 0, "a normal run over a valid tree exits 0");
     let out = String::from_utf8(out).unwrap();
 
-    // Every `.py` leaf must carry the age suffix the text renderer appends (`  (… ago)`);
-    // freeze that the column is present in SHAPE, never the exact (real-time) value.
+    // Every `.py` leaf must carry the age suffix the text renderer appends (`  (… ago)`); freeze that the column is present in SHAPE, never the exact (real-time) value.
     let file_lines: Vec<&str> = out.lines().filter(|l| l.contains(".py")).collect();
     assert_eq!(file_lines.len(), 2, "both files should be listed:\n{out}");
     for line in &file_lines {

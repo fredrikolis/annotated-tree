@@ -499,8 +499,7 @@ fn check(cmd: &str) -> String {
 
 #[test]
 fn the_decision_table_holds() {
-    // Collect every mismatch rather than stopping at the first: one run should report everything
-    // that is wrong, not the earliest thing that is.
+    // Collect every mismatch rather than stopping at the first: one run should report everything that is wrong, not the earliest thing that is.
     let mut wrong = Vec::new();
     for (cmd, want, why) in CASES {
         let got = if check(cmd).starts_with("(unchanged)") {
@@ -523,9 +522,7 @@ fn the_decision_table_holds() {
 
 #[test]
 fn the_rest_of_the_command_survives_byte_for_byte() {
-    // Nothing is substituted; the pipeline is wrapped. So the agent's own text — its spacing, its
-    // quoting, its globs — must reappear VERBATIM inside the parentheses, and the surrounding
-    // command must be untouched outside them.
+    // Nothing is substituted; the pipeline is wrapped. So the agent's own text — its spacing, its quoting, its globs — must reappear VERBATIM inside the parentheses, and the surrounding command must be untouched outside them.
     let spaced = check("ls    -la");
     assert!(
         spaced.contains("( ls    -la | "),
@@ -541,9 +538,7 @@ fn the_rest_of_the_command_survives_byte_for_byte() {
         both.starts_with("cd src && ( ls -la | ") && both.contains("( grep -rn foo . | "),
         "the surrounding command was altered: {both}"
     );
-    // The exit-code recovery must index the stage that was last BEFORE the annotator was
-    // appended. (That the resulting CODE matches the unrewritten command, with and without
-    // `pipefail`, is checked end to end in bash_annotator_equivalence.rs.)
+    // The exit-code recovery must index the stage that was last BEFORE the annotator was appended. (That the resulting CODE matches the unrewritten command, with and without `pipefail`, is checked end to end in bash_annotator_equivalence.rs.)
     assert!(
         check("ls | sort").contains("__rc=${__ps[1]}"),
         "a two-stage pipeline must re-raise stage 1, not stage 0"
@@ -556,9 +551,7 @@ fn the_rest_of_the_command_survives_byte_for_byte() {
 
 #[test]
 fn no_input_makes_the_injector_exit_nonzero() {
-    // A panic exits 101, which the harness surfaces as an error on a command the agent wrote
-    // correctly. `check` asserts the exit code, so this is a totality sweep over shapes the
-    // table does not otherwise reach.
+    // A panic exits 101, which the harness surfaces as an error on a command the agent wrote correctly. `check` asserts the exit code, so this is a totality sweep over shapes the table does not otherwise reach.
     for cmd in [
         "grep -rn \"— the\" .", // em-dash: this repo's own annotations are full of them
         "ls # 日本語",

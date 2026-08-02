@@ -47,8 +47,7 @@ fn run(dir: &Path, set: &[(&str, &str)], clear: &[&str], args: &[&str]) -> (Stri
 
 #[test]
 fn env_max_files_below_count_aborts_runaway_scope() {
-    // 3 files under an env cap of 1: the env path (never exercised by the in-process
-    // tests, which clear the var) trips the runaway-scope abort.
+    // 3 files under an env cap of 1: the env path (never exercised by the in-process tests, which clear the var) trips the runaway-scope abort.
     let dir = temp_tree("env-low", 3);
     let (_stderr, code) = run(&dir, &[("ANNOTATED_TREE_MAX_FILES", "1")], &[], &[]);
     assert_eq!(
@@ -85,8 +84,7 @@ fn repo_config_limit_applies_and_cli_overrides_it() {
     )
     .unwrap();
 
-    // With the env cleared, the discovered repo `.annotated-tree.toml` cap (1) is below
-    // the file count (3): the config limit takes effect.
+    // With the env cleared, the discovered repo `.annotated-tree.toml` cap (1) is below the file count (3): the config limit takes effect.
     let (_e1, code_cfg) = run(&dir, &[], &["ANNOTATED_TREE_MAX_FILES"], &[]);
     assert_eq!(
         code_cfg, 3,
@@ -110,10 +108,7 @@ fn repo_config_limit_applies_and_cli_overrides_it() {
 
 #[test]
 fn env_max_files_overrides_repo_config() {
-    // The MIDDLE rung of CLI > env > config: a repo `.annotated-tree.toml` cap of 1
-    // would abort a 3-file tree, but env ANNOTATED_TREE_MAX_FILES=100 outranks the
-    // config file, so the walk completes (exit 0). No CLI flag is given, so this
-    // isolates env-beats-config specifically.
+    // The MIDDLE rung of CLI > env > config: a repo `.annotated-tree.toml` cap of 1 would abort a 3-file tree, but env ANNOTATED_TREE_MAX_FILES=100 outranks the config file, so the walk completes (exit 0). No CLI flag is given, so this isolates env-beats-config specifically.
     let dir = temp_tree("env-over-cfg", 3);
     std::fs::write(
         dir.join(".annotated-tree.toml"),

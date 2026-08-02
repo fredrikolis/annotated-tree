@@ -68,8 +68,7 @@ pub fn candidates_in(dir: &Path) -> Vec<PathBuf> {
     };
     let mut out: Vec<PathBuf> = entries
         .flatten()
-        // A DIRECTORY that happens to end in `.annotation` carries no annotation line, so it
-        // is not a candidate — and must not be reported as one that dangles.
+        // A DIRECTORY that happens to end in `.annotation` carries no annotation line, so it is not a candidate — and must not be reported as one that dangles.
         .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
         .map(|e| e.path())
         .filter(|p| named_target(p).is_some())
@@ -84,8 +83,7 @@ mod tests {
 
     #[test]
     fn the_bare_charter_file_is_not_a_sidecar() {
-        // `.annotation` names the DIRECTORY it sits in, so it must never be read as a sidecar
-        // for a file called "" — the one case where the shared suffix could alias.
+        // `.annotation` names the DIRECTORY it sits in, so it must never be read as a sidecar for a file called "" — the one case where the shared suffix could alias.
         assert_eq!(named_target(Path::new("a/.annotation")), None);
         assert_eq!(
             named_target(Path::new("a/trials.csv.annotation")),
@@ -96,8 +94,7 @@ mod tests {
 
     #[test]
     fn path_for_appends_the_suffix_to_the_whole_name() {
-        // The suffix is appended to the FULL file name, extension included, so `trials.csv`
-        // and `trials.json` cannot collide on one sidecar.
+        // The suffix is appended to the FULL file name, extension included, so `trials.csv` and `trials.json` cannot collide on one sidecar.
         assert_eq!(
             path_for(Path::new("a/trials.csv")),
             PathBuf::from("a/trials.csv.annotation")

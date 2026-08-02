@@ -2,19 +2,10 @@
 
 //! # Exit-code contract (`annotated-tree`)
 //!
-//! Agent UX: exit codes are a dispatch key, so each class is a DISTINCT, documented
-//! integer an agent branches recovery on — never overloaded. Every process-exit path
-//! (in `main.rs`/`lib.rs`) routes through one of these constants; there are no magic
-//! numbers scattered across the tree. `--help` and later structured surfaces import
-//! these same names so the advertised contract can never drift from the enforced one.
-//!
-//! ```text
-//! 0  SUCCESS        clean run
-//! 1  STRICT_FAILURE --strict-check found at least one violation
-//! 2  USAGE          bad flag / value, or an unusable bash-annotator invocation
-//! 3  RUNAWAY_SCOPE  a root exceeded --max-files; nothing written
-//! 4  PRECONDITION   environment/precondition error (missing root dir, git/--since failure)
-//! ```
+//! Exit codes are a dispatch key an agent branches recovery on, so each class is a distinct
+//! integer, never overloaded. Every process-exit path routes through one of these constants,
+//! and `--help` imports the same names, so the advertised contract cannot drift from the
+//! enforced one.
 
 /// A clean run: the tree rendered, or `--strict-check` passed.
 pub const SUCCESS: i32 = 0;

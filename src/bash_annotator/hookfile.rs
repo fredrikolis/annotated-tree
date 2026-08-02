@@ -211,8 +211,7 @@ mod tests {
 
     #[test]
     fn re_installing_over_a_pretooluse_only_file_adds_the_sessionstart_entry() {
-        // What an adopter of the first release has on disk. Re-running install must not report
-        // "already present" and leave them without the once-per-session announcement.
+        // What an adopter of the first release has on disk. Re-running install must not report "already present" and leave them without the once-per-session announcement.
         let p = tmp("upgrade");
         std::fs::write(
             &p,
@@ -285,8 +284,7 @@ mod tests {
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"/home/x/.cargo/bin/annotated-tree bash-annotator --rewrite-tool-call"}]}]}}"#,
         )
         .unwrap();
-        // The SessionStart half is still added, but the recognised PreToolUse entry is not
-        // duplicated — and uninstall takes the absolute-path spelling away with it.
+        // The SessionStart half is still added, but the recognised PreToolUse entry is not duplicated — and uninstall takes the absolute-path spelling away with it.
         assert_eq!(install(&p).unwrap(), Outcome::Added);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);

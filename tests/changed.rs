@@ -87,8 +87,7 @@ fn editing_core_surfaces_api_and_worker_as_blast_radius() {
         out.contains("acme_core"),
         "the edited core file must appear:\n{out}"
     );
-    // (b) The blast radius — the reverse-dep closure of core — is surfaced: api and
-    // worker both depend on core, so both must show even though neither was edited.
+    // (b) The blast radius — the reverse-dep closure of core — is surfaced: api and worker both depend on core, so both must show even though neither was edited.
     assert!(
         out.contains("acme_api"),
         "api (depends on core) must surface as blast radius:\n{out}"
@@ -103,10 +102,7 @@ fn editing_core_surfaces_api_and_worker_as_blast_radius() {
 
 #[test]
 fn untracked_file_under_subdir_root_is_surfaced() {
-    // Regression: `git diff` emits repo-root-relative paths but `git ls-files --others`
-    // emitted cwd-relative ones; joining both onto the repo top-level silently dropped
-    // untracked files whenever the analyzed root was a SUBDIRECTORY of the repo (the
-    // tool's monorepo wheelhouse). `--full-name` on ls-files unifies the base.
+    // Regression: `git ls-files --others` emitted cwd-relative paths, so joining them onto the repo top-level dropped untracked files whenever the analyzed root was a SUBDIRECTORY — the tool's monorepo wheelhouse.
     let dir = temp_workspace("subdir");
     git(&dir, &["init", "-q"]);
     git(&dir, &["add", "-A"]);
@@ -132,8 +128,7 @@ fn untracked_file_under_subdir_root_is_surfaced() {
 
 #[test]
 fn bad_ref_and_non_repo_are_errors_not_empty() {
-    // Fail-Fast: a bad ref inside a real repo must error, never silently return an
-    // empty (mis-scoped) view.
+    // Fail-Fast: a bad ref inside a real repo must error, never silently return an empty (mis-scoped) view.
     let dir = temp_workspace("badref");
     git(&dir, &["init", "-q"]);
     git(&dir, &["add", "-A"]);

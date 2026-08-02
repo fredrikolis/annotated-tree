@@ -36,8 +36,7 @@ fn public_primitives_compose_config_walk_and_extraction() {
     let dir = temp_tree("compose");
     let config = Config::load(&dir, &CliOverrides::default()).expect("config resolves");
 
-    // The recognized-only walk (empty include) sees just the `.rs`, and the marker-based
-    // extractor reads its annotation through the resolved `Language`.
+    // The recognized-only walk (empty include) sees just the `.rs`, and the marker-based extractor reads its annotation through the resolved `Language`.
     let empty = GlobSet::empty();
     let recognized = walk::collect_code_files(&dir, &config, &empty, &empty).expect("walk");
     assert_eq!(recognized.len(), 1, "recognized walk sees only src/lib.rs");
@@ -50,8 +49,7 @@ fn public_primitives_compose_config_walk_and_extraction() {
         Some("Concern: the recognized entry fixture | Non-concern: real behavior (a test stub) | IO: none"),
     );
 
-    // A caller-supplied include GlobSet (compiled with the exposed helper) widens the walk to the
-    // unrecognized file, whose annotation the marker-agnostic extractor reads with no `Language`.
+    // A caller-supplied include GlobSet (compiled with the exposed helper) widens the walk to the unrecognized file, whose annotation the marker-agnostic extractor reads with no `Language`.
     let include = build_globset(&["*.ops".to_string()]).expect("glob compiles");
     let widened = walk::collect_code_files(&dir, &config, &empty, &include).expect("walk");
     assert_eq!(widened.len(), 2, "the selector adds runbook.ops");
@@ -73,8 +71,7 @@ fn public_primitives_compose_config_walk_and_extraction() {
 
 #[test]
 fn configured_walk_is_directly_usable() {
-    // The raw `ignore`-based walker is exposed too, so a consumer can apply its OWN keep policy
-    // (e.g. for extensionless files or symlinks) instead of `collect_code_files`'s.
+    // The raw `ignore`-based walker is exposed too, so a consumer can apply its OWN keep policy (e.g. for extensionless files or symlinks) instead of `collect_code_files`'s.
     let dir = temp_tree("raw-walk");
     let names: Vec<String> = walk::configured_walk(&dir, true, false, &GlobSet::empty())
         .build()
@@ -92,10 +89,7 @@ fn configured_walk_is_directly_usable() {
 
 #[test]
 fn a_hand_built_map_renders_through_the_exposed_renderer() {
-    // The #11 custom-tree path: assemble a CodebaseMap directly (own node payloads — here just a
-    // set annotation), leaving the optional/collection fields at None / Vec::new(), then render it
-    // via the exposed for_format + Renderer. Proves the map and render surface is usable WITHOUT
-    // the internal build pipeline.
+    // Proves the map and render surface is usable WITHOUT the internal build pipeline.
     let map = CodebaseMap {
         roots: vec![DirNode {
             name: "root".into(),

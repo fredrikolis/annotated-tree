@@ -95,8 +95,6 @@ pub fn read_charter_file(dir: &Path) -> Option<String> {
 /// file's head via [`annotation::extract`]; the model path instead reuses the already-extracted
 /// `FileNode.annotation` (no re-parse). Both share [`from_line`] and the entry-file tables.
 pub fn resolve_from_fs(dir: &Path, config: &Config) -> Option<Charter> {
-    // 1. `.annotation` breadcrumb — its mere presence is the resolution (a malformed body
-    //    yields `None` here and is flagged by `--strict-check`; it never falls through).
     if let Some(content) = read_charter_file(dir) {
         return from_file_body(&content);
     }
@@ -132,8 +130,7 @@ mod tests {
 
     #[test]
     fn from_line_splits_a_bare_three_field_charter() {
-        // A bare (marker-less) line — a `.annotation` body — splits into the three keyed
-        // fields via the ONE annotation grammar; the render line round-trips it verbatim.
+        // A bare (marker-less) line — a `.annotation` body — splits into the three keyed fields via the ONE annotation grammar; the render line round-trips it verbatim.
         let c = from_line("Concern: owns the API | Non-concern: storage (db owns it) | IO: none")
             .expect("a valid three-field line parses");
         assert_eq!(c.concern, "owns the API");
@@ -153,8 +150,7 @@ mod tests {
 
     #[test]
     fn advertised_example_is_self_conforming() {
-        // The DbC guarantee against advertise-vs-enforce drift: the bare exemplar a malformed
-        // `.annotation` diagnostic shows must itself pass the charter grammar it advertises.
+        // The DbC guarantee against advertise-vs-enforce drift: the bare exemplar a malformed `.annotation` diagnostic shows must itself pass the charter grammar it advertises.
         assert_eq!(
             annotation::analyze_charter(EXAMPLE, None),
             annotation::Outcome::Ok

@@ -61,8 +61,7 @@ fn max_files_counts_only_what_the_capped_walk_visits() {
         "nothing below the cutoff is rendered:\n{out}"
     );
 
-    // The cap still trips when the CAPPED walk itself exceeds it — the guard is bounded by
-    // -L, not disabled by it.
+    // The cap still trips when the CAPPED walk itself exceeds it — the guard is bounded by -L, not disabled by it.
     let (_out, _err, code) = run(&dir, &["--max-files", "5"]);
     assert_eq!(code, 3, "an uncapped walk of 41 files still aborts at 5");
 
@@ -129,8 +128,7 @@ fn a_displayed_row_keeps_its_deps_while_a_package_below_the_cutoff_is_dropped() 
     manifest(&dir.join("b"), "b", "\n");
     manifest(&dir.join("nested/c"), "c", "\n");
 
-    // -L 1: `a/` and `b/` are rows, so both manifests are read one level deeper and the edge
-    // between two visible rows is stated in both directions.
+    // -L 1: `a/` and `b/` are rows, so both manifests are read one level deeper and the edge between two visible rows is stated in both directions.
     let (shallow, _err, code) = run(&dir, &["-L", "1"]);
     assert_eq!(code, 0, "-L 1 exits clean");
     assert!(
@@ -141,15 +139,13 @@ fn a_displayed_row_keeps_its_deps_while_a_package_below_the_cutoff_is_dropped() 
         shallow.contains("<- depends on [b"),
         "and the forward edge between two visible rows is drawn:\n{shallow}"
     );
-    // `c` is two levels past the cutoff: never a row, never read, so the declared path
-    // dependency on it resolves to nothing.
+    // `c` is two levels past the cutoff: never a row, never read, so the declared path dependency on it resolves to nothing.
     assert!(
         shallow.contains("c (unresolved)"),
         "a package below the cutoff contributes no resolved edge:\n{shallow}"
     );
 
-    // -L 2: `nested/c/` becomes a row, so its manifest is read and the same dependency now
-    // resolves — the graph deepens exactly with the view.
+    // -L 2: `nested/c/` becomes a row, so its manifest is read and the same dependency now resolves — the graph deepens exactly with the view.
     let (deep, _err, code) = run(&dir, &["-L", "2"]);
     assert_eq!(code, 0, "-L 2 exits clean");
     assert!(

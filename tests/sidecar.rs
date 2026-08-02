@@ -53,10 +53,7 @@ fn tree_files() -> Vec<(&'static str, &'static str)> {
 
 #[test]
 fn a_sidecar_lists_a_comment_less_file_and_takes_no_row_of_its_own() {
-    // The README's own showcase: a plain CSV renders WITH its contract. Three claims in one
-    // run — the file is listed with no `--include` (writing the sidecar IS the opt-in), the
-    // sidecar itself is not a row, and the report states the criterion by which it is missing
-    // (TREE2: an excluded path falls under a rule a reader can apply to any path).
+    // Writing the sidecar IS the opt-in, so no `--include` is needed; the sidecar itself is not a row, and TREE2 requires the report state the criterion by which it is missing.
     let (out, err, code) = run("render", &[], &tree_files());
     assert_eq!(code, 0, "rendering a tree exits 0:\n{out}");
     let row = out
@@ -79,9 +76,7 @@ fn a_sidecar_lists_a_comment_less_file_and_takes_no_row_of_its_own() {
 
 #[test]
 fn the_row_that_took_the_contract_says_so_in_json() {
-    // The structured counterpart of the text note: a JSON consumer reads the same exclusion
-    // off the data. `sidecar` is omitted on every other row, so an in-file annotation
-    // serializes byte-identically.
+    // The structured counterpart of the text note: a JSON consumer reads the same exclusion off the data. `sidecar` is omitted on every other row, so an in-file annotation serializes byte-identically.
     let (out, _err, code) = run("json", &["--format", "json"], &tree_files());
     assert_eq!(code, 0);
     let doc: serde_json::Value = serde_json::from_str(&out).expect("map json parses");
@@ -108,10 +103,7 @@ fn the_row_that_took_the_contract_says_so_in_json() {
 
 #[test]
 fn a_file_that_can_hold_a_comment_never_takes_a_sidecar() {
-    // CORE2 by construction: a sidecar is read ONLY for a file with no comment marker, so an
-    // annotation's location is never ambiguous. `main.rs.annotation` is therefore not a
-    // sidecar at all — it is an ordinary file (shown here only because `--include` asks for
-    // it), and `main.rs` keeps its own first line.
+    // CORE2 by construction: a sidecar is read ONLY for a file with no comment marker, so `main.rs.annotation` is an ordinary file and `main.rs` keeps its own first line.
     let mut files = tree_files();
     files.push((
         "main.rs.annotation",
@@ -136,8 +128,7 @@ fn a_file_that_can_hold_a_comment_never_takes_a_sidecar() {
 
 #[test]
 fn a_malformed_sidecar_fails_the_check_at_the_sidecar_path() {
-    // Opting in means doing it right, exactly as for a folder charter: the body is held to
-    // the ONE three-field grammar and reported at the file an author edits to fix it.
+    // Opting in means doing it right, exactly as for a folder charter: the body is held to the ONE three-field grammar and reported at the file an author edits to fix it.
     let (out, _err, code) = run(
         "malformed",
         &["--strict-check", "--no-guide"],
@@ -164,8 +155,7 @@ fn a_malformed_sidecar_fails_the_check_at_the_sidecar_path() {
 
 #[test]
 fn a_conforming_sidecar_counts_toward_coverage() {
-    // The convergence numerator must not under-report: a CSV whose contract is written is
-    // annotated, and the tree that shows it emits no coverage note.
+    // The convergence numerator must not under-report: a CSV whose contract is written is annotated, and the tree that shows it emits no coverage note.
     let (out, err, code) = run("coverage", &["--strict-check", "--no-guide"], &tree_files());
     assert_eq!(code, 0, "a conforming sidecar passes:\n{out}");
     assert!(out.contains("2 of 2 files annotated"), "{out}");
@@ -174,10 +164,7 @@ fn a_conforming_sidecar_counts_toward_coverage() {
 
 #[test]
 fn a_sidecar_with_no_target_is_reported_and_fails() {
-    // A sidecar whose named file is absent annotates nothing. That is a dangling PATH, not a
-    // claim about any Annotation's parts, so it rides its own `path: message` list — and it
-    // fails loudly rather than sitting there being ignored. Nothing is deleted: the remedy is
-    // named in the message and left to the author.
+    // A dangling PATH, not a claim about any Annotation's parts, so it rides its own `path: message` list. Nothing is deleted — the remedy is named and left to the author.
     let (out, _err, code) = run(
         "orphan",
         &["--strict-check", "--no-guide"],
@@ -241,9 +228,7 @@ fn the_orphan_finding_is_structured_and_located() {
 
 #[test]
 fn a_directory_charter_is_never_read_as_a_sidecar() {
-    // The two scales share one metadata name, so the bare `.annotation` must resolve as the
-    // DIRECTORY's charter and never as a sidecar for a file called "" — the one case where
-    // the shared suffix could alias, and where a false orphan would otherwise be reported.
+    // The two scales share one metadata name, so the bare `.annotation` must resolve as the DIRECTORY's charter and never as a sidecar for a file called "" — the one case where the shared suffix could alias, and where a false orphan would otherwise be reported.
     let (out, err, code) = run(
         "charter",
         &[],
@@ -279,9 +264,7 @@ fn a_directory_charter_is_never_read_as_a_sidecar() {
 
 #[test]
 fn a_sidecar_with_prose_below_its_line_gives_the_row_no_contract_and_fails() {
-    // The same rule at file scale. The CSV is still LISTED — writing the sidecar IS the opt-in,
-    // and that does not depend on the body being valid — but it carries NO contract rather than
-    // one with a newline in it, and the finding lands on the sidecar, the file an author edits.
+    // The same rule at file scale. The CSV is still LISTED — writing the sidecar IS the opt-in, and that does not depend on the body being valid — but it carries NO contract rather than one with a newline in it, and the finding lands on the sidecar, the file an author edits.
     let files = &[
         ("trials.csv", "a,b\n1,2\n"),
         (

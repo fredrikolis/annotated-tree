@@ -37,8 +37,7 @@ pub fn annotate(producer: &[OsString], input: &mut impl BufRead, out: &mut impl 
     let mut buf: Vec<u8> = Vec::new();
     loop {
         buf.clear();
-        // `read_until` keeps the delimiter, which is how a final line with NO newline stays that
-        // way: `split` would drop the distinction and `writeln!` would invent one.
+        // `read_until` keeps the delimiter, which is how a final line with NO newline stays that way: `split` would drop the distinction and `writeln!` would invent one.
         match input.read_until(b'\n', &mut buf) {
             Ok(0) | Err(_) => break,
             // A failed write means the reader is gone (`| head -1` upstream of us closed early).
@@ -248,11 +247,12 @@ fn long_names(tool: &str) -> &'static [&'static str] {
 }
 
 /// Does the argv entry `w` resolve to the option `name`, abbreviations included?
+///
+/// An exact spelling of some OTHER option is that option, never an abbreviation of this one.
 fn long_matches(w: &str, name: &str, all: &[&str]) -> bool {
     if w == name {
         return true;
     }
-    // An exact spelling of some OTHER option is that option, never an abbreviation.
     if !name.starts_with(w) || all.contains(&w) || w.len() < 3 {
         return false;
     }
@@ -402,8 +402,7 @@ fn parse_argv(tool: &str, args: &[OsString]) -> Argv {
 impl Annotator {
     fn new(tool: &str, args: &[OsString]) -> Self {
         let Argv { options, operands } = parse_argv(tool, args);
-        // Does any single-dash cluster carry this option letter? Only the LETTERS are searched,
-        // never an attached value, so `-Idist` is not read as `-d`.
+        // Only the LETTERS of a single-dash cluster are searched, never an attached value, so `-Idist` is not read as `-d`.
         let values = value_short(tool);
         let has = |c: char| {
             options
@@ -417,19 +416,13 @@ impl Annotator {
                 .any(|w| long_matches(w.split('=').next().unwrap_or(w), name, names))
         };
 
-        // ONE base, chosen by how this tool prints. `ls <onedir>` names entries relative to that
-        // directory and nothing else does — `grep`/`find` paths already contain the operand, and
-        // `ls FILE DIR` mixes a cwd-relative file with a header-scoped block. Offering both bases
-        // to one resolver is what put another file's contract on the line.
+        // ONE base: only `ls <onedir>` names entries relative to that directory — `grep`/`find` paths already contain the operand, and `ls FILE DIR` mixes a cwd-relative file with a header-scoped block.
         let lists_itself = has('d') || long("--directory");
         let dir_relative =
             tool == "ls" && !lists_itself && operands.len() == 1 && operands[0].is_dir();
         let recursive = has('r') || has('R') || long("--recursive");
 
-        // `--format=` spells the column layouts that `-C`/`-x`/`-m` select.
-        // A long option's value may be ATTACHED (`--format=across`) or the NEXT argv entry
-        // (`--format across`). Comparing only the attached spelling let a column layout through,
-        // and one file's contract was then appended to a line naming five.
+        // A long option's value may be ATTACHED (`--format=across`) or the NEXT argv entry (`--format across`); comparing only the attached spelling lets a column layout through.
         let long_value = |name: &str| -> Option<String> {
             let mut want_next = false;
             for a in args {
@@ -444,8 +437,7 @@ impl Annotator {
             }
             None
         };
-        // `ls` resolves `--format`'s ARGUMENT with XARGMATCH, so `acr` is `across` just as
-        // `--form` is `--format`. Both spellings select a column layout, and both were missed.
+        // `ls` resolves `--format`'s ARGUMENT with XARGMATCH, so `acr` is `across` just as `--form` is `--format`.
         let format = long_value("--format").unwrap_or_default();
         let format_is = |v: &str| !format.is_empty() && v.starts_with(format.as_str());
 
@@ -464,22 +456,13 @@ impl Annotator {
                 || has('L')
                 || long("--files-with-matches")
                 || long("--files-without-match"),
-            // Does this `grep` print a `path:` prefix at all? It does not for a single file
-            // operand, and `-h` suppresses it outright. Without knowing, every colon in a line
-            // was tried as a prefix, so a line of PROSE naming a file took that file's contract.
-            // GNU grep prints the prefix when it has MORE THAN ONE operand, or when it recurses
-            // into a directory — `grep -r pat onefile` prints none. Keying on `-r` alone made a
-            // single-file search look prefixed, so every colon in a content line became a
-            // candidate path and a line of prose took another file's contract.
+            // GNU grep prints the `path:` prefix only with MORE THAN ONE operand or when recursing into a directory (`grep -r pat onefile` prints none); assume it wrongly and every colon in a content line becomes a candidate path, so a line of prose takes another file's contract.
             prefixed: !(has('h') || long("--no-filename"))
                 && (has('H')
                     || long("--with-filename")
                     || operands.len() > 1
                     || (recursive && (operands.is_empty() || operands.iter().any(|o| o.is_dir())))),
-            // `ls` prints a `<dir>:` header under -R, AND whenever it was given more than one
-            // operand with a directory among them. Keying only on -R left `ls docs src` with its
-            // headers unconsumed, so every bare name resolved against the cwd and took a
-            // same-named cwd file's contract.
+            // `ls` prints a `<dir>:` header under -R AND whenever given more than one operand with a directory among them; keying only on -R leaves `ls docs src` headers unconsumed and every bare name resolving against the cwd.
             block_headers: tool == "ls"
                 && (has('R')
                     || long("--recursive")
@@ -522,11 +505,7 @@ impl Annotator {
         };
         out.write_all(content)?;
         if let Some(c) = contract {
-            // ONE LINE IN, ONE LINE OUT is this tool's cardinal invariant, and it must hold even
-            // if a contract ever reaches here as more than one line. `annotated-tree` resolves no
-            // charter from an `.annotation` holding more than its one line, so nothing multi-line
-            // should arrive — this is the boundary guard that keeps that a property of THIS tool
-            // rather than a bet on the library's current behaviour.
+            // ONE LINE IN, ONE LINE OUT is this tool's cardinal invariant: nothing multi-line should arrive, and this guard keeps that a property of THIS tool rather than a bet on the library's current behaviour.
             let c = c.split(['\n', '\r']).next().unwrap_or_default();
             if !c.is_empty() {
                 write!(out, "  # {c}")?;
@@ -577,9 +556,7 @@ impl Annotator {
     /// two consecutive spaces or a tab in it. A symlink line is cut at ` -> ` so the link, not its
     /// target, is described.
     fn listed_path(&mut self, text: &str) -> Option<PathBuf> {
-        // `ls -l`/`-s` open a listing with a `total N` summary that is about no file. Left to the
-        // suffix scan, `N` resolved against a numerically-named file — and because `seen` then
-        // counted that file as described, its own line later carried nothing.
+        // `ls -l`/`-s` open with a `total N` summary about no file; left to the suffix scan, `N` resolves against a numerically-named file, which `seen` then counts as described so its own line later carries nothing.
         if let Some(n) = text.strip_prefix("total ") {
             if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) {
                 return None;
@@ -624,9 +601,7 @@ impl Annotator {
     /// same field and always names a file, so a trailing colon (`docs:` in a Makefile, `src:` in
     /// YAML) is content, and a directory is never a prefix.
     fn prefix_path(&mut self, text: &str) -> Option<PathBuf> {
-        // `grep -l` prints the path alone — but ONLY then. Trying every line as a whole made a
-        // match line that happened to spell a filename take that file's contract, contradicting
-        // the rule stated above, and made the memo retain a copy of the entire output.
+        // `grep -l` prints the path alone — but ONLY then: trying every line as a whole lets a match line that happens to spell a filename take that file's contract.
         if self.path_only {
             let whole = text.trim_end();
             if let Some(p) = self.resolve(whole).filter(|p| p.is_file()) {
@@ -659,17 +634,14 @@ impl Annotator {
         let found = if p.is_absolute() {
             describable(p).then(|| p.to_path_buf())
         } else if let Some(block) = &self.current {
-            // Inside a `<dir>:` block the header IS the scope. Falling back to the cwd when an
-            // entry did not resolve there — a dangling symlink is enough — silently handed the
-            // line a same-named cwd file's contract.
+            // Inside a `<dir>:` block the header IS the scope: falling back to the cwd when an entry does not resolve there — a dangling symlink is enough — hands the line a same-named cwd file's contract.
             let j = block.join(p);
             describable(&j).then_some(j)
         } else {
             let j = self.base.join(p);
             describable(&j).then_some(j)
         };
-        // Past the bound, resolution still works — it just stops being memoised. Growing without
-        // limit meant retaining a copy of the tool's whole output.
+        // Past the bound resolution still works, it just stops being memoised — growing without limit retains a copy of the tool's whole output.
         if self.resolved.len() < RESOLVE_CACHE_MAX {
             self.resolved.insert(key, found.clone());
         }

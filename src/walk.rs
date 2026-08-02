@@ -51,8 +51,7 @@ impl std::fmt::Display for LimitExceeded {
     }
 }
 
-// A real `std::error::Error` so a library consumer can bubble `collect_code_files` failures
-// through `?` into `anyhow`/`Box<dyn Error>` like any other error, not just match the struct.
+// A real `std::error::Error` so a library consumer can bubble `collect_code_files` failures through `?` into `anyhow`/`Box<dyn Error>` like any other error, not just match the struct.
 impl std::error::Error for LimitExceeded {}
 
 /// The single directory-filtering policy shared by every walk of the tree: honor
@@ -166,14 +165,11 @@ pub(crate) fn collect_tree(
             continue;
         }
         let is_file = entry.file_type().is_some_and(|t| t.is_file());
-        // A sidecar is metadata about the file beside it, not a file the map describes, so it
-        // is dropped here where the tree's contents are defined — the file-scale twin of the
-        // dot-hidden directory charter, under the one stated criterion.
+        // A sidecar is metadata about the file beside it, not a file the map describes, so it is dropped here where the tree's contents are defined — the file-scale twin of the dot-hidden directory charter, under the one stated criterion.
         if is_file && sidecar::target_of(path, config).is_some() {
             continue;
         }
-        // `annotates` stats the sidecar path, so it is tested LAST: a recognized or
-        // include-matched file is already kept and never pays for it.
+        // `annotates` stats the sidecar path, so it is tested LAST: a recognized or include-matched file is already kept and never pays for it.
         let keep = is_file
             && (config.known_for_path(path)
                 || include_match(path, root, include)

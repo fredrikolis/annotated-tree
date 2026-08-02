@@ -85,9 +85,7 @@ fn render_node(node: &DirNode, prefix: &str, glyphs: &Glyphs, out: &mut String) 
         ));
     }
 
-    // The per-node overflow marker is always the directory's final child (it was
-    // counted into `child_count`), so it takes the elbow connector and folds both
-    // elided-dir and elided-file counts into one row.
+    // The per-node overflow marker is always the directory's final child (it was counted into `child_count`), so it takes the elbow connector and folds both elided-dir and elided-file counts into one row.
     if let Some(summary) = marker {
         out.push_str(&format!("{prefix}{}[{summary}]\n", glyphs.elbow));
     }

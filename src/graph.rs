@@ -145,8 +145,7 @@ pub fn build(
         });
     }
 
-    // Reverse edges: for each *resolved* internal dep D of P, D is "used by" P.
-    // Unresolved deps have no target package in the tree, so no reverse edge.
+    // Reverse edges: for each *resolved* internal dep D of P, D is "used by" P. Unresolved deps have no target package in the tree, so no reverse edge.
     let mut used_by: HashMap<(Ecosystem, String), Vec<String>> = HashMap::new();
     for pkg in &packages {
         for dep in pkg.internal.iter().filter(|d| d.resolved) {
@@ -161,8 +160,7 @@ pub fn build(
         names.dedup();
     }
 
-    // The package edge list is derived from the same resolved packages the
-    // directory map is built from — computed once, no re-derivation in `rules`.
+    // The package edge list is derived from the same resolved packages the directory map is built from — computed once, no re-derivation in `rules`.
     let package_edges = packages
         .iter()
         .map(|pkg| PackageEdges {
@@ -271,15 +269,7 @@ fn collect_manifests(
     out: &mut Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)>,
     warnings: &mut Vec<Warning>,
 ) {
-    // One traversal for every manifest kind: dispatch each entry to the parser
-    // whose filename it matches. (Previously one full walk per parser.) Shares the
-    // code-file walk's exact directory filter (`configured_walk`), so gitignored/
-    // hidden/`tests`/`-I`-excluded manifests are skipped just like their files — no
-    // spurious "could not parse manifest" warnings for invisible files, and no package
-    // leaking into the name set from a dir the tree never shows. The DEPTH bound is
-    // `cap_manifest_depth`, deliberately one level below the row cap: a manifest sits
-    // inside the package whose row names it, so this reaches every displayed directory's
-    // own manifest and nothing beyond it.
+    // Shares the code-file walk's exact directory filter, so an invisible manifest raises no "could not parse" warning and leaks no package into the name set from a dir the tree never shows.
     let mut builder =
         crate::walk::configured_walk(root, scope.gitignore, scope.include_tests, scope.excludes);
     crate::walk::cap_manifest_depth(&mut builder, scope.max_depth);
@@ -293,9 +283,7 @@ fn collect_manifests(
         let Some(dir) = path.parent() else { continue };
         match parser.parse(path) {
             Ok(parsed) => out.push((parser.ecosystem(), dir.to_path_buf(), parsed)),
-            // The `message` embeds the path (via the parser's `with_context`) so stderr
-            // reads exactly as before; `path` is the same manifest as a structured field
-            // for the JSON `warnings` array to dispatch on.
+            // The `message` embeds the path (via the parser's `with_context`) so stderr reads exactly as before; `path` is the same manifest as a structured field for the JSON `warnings` array to dispatch on.
             Err(err) => warnings.push(Warning {
                 code: crate::exit::code::MANIFEST_PARSE_ERROR,
                 path: path.display().to_string(),
@@ -396,10 +384,8 @@ mod tests {
             ("worker", &["core"]),
             ("gateway", &["api"]),
         ]);
-        // Editing core blasts everything that (transitively) depends on it.
         assert_eq!(closure(&g, "core"), vec!["api", "gateway", "worker"]);
-        // A leaf that nothing depends on has an empty radius.
-        assert!(closure(&g, "gateway").is_empty());
+        assert!(closure(&g, "gateway").is_empty(), "a leaf nothing depends on has an empty radius");
     }
 
     #[test]
@@ -416,9 +402,7 @@ mod tests {
 
     #[test]
     fn cycle_terminates() {
-        // a <-> b cycle, plus c depending on a. Must not loop forever.
         let g = graph(&[("a", &["b"]), ("b", &["a"]), ("c", &["a"])]);
-        // Everything else in the cycle/dependents, minus the seed itself.
         assert_eq!(closure(&g, "a"), vec!["b", "c"]);
         assert_eq!(closure(&g, "b"), vec!["a", "c"]);
     }

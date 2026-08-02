@@ -70,8 +70,7 @@ impl Renderer for JsonRenderer {
         let document = Document {
             schema: SCHEMA_VERSION,
             roots: &map.roots,
-            // Omitted at full coverage (byte-identical clean run), present with the stable
-            // `annotations_incomplete` code when some listed file has no annotation.
+            // Omitted at full coverage (byte-identical clean run), present with the stable `annotations_incomplete` code when some listed file has no annotation.
             coverage: coverage.is_incomplete().then_some(CoverageReport {
                 code: "annotations_incomplete",
                 annotated: coverage.annotated,
@@ -79,8 +78,7 @@ impl Renderer for JsonRenderer {
             }),
             warnings: &map.warnings,
         };
-        // The model is plain owned data with derived `Serialize`; serialization
-        // cannot fail (DbC — we control both sides of this boundary).
+        // The model is plain owned data with derived `Serialize`; serialization cannot fail (DbC — we control both sides of this boundary).
         serde_json::to_string_pretty(&document).expect("canonical map serializes to JSON")
     }
 }

@@ -46,8 +46,7 @@ fn run_bytes(dir: &Path, args: &[&str]) -> Vec<u8> {
         .stdin(Stdio::from(tool.stdout.take().expect("tool stdout")))
         .output()
         .expect("spawn the annotator");
-    // Reap the producer. A shell would have done this; leaving it a zombie makes a long test run
-    // leak processes.
+    // Reap the producer. A shell would have done this; leaving it a zombie makes a long test run leak processes.
     let _ = tool.wait();
     out.stdout
 }
@@ -63,9 +62,7 @@ fn native(dir: &Path, tool: &str, args: &[&str]) -> String {
 
 /// `ls` exists on every platform this is expected to run on, but not on Windows. Skip loudly.
 fn have_ls() -> bool {
-    // `--version` must SUCCEED, not merely spawn. BSD `ls` on macOS spawns and then fails, and it
-    // is a different program: `-I` takes no argument there and `--color` does not exist, so the
-    // GNU-only rows below would fail that CI leg rather than skip.
+    // `--version` must SUCCEED, not merely spawn. BSD `ls` on macOS spawns and then fails, and it is a different program: `-I` takes no argument there and `--color` does not exist, so the GNU-only rows below would fail that CI leg rather than skip.
     let ok = Command::new("ls")
         .arg("--version")
         .output()
@@ -108,8 +105,7 @@ fn the_tools_own_bytes_are_reproduced_verbatim() {
         return;
     }
     let dir = fixture("verbatim");
-    // A path that is not valid UTF-8 must survive. Comparing decoded Strings cannot detect this —
-    // both sides would be mangled identically — so compare RAW BYTES.
+    // A path that is not valid UTF-8 must survive. Comparing decoded Strings cannot detect this — both sides would be mangled identically — so compare RAW BYTES.
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
@@ -156,12 +152,9 @@ fn a_crlf_line_keeps_its_carriage_return_last() {
         "// Concern: CR | Non-concern: n | IO: none\r\nhit\r\n",
     )
     .unwrap();
-    // `-rn .`, NOT `-n z.rs`: given a single file operand grep prints no `path:` prefix, so no
-    // contract is appended and the assertion below would hold without ever reaching the branch it
-    // exists to guard.
+    // `-rn .`, NOT `-n z.rs`: given a single file operand grep prints no `path:` prefix, so no contract is appended and the assertion below would hold without ever reaching the branch it exists to guard.
     let out = run_bytes(&dir, &["grep", "-rn", "Concern", "."]);
-    // A contract appended AFTER the `\r` makes a terminal overwrite the line it describes.
-    // Pick the CRLF file's own line: the fixture holds other files, and `-r` visits them all.
+    // A contract appended AFTER the `\r` makes a terminal overwrite the line it describes. Pick the CRLF file's own line: the fixture holds other files, and `-r` visits them all.
     let line = out
         .split(|b| *b == b'\n')
         .find(|l| l.starts_with(b"./z.rs:"))
@@ -180,8 +173,7 @@ fn a_final_line_without_a_newline_does_not_gain_one() {
         return;
     }
     let dir = fixture("noeol");
-    // `find -print0` emits no trailing newline; inventing one changes the byte stream and a
-    // hand-rolled line count.
+    // `find -print0` emits no trailing newline; inventing one changes the byte stream and a hand-rolled line count.
     let native = Command::new("find")
         .args([".", "-name", "*.rs", "-print0"])
         .current_dir(&dir)
@@ -238,10 +230,7 @@ fn the_rewritten_pipeline_reraises_the_tools_own_exit_code() {
     if !have_ls() {
         return;
     }
-    // The annotator is the LAST stage now, so a naive `tool | annotator` would report the
-    // annotator's status and lose `grep`'s exit 1 on no-match — which agents branch on. The
-    // rewrite emits `exit ${PIPESTATUS[n]}` to prevent that, and this runs the emitted command
-    // through a real shell rather than trusting the string.
+    // A naive `tool | annotator` would report the annotator's status and lose `grep`'s exit 1 on no-match, which agents branch on. This runs the emitted command through a real shell rather than trusting the string.
     let dir = fixture("exit");
     let status = |cmd: &str| {
         let rewritten = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
@@ -667,12 +656,9 @@ fn every_printed_shape_names_the_file_its_line_is_about() {
     std::fs::write(dir.join("Makefile"), format!("{}docs: build\n", ann("MK"))).unwrap();
     std::fs::write(dir.join("beta.rs"), ann("BETA")).unwrap();
     std::fs::write(dir.join("delta.rs"), "beta.rs is the thing\n").unwrap();
-    // Prose that names an existing file with a COLON after it — the shape a grep content line
-    // takes when the invocation printed no `path:` prefix and the scan has nothing to anchor on.
+    // Prose that names an existing file with a COLON after it — the shape a grep content line takes when the invocation printed no `path:` prefix and the scan has nothing to anchor on.
     std::fs::write(dir.join("notes.md"), "beta.rs: the beta file\n").unwrap();
-    // A matched line that is EXACTLY a path — indistinguishable from `grep -l` output without
-    // parsing flags, which run.rs deliberately does not. Recorded so the behaviour is chosen
-    // rather than accidental.
+    // A matched line that is EXACTLY a path — indistinguishable from `grep -l` output without parsing flags, which run.rs deliberately does not. Recorded so the behaviour is chosen rather than accidental.
     std::fs::write(dir.join("bare.rs"), "beta.rs\n").unwrap();
     std::fs::write(dir.join("a file name.rs"), ann("SPACED")).unwrap();
     // Whitespace that is NOT a single space. Re-joining tokens with " " silently loses these.
@@ -690,9 +676,7 @@ fn every_printed_shape_names_the_file_its_line_is_about() {
     )
     .unwrap();
     std::fs::write(dir.join("plain.rs"), ann("PLAIN")).unwrap();
-    // A directory whose `.annotation` carries the charter line AND a line of prose under it —
-    // the shape a maintainer writes when the charter needs a note. It resolves to no charter at
-    // all, so no contract reaches the line.
+    // A directory whose `.annotation` carries the charter line AND a line of prose under it — the shape a maintainer writes when the charter needs a note. It resolves to no charter at all, so no contract reaches the line.
     std::fs::create_dir_all(dir.join("noisy")).unwrap();
     std::fs::write(
         dir.join("noisy/.annotation"),
