@@ -1,1 +1,1 @@
-Concern: makes an agent's Bash tool calls return each file's contract | Non-concern: running the tool, or what an annotation means | IO: (a Bash tool call) -> its output, contracts appended
+Concern: injects this tool's knowledge into an agent's own session | Non-concern: what an annotation means | IO: (a bash-annotator invocation) -> text the agent reads, or an edited settings file

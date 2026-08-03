@@ -31,6 +31,7 @@ pub(crate) mod changed;
 pub(crate) mod charter;
 pub(crate) mod cli;
 pub mod config;
+pub(crate) mod embedded_doc;
 pub mod exit;
 pub(crate) mod githook;
 pub(crate) mod graph;

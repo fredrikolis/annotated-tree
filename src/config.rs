@@ -281,27 +281,12 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
     for (name, lang) in entries {
-        let pattern =
-            match &lang.pattern {
-                Some(p) => Some(Regex::new(p).with_context(|| {
-                    format!("language '{name}': invalid extraction pattern `{p}`")
-                })?),
-                None => None,
-            };
-        let block = lang.block.map(|[open, close]| (open, close));
-
         let idx = languages.len();
         for ext in &lang.extensions {
             let key = ext.strip_prefix('.').unwrap_or(ext).to_lowercase();
             ext_to_lang.insert(format!(".{key}"), idx);
         }
-        languages.push(Language {
-            name,
-            line: lang.comment,
-            block,
-            docstring: lang.docstring.unwrap_or_default(),
-            pattern,
-        });
+        languages.push(to_language(name, lang)?);
     }
 
     Ok(Config {
@@ -311,6 +296,41 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
         languages,
         ext_to_lang,
     })
+}
+
+/// One `[languages.*]` entry resolved into a [`Language`]. Its own function so the raw shape is
+/// turned into the resolved one in ONE place, whether the entry arrives from a merged layer through
+/// [`resolve`] or straight from the built-in table through [`builtin_markdown`].
+fn to_language(name: String, raw: RawLanguage) -> Result<Language> {
+    let pattern = match &raw.pattern {
+        Some(p) => Some(
+            Regex::new(p)
+                .with_context(|| format!("language '{name}': invalid extraction pattern `{p}`"))?,
+        ),
+        None => None,
+    };
+    Ok(Language {
+        name,
+        line: raw.comment,
+        block: raw.block.map(|[open, close]| (open, close)),
+        docstring: raw.docstring.unwrap_or_default(),
+        pattern,
+    })
+}
+
+/// The Markdown [`Language`] as the BUILT-IN table defines it, for reading a document compiled into
+/// the binary. Derived from [`DEFAULT_CONFIG`] rather than restated, so it cannot drift from the
+/// built-in grammar the gate starts from before a user's file layers over it.
+/// Reads nothing: the table is compiled in, as [`builtin_example`] is.
+pub(crate) fn builtin_markdown() -> Language {
+    let mut raw: RawConfig =
+        toml::from_str(DEFAULT_CONFIG).expect("built-in default config is valid TOML");
+    let markdown = raw
+        .languages
+        .remove("markdown")
+        .expect("built-in default config defines a markdown language");
+    to_language("markdown".to_string(), markdown)
+        .expect("built-in markdown language needs no pattern to compile")
 }
 
 /// A representative conformant annotation line for `--help`'s ANNOTATION FORMAT block: the

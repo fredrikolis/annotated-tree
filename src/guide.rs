@@ -1,6 +1,7 @@
 // Concern: embeds the canonical annotation-writing guide and renders it for --help and --strict-check | Non-concern: enforcing the format | IO: none
 
 use crate::config;
+use crate::embedded_doc;
 use crate::strict;
 
 /// The one canonical guide text, embedded at build time: one source, rendered onto every teaching
@@ -14,13 +15,7 @@ const MORE_MARKER: &str = "<!-- more -->\n";
 /// contract, so guide and checker cannot advertise different shapes. An authored constant, so a
 /// malformed doc fails loudly (DbC) rather than degrading to a silently wrong render.
 fn substituted() -> String {
-    let (first, rest) = GUIDE
-        .split_once('\n')
-        .expect("annotation guide has content past its first-line annotation");
-    assert!(
-        first.trim_start().starts_with("<!--"),
-        "annotation guide line 1 must be its own `<!-- … -->` annotation, to strip"
-    );
+    let rest = embedded_doc::embedded_body(GUIDE, "annotation guide");
     assert!(
         GUIDE.contains(MORE_MARKER),
         "annotation guide must carry the `{MORE_MARKER}` marker splitting --help essence from the --strict-check tail"

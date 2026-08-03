@@ -7,12 +7,6 @@ const GUIDE: &str = include_str!("githook-guide.md");
 /// The guide body with its own first-line annotation stripped — scaffolding for this repo's gate,
 /// not part of what a caller reads. An authored constant, so a malformed doc fails loudly (DbC).
 pub fn text() -> String {
-    let (first, rest) = GUIDE
-        .split_once('\n')
-        .expect("git-hook guide has content past its first-line annotation");
-    assert!(
-        first.trim_start().starts_with("<!--"),
-        "git-hook guide line 1 must be its own `<!-- … -->` annotation, to strip"
-    );
-    format!("{}\n", rest.trim())
+    let body = crate::embedded_doc::embedded_body(GUIDE, "git-hook guide");
+    format!("{}\n", body.trim())
 }

@@ -52,6 +52,12 @@ to [Semantic Versioning](https://semver.org/).
   and describe contracts nothing printed. Claude Code adds a `SessionStart` hook's stdout to the
   agent's context verbatim, so it is printed bare, with no JSON envelope. Each entry names the one
   verb that does its job, so the settings file says what each is for.
+- That announcement introduces the tool itself, not only the trailing annotations it explains: that
+  `annotated-tree` is installed, that running it on a directory yields a map you can route from
+  without opening the files, when to reach for one, and that `--annotation-guide` is the reference
+  for writing an annotation. A notice that only prevents confusion leaves the map unused. The text
+  now lives in `src/bash_annotator/session-announcement.md`, so `--session-announcement` still
+  prints exactly what the agent is handed.
 - `--annotation-guide` prints the annotation-writing guide to stdout and exits — the same full text
   a failing `--strict-check` appends, reachable without a violation to trigger it. It ADDS a way to
   reach the guide, it does not move it: `--help` still carries its compact head, and a failing

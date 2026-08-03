@@ -187,22 +187,18 @@ fn check(args: &BashAnnotator, out: &mut impl Write) -> Result<i32> {
     Ok(exit::SUCCESS)
 }
 
-/// Said once, at the start of a session, instead of on every rewritten call. The reader is an agent
-/// about to see `# Concern: …` trailing lines it did not ask for, and the whole job of this text is
-/// that it recognises them and does not go debugging its own tools. Everything else it might want
-/// is in `--help` and the README.
-const SESSION_ANNOUNCEMENT: &str = concat!(
-    "ls, find and grep output in this session carries each file's annotation:\n",
-    "  src/render/text.rs  # Concern: … | Non-concern: … | IO: …\n",
-    "Only output returned directly to your context is annotated (i.e. `ls -la > out.txt` is ",
-    "unaffected).",
-);
+/// Said once at the start of a session, rather than on every rewritten call. It tells an agent the
+/// trailing `# Concern: …` lines are expected and points it at the command that maps a whole tree,
+/// because a notice that only prevents confusion never gets the map used. Holds the document with
+/// its own annotation line; [`crate::embedded_doc::embedded_body`] drops that.
+const SESSION_ANNOUNCEMENT_DOC: &str = include_str!("session-announcement.md");
 
 /// The `SessionStart` hook entry point: print the announcement, exit 0. Claude Code adds a
 /// `SessionStart` hook's stdout to the agent's context verbatim, so no JSON envelope is needed and
 /// none is emitted — the text a user reads here is exactly the text the agent is handed.
 fn session_announcement(out: &mut impl Write) -> Result<i32> {
-    writeln!(out, "{SESSION_ANNOUNCEMENT}")?;
+    let text = crate::embedded_doc::embedded_body(SESSION_ANNOUNCEMENT_DOC, "session announcement");
+    writeln!(out, "{}", text.trim_end())?;
     Ok(exit::SUCCESS)
 }
 
