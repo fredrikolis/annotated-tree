@@ -51,9 +51,7 @@ pub fn format_relative_time(age_seconds: i64) -> String {
     } else if weeks < 5 {
         format!("{weeks}w ago")
     } else if days < 365 {
-        // Gate the months/years split on DAYS, not `months < 12`: `months` reaches 12
-        // at day 360 but `years` only reaches 1 at day 365, so days 360-364 would
-        // otherwise fall through and render "0y ago".
+        // Gate the months/years split on DAYS, not `months < 12`: `months` reaches 12 at day 360 but `years` only reaches 1 at day 365, so days 360-364 would otherwise fall through and render "0y ago".
         format!("{months}mo ago")
     } else {
         format!("{years}y ago")
@@ -78,8 +76,6 @@ mod tests {
 
     #[test]
     fn months_years_boundary_never_reads_zero_years() {
-        // The regression: `months` hits 12 at day 360 but `years` only hits 1 at day
-        // 365, so days 360-364 must stay "12mo ago", never "0y ago".
         assert_eq!(format_relative_time(360 * 86400), "12mo ago");
         assert_eq!(format_relative_time(364 * 86400), "12mo ago");
         assert_eq!(format_relative_time(365 * 86400), "1y ago");
@@ -87,8 +83,7 @@ mod tests {
 
     #[test]
     fn to_unix_path_normalizes_separators() {
-        // Its whole reason to exist: forward slashes on every platform, even for a
-        // multi-component relative path built with the OS separator.
+        // Its whole reason to exist: forward slashes on every platform, even for a multi-component relative path built with the OS separator.
         let rel = Path::new("src").join("render").join("md.rs");
         assert_eq!(to_unix_path(&rel), "src/render/md.rs");
     }

@@ -1,19 +1,8 @@
 #!/usr/bin/env bash
-# pre-commit gate 1 of 2 (mechanical): every code file must carry a conforming
-# first-line annotation. This is the deterministic presence/form check only; the
-# QUALITY + staleness review is gate 2, attested in the commit message (commit-msg).
-# Gate 1 runs first because gate 2's semantic review is wasted on a file that has no
-# annotation at all.
-# Bypass a genuinely trivial, non-code commit: git commit --no-verify.
-# Enable per clone: git config core.hooksPath .githooks
+# Mechanical gates 1 and 2 of 3; gate 3 is the review attested in the commit message.
+# Enable per clone: git config core.hooksPath .githooks   Bypass: git commit --no-verify
 set -euo pipefail
 
-# Scope: the whole repo EXCEPT sample/, a golden test fixture whose deliberately-loose
-# annotations are pinned by tests/golden.rs. Excluded via the CLI `--ignore` glob rather
-# than a repo .annotated-tree.toml, because config discovery walks up from the scanned
-# path: a repo-root .toml would be found by the golden tests (which scan sample/) and
-# could break them.
-# Prefer a built binary; fall back to cargo so the hook still works on a fresh clone.
 if [ -x target/release/annotated-tree ]; then
 	run=(target/release/annotated-tree)
 elif [ -x target/debug/annotated-tree ]; then
@@ -22,22 +11,28 @@ else
 	run=(cargo run --quiet --)
 fi
 
-# Two invocations, because `walk::keep_entry` prunes any directory named `tests` unless
-# `--include-tests` (default off): the first line cannot see tests/ at all, and most of the
-# repo's annotations live there. `tests/fixtures` stays excluded — charter_malformed is
-# deliberately malformed. `--max-length 200` bounds each field; the doctrine targets ~150.
-if ! "${run[@]}" --strict-check . --ignore sample --max-length 200; then
+# Gate 1: annotations. Twice, because the walk prunes `tests` unless --include-tests, and most
+# annotations live there. `sample/` holds deliberately-loose fixtures pinned by tests/golden.rs.
+fail_1() {
 	echo "" >&2
-	echo "pre-commit: ANNOTATION GATE FAILED" >&2
-	echo "  - one or more code files lack a conforming first-line annotation (see above)." >&2
-	echo "  Fix them, then re-commit. Bypass a trivial, non-code commit: git commit --no-verify" >&2
+	echo "pre-commit: ANNOTATION GATE FAILED — $1 (see above)" >&2
 	exit 1
-fi
+}
+"${run[@]}" --strict-check . --ignore sample --max-length 200 || fail_1 "a code file lacks one"
+"${run[@]}" --strict-check . --ignore sample --include-tests -I 'tests/fixtures' --max-length 200 ||
+	fail_1 "a file under tests/ lacks one"
 
-if ! "${run[@]}" --strict-check . --ignore sample --include-tests -I 'tests/fixtures' --max-length 200; then
+# Gate 2: comment budget. Blocking comes from `level = "deny"` in the config, never from `-W`,
+# which exits 1 even with zero findings. Pinned to a fork for its file-scoped rule and cached
+# under target/ by rev; `set -e` fails the commit if that build fails, never a silent skip.
+REV=7a232179e45414108d28047acd6315d9a2c4946b
+LINT=target/lint-tools/$REV/bin/cargo-lint-extra
+
+[ -x "$LINT" ] || cargo install --git https://github.com/fredrikolis/cargo-lint-extra --rev "$REV" --root "target/lint-tools/$REV" --quiet cargo-lint-extra >&2
+
+"$LINT" lint-extra --config .cargo-lint-extra.toml . 1>&2 || {
 	echo "" >&2
-	echo "pre-commit: ANNOTATION GATE FAILED (tests/)" >&2
-	echo "  - one or more files under tests/ lack a conforming first-line annotation (see above)." >&2
-	echo "  Fix them, then re-commit. Bypass a trivial, non-code commit: git commit --no-verify" >&2
+	echo "pre-commit: COMMENT GATE FAILED — the standard it enforces measures volume, never quality:" >&2
+	cat docs/comment-standards.md >&2
 	exit 1
-fi
+}

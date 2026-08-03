@@ -1,1 +1,1 @@
-Concern: a deterministic, offline CLI and MCP server that maps a workspace as an annotated tree plus a cross-ecosystem dependency graph, checks annotation form and length, and teaches the format | Non-concern: judging what the annotations mean, or writing them | IO: (workspace root, config) -> map or strict-check verdict
+Concern: maps a workspace an agent can route from without opening files, and keeps it honest | Non-concern: authoring or judging annotations | IO: (root, stdin) -> annotations, verdict, edits

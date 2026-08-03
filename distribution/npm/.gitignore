@@ -1,0 +1,6 @@
+# Injected at publish time — never committed.
+node_modules/
+*.tgz
+platforms/*/annotated-tree
+# Copied from the canonical repo-root README.md by scripts/build-npm.mjs.
+README.md

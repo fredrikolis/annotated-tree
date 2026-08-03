@@ -1,0 +1,1 @@
+Concern: the standards a change to this repo is judged against | Non-concern: anything compiled into the binary (src/ owns those) or how the tool is used | IO: none

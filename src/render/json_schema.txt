@@ -21,7 +21,7 @@ Coverage = {
 
 DirNode  = {
   "name":         string,
-  "charter":      Charter,         // OMITTED unless the dir resolves a concern charter
+  "charter":      Charter,         // OMITTED unless the dir resolves a concern charter — an `.annotation` with content past its one line resolves none
   "dirs":         [ DirNode, … ],  // always present (possibly empty)
   "files":        [ FileNode, … ], // always present (possibly empty)
   "deps":         DirDeps,         // OMITTED unless the dir holds a manifest
@@ -38,7 +38,8 @@ Charter  = {                       // a directory's concern charter (dir-scale a
 FileNode = {
   "name":       string,
   "annotation": string,            // OMITTED when the file has no annotation
-  "age_secs":   integer            // OMITTED unless --age
+  "age_secs":   integer,           // OMITTED unless --age
+  "sidecar":    true               // OMITTED unless the annotation came from a <name>.annotation sidecar
 }
 
 DirDeps  = {
@@ -55,6 +56,15 @@ presence signals the dependency graph is incomplete. Warnings are non-fatal (exi
 `charter` follows the same absent-key rule: present ONLY when the directory resolves one
 (a `.annotation` breadcrumb, else its code entry file's promoted annotation), omitted
 otherwise — so a charter-less tree is byte-identical and the schema stays additive.
+
+`sidecar` follows it too, and is the ONE exclusion a map document states about itself: a
+`.annotation` file never gets a node of its own — a directory's `.annotation` charter appears
+as that directory's `charter`, and a file's `<name>.annotation` sidecar appears as that file's
+`annotation` with `"sidecar": true` beside it. A file with no comment syntax (a CSV, a dataset)
+is listed BECAUSE it carries a sidecar, with no `--include` needed; a file that can hold a
+first-line comment never takes one, so `foo.rs.annotation` is an ordinary file, not a sidecar.
+A sidecar with content past its one line annotates nothing: the row carries no annotation and
+`sidecar` is omitted.
 
 `coverage` follows the same absent-key rule: it is present ONLY when some listed code file
 has no annotation (a file with no annotation is invisible to an agent reading the tree), and
@@ -73,3 +83,14 @@ never empty + prose-only stderr; an agent parsing stdout always gets a dispatch 
     "path":    string              // OMITTED unless an offending path is known
   }
 }
+
+strip (--format json, the `strip` verb)
+  { "schema": 1,
+    "strip": { "applied": bool,           // false on the listing pass; true after -y
+               "scanned": int,            // files considered
+               "files": [ { "path": "as given on the command line",
+                            "code": null                    // the annotation was removed
+                                    | "excluded"            // -I matched it
+                                    | "symlink"             // named symlink, not followed
+                                    | "unreadable"
+                                    | "unwritable" } ] } }

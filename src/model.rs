@@ -1,4 +1,4 @@
-// Concern: the canonical in-memory codebase map and every filesystem read behind it — a sorted directory/file tree carrying each file's annotation and mtime | Non-concern: output formatting | IO: (root, files, graph, Config) -> CodebaseMap
+// Concern: the canonical in-memory map and every filesystem read behind it — a sorted tree of each file's annotation and mtime | Non-concern: rendering | IO: (paths, graph, Config) -> CodebaseMap
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -10,28 +10,23 @@ use crate::annotation;
 use crate::charter::{self, Charter};
 use crate::config::Config;
 use crate::graph::DirDeps;
+use crate::sidecar;
 
 /// One canonical tree per analyzed root. Renderers convert this to text/JSON/etc.
 #[derive(Serialize)]
 pub struct CodebaseMap {
     pub roots: Vec<DirNode>,
-    /// Non-fatal manifest-parse warnings from the graph walk. NOT part of the tree — the
-    /// model builder never sets it; the shared `build_codebase_map` pipeline attaches the
-    /// graph's warnings here so the JSON renderer (and the MCP `map` tool, which renders
-    /// the same map) can surface them in the envelope's `warnings` array. The text/md
-    /// renderers ignore it (they iterate `roots` only), so their output is unchanged.
+    /// Non-fatal manifest-parse warnings from the graph walk. NOT part of the tree — the model
+    /// builder never sets it; `build_codebase_map` attaches the graph's warnings here so the JSON
+    /// renderer can surface them in the envelope. The text and markdown renderers iterate `roots`
+    /// only, so their output is unchanged.
     pub warnings: Vec<crate::graph::Warning>,
 }
 
-/// Annotation coverage across every code file the tree lists: how many carry a first-line
-/// annotation (`annotated`) out of the `total`. This is the Layer-0 motivation signal — a
-/// code file with no annotation is invisible to an agent reading the tree — surfaced on the
-/// unconditional map surfaces (the text footer note and the JSON `coverage` object) so it
-/// reaches agents that never invoke `--strict-check`. Counted over the `FileNode`s actually
-/// in the tree (post `--max-per-node` truncation); `--strict-check` stays the authoritative,
-/// untruncated per-file lister. Coverage is a HAS-ANY-annotation measure (a non-conforming
-/// comment still renders in the tree, so the file is visible) — distinct from the strict
-/// report's `annotated_count`, which counts strict conformance.
+/// Annotation coverage across every code file the tree lists. Surfaced on the unconditional map
+/// surfaces so it reaches agents that never invoke `--strict-check`, and counted over the
+/// `FileNode`s actually in the tree (post-truncation). A HAS-ANY-annotation measure, distinct from
+/// the strict report's `annotated_count`, which counts strict conformance.
 pub struct Coverage {
     pub annotated: u32,
     pub total: u32,
@@ -47,6 +42,14 @@ impl Coverage {
 }
 
 impl CodebaseMap {
+    /// Whether any listed file takes its annotation from a `<name>.annotation` sidecar — i.e.
+    /// whether this map suppressed a real file's row. Drives the one-line exclusion criterion
+    /// the text map prints (`walk::ANNOTATION_FILE_CRITERION`); the JSON surface carries the
+    /// same fact per row as `FileNode.sidecar` instead.
+    pub fn has_sidecar_rows(&self) -> bool {
+        self.roots.iter().any(any_sidecar)
+    }
+
     /// Annotation coverage summed across every root's listed code files.
     pub fn coverage(&self) -> Coverage {
         let mut coverage = Coverage {
@@ -58,6 +61,10 @@ impl CodebaseMap {
         }
         coverage
     }
+}
+
+fn any_sidecar(dir: &DirNode) -> bool {
+    dir.files.iter().any(|f| f.sidecar) || dir.dirs.iter().any(any_sidecar)
 }
 
 /// Fold one directory subtree's files into the running coverage counts (recursing into
@@ -78,11 +85,10 @@ fn accumulate_coverage(dir: &DirNode, coverage: &mut Coverage) {
 #[derive(Serialize)]
 pub struct DirNode {
     pub name: String,
-    /// The directory's concern charter, resolved most-explicit-first (a `.annotation`
-    /// breadcrumb, else the promoted annotation of the code entry file). `None` — and omitted
-    /// from JSON — for a charter-less directory, so such a tree stays byte-for-byte unchanged
-    /// and the schema stays additive under `schema: 1`. Rendered on the directory row beside
-    /// the observed dep facts: authored intent cross-checked against the graph.
+    /// The directory's concern charter, resolved most-explicit-first. `None` — and omitted from
+    /// JSON — for a charter-less directory, so such a tree stays byte-for-byte unchanged and the
+    /// schema stays additive under `schema: 1`. Rendered on the directory row beside the observed
+    /// dep facts: authored intent cross-checked against the graph.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub charter: Option<Charter>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -111,6 +117,16 @@ pub struct FileNode {
     pub annotation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub age_secs: Option<i64>,
+    /// True when `annotation` came from the `<name>.annotation` SIDECAR rather than the file's own
+    /// first line — the one case where a real file carries no row of its own. This is where a JSON
+    /// consumer reads the exclusion criterion off the data, as the text map reads it off the note.
+    /// Omitted when false, so an in-file annotation serializes byte-identically.
+    #[serde(skip_serializing_if = "is_false")]
+    pub sidecar: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// Intermediate sorted tree: dirs and files under a directory, keyed by name so
@@ -121,31 +137,43 @@ struct RawNode {
     files: BTreeMap<String, PathBuf>,
 }
 
-/// Build the canonical model for one root. `files` are absolute paths under
-/// `root`; `graph` is keyed by canonicalized directory path. All annotation and
-/// mtime reads happen here — renderers are pure over the returned tree.
+/// Build the canonical model for one root. All annotation and mtime reads happen here, so renderers
+/// stay pure over the returned tree. Every WALKED directory gets a node whether or not a listable
+/// file lies beneath it: under a `-L` cap the walk stops at the cutoff, so "has a listable
+/// descendant" is a question the deepest rows cannot answer. An empty directory is listed at every depth.
 pub fn build(
     root: &Path,
     files: &[PathBuf],
+    dirs: &[PathBuf],
     graph: &HashMap<PathBuf, DirDeps>,
     config: &Config,
     max_depth: Option<usize>,
 ) -> DirNode {
     let mut raw = RawNode::default();
+    for dir in dirs {
+        if let Ok(rel) = dir.strip_prefix(root) {
+            insert_dir(&mut raw, rel);
+        }
+    }
     for path in files {
         if let Ok(rel) = path.strip_prefix(root) {
             insert(&mut raw, rel, path);
         }
     }
-    // Canonical Representation: `graph` keys directories by canonical path, so
-    // canonicalize the root ONCE here and descend by joining child names onto it. The
-    // walk never follows symlinks, so `canon_root.join(child…)` is itself canonical —
-    // every directory node looks `graph` up directly, with no per-node canonicalize
-    // syscall. File paths (used for the annotation/mtime reads) come from `raw` and
-    // stay exactly as walked, untouched.
+    // `graph` keys directories by canonical path, and the walk never follows symlinks, so joining child names onto a once-canonicalized root stays canonical — no per-node canonicalize syscall.
     let canon_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let now = SystemTime::now();
     convert(&raw, &canon_root, graph, config, now, max_depth, 0)
+}
+
+/// Ensure a node exists for `rel` and for every directory on the way to it. The root's own
+/// entry (an empty `rel`) has no components, so it is the no-op it should be.
+fn insert_dir(node: &mut RawNode, rel: &Path) {
+    let mut cursor = node;
+    for component in rel.components() {
+        let name = component.as_os_str().to_string_lossy().into_owned();
+        cursor = cursor.dirs.entry(name).or_default();
+    }
 }
 
 fn insert(node: &mut RawNode, rel: &Path, abs: &Path) {
@@ -178,16 +206,13 @@ fn convert(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
 
-    // At the depth cutoff a directory is still listed (name + deps) but its
-    // contents are not expanded — mirroring the original render's early return.
+    // At the depth cutoff a directory is still listed (name + deps) but its contents are not expanded — mirroring the original render's early return.
     let pruned = max_depth.is_some_and(|limit| depth >= limit) && depth > 0;
     if pruned {
-        // A depth-pruned directory still shows its own row, so a `.annotation` breadcrumb
-        // still resolves (a filesystem read needing no children); entry-file promotion cannot,
-        // as the subtree is unexpanded — so only the explicit override can surface here.
+        // A depth-pruned directory still shows its own row, so a `.annotation` breadcrumb still resolves (a filesystem read needing no children); entry-file promotion cannot, as the subtree is unexpanded — so only the explicit override can surface here.
         return DirNode {
             name,
-            charter: charter::read_charter_file(abs_dir).and_then(|c| charter::from_line(&c)),
+            charter: charter::read_charter_file(abs_dir).and_then(|c| charter::from_file_body(&c)),
             deps,
             dirs: Vec::new(),
             files: Vec::new(),
@@ -215,16 +240,18 @@ fn convert(
     let files: Vec<FileNode> = node
         .files
         .iter()
-        .map(|(name, abs)| FileNode {
-            name: name.clone(),
-            annotation: file_annotation(abs, config),
-            age_secs: age_secs(abs, now, config),
+        .map(|(name, abs)| {
+            let (annotation, sidecar) = file_annotation(abs, config);
+            FileNode {
+                name: name.clone(),
+                annotation,
+                age_secs: age_secs(abs, now, config),
+                sidecar,
+            }
         })
         .collect();
 
-    // Resolve the charter BEFORE truncation reads from the full child set — entry-file
-    // promotion reaches into the already-built children (a crate's `src/lib.rs`, a package's
-    // `__init__.py`), which a display cap could otherwise elide out from under it.
+    // Resolve the charter BEFORE truncation reads from the full child set — entry-file promotion reaches into the already-built children (a crate's `src/lib.rs`, a package's `__init__.py`), which a display cap could otherwise elide out from under it.
     let charter = resolve_charter(abs_dir, &dirs, &files);
 
     let cap = config.display.max_per_node;
@@ -242,16 +269,13 @@ fn convert(
     }
 }
 
-/// Resolve a directory's charter from the already-built tree, most-explicit-first: a
-/// `.annotation` breadcrumb (its presence overrides, even if malformed — then `None` here and
-/// `--strict-check` flags it), else the promoted annotation of the code entry file. Promotion
-/// REUSES the already-extracted `FileNode.annotation` (no re-parse) — a crate's `src/lib.rs`
-/// (else `src/main.rs`), or a direct-child module/package/index/doc entry file. The one
-/// annotation grammar splits it (`charter::from_line`); the entry-file tables live in
-/// `charter`, so the model and the strict-check filesystem resolver share both.
+/// Resolve a directory's charter from the already-built tree, most-explicit-first: a `.annotation`
+/// breadcrumb — whose presence overrides even when malformed — else the promoted annotation of the
+/// code entry file, REUSING the already-extracted `FileNode.annotation`. The entry-file tables live
+/// in `charter`, so the model and the strict-check filesystem resolver share them.
 fn resolve_charter(abs_dir: &Path, dirs: &[DirNode], files: &[FileNode]) -> Option<Charter> {
     if let Some(content) = charter::read_charter_file(abs_dir) {
-        return charter::from_line(&content);
+        return charter::from_file_body(&content);
     }
     if abs_dir.join("Cargo.toml").is_file() {
         if let Some(src) = dirs.iter().find(|d| d.name == "src") {
@@ -289,20 +313,26 @@ fn truncate<T>(mut items: Vec<T>, cap: Option<usize>) -> (Vec<T>, u32) {
 }
 
 fn dir_deps(abs_dir: &Path, graph: &HashMap<PathBuf, DirDeps>) -> Option<DirDeps> {
-    // `abs_dir` is already canonical (descended from the canonicalized root), so this
-    // is a direct lookup — no per-node canonicalize syscall.
+    // `abs_dir` is already canonical (descended from the canonicalized root), so this is a direct lookup — no per-node canonicalize syscall.
     graph.get(abs_dir).cloned()
 }
 
-/// Resolve a file's annotation from a bounded head-only read. An unreadable file, or one
-/// with no leading annotation, yields `None` (graceful, never fatal).
-fn file_annotation(abs: &Path, config: &Config) -> Option<String> {
-    match config.language_for_path(abs) {
-        Some(lang) => annotation::extract(abs, lang),
-        // No known language: the file is in the tree only because a `--include` selector
-        // opted it in (the default walk yields recognized languages only), so read the
-        // annotation marker-agnostically.
-        None => annotation::extract_any(abs),
+/// Resolve a file's annotation, and whether it came from a sidecar. A bounded head-only read for a
+/// file that can hold a comment; an unreadable file, or one with no leading annotation, yields
+/// `None`. A sidecar's presence WINS over a marker-agnostic read of the file's own head — the same
+/// most-explicit-first rule by which a directory's `.annotation` overrides a promoted entry line.
+fn file_annotation(abs: &Path, config: &Config) -> (Option<String>, bool) {
+    if let Some(lang) = config.language_for_path(abs) {
+        return (annotation::extract(abs, lang), false);
+    }
+    let body = sidecar::body(abs)
+        // A sidecar carrying prose past its one line resolves to NO annotation, exactly as a directory charter does: the row stays silent rather than carrying a newline into it, and `--strict-check` reports the file.
+        .filter(|text| annotation::content_past_first_line(text).is_none())
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty());
+    match body {
+        Some(body) => (Some(body), true),
+        None => (annotation::extract_any(abs), false),
     }
 }
 

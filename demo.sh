@@ -11,7 +11,7 @@ bold() { printf '\n\033[1;36m%s\033[0m\n' "$*"; }
 run()  { printf '\033[2m$ %s\033[0m\n' "$*"; eval "$*"; }
 
 # --- Build only if the binary is missing or older than the sources -----------
-if [ ! -x "$BIN" ] || [ -n "$(find src Cargo.toml default_config.toml -newer "$BIN" 2>/dev/null)" ]; then
+if [ ! -x "$BIN" ] || [ -n "$(find src Cargo.toml -newer "$BIN" 2>/dev/null)" ]; then
   bold "Building annotated-tree (release)…"
   cargo build --release
 else

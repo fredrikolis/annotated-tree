@@ -1,14 +1,12 @@
-// Concern: extracts a file's first-line annotation and checks its three-field Concern/Non-concern/IO form and per-part length | Non-concern: which files to visit, or what a part means | IO: (file head, Language?, length bound) -> Outcome
+// Concern: reads a file's annotation, locates the line wholly given to one, checks form, length and `.annotation` contents | Non-concern: which files to visit | IO: (head, lang, bound) -> Outcome, line
 
 use std::path::Path;
 
 use crate::config::Language;
 
-/// Bytes read from the head of a file — a bounded window that must hold any
-/// leading shebang/blank lines plus the first comment. Bounded (not a full read)
-/// so a minified one-line blob or a huge data file never reads to EOF; generous
-/// enough (64 KiB) that blank-padded or long-banner headers don't silently drop
-/// the annotation and trip a false `--strict-check` failure.
+/// A bounded head window that must hold any leading shebang and blank lines plus the first comment.
+/// Bounded so a minified blob or huge data file never reads to EOF, and generous enough that a
+/// blank-padded or long-banner header does not silently drop the annotation into a false failure.
 const HEAD_BYTES: usize = 64 * 1024;
 
 /// Read the annotation from `path` using `lang`'s rules. Returns the trimmed
@@ -27,19 +25,46 @@ pub fn extract_any(path: &Path) -> Option<String> {
     extract_any_from(&head)
 }
 
-/// Marker-agnostic extraction over already-read text: locate the first meaningful line (past a
-/// `#!` shebang and blank lines) and, if it carries the invariant `Concern:` opener anywhere,
-/// return the annotation from that opener onward — with any leading comment marker dropped (we
-/// slice from `Concern:`) and a trailing block-comment closer (`-->`, `*/`, `"""`, …) stripped.
-/// Keys on the format's fixed opener rather than a language delimiter, so it reads the SAME
-/// three-field line the marker-based path does, from a file whose grammar is unknown.
+/// The 0-based line that consists SOLELY of a conforming Annotation, or `None` when no line does.
+/// An Annotation is a span, not a line — `<!-- … -->` can close mid-line with markup after it, and
+/// a docstring can open on one line and close on another — so a position is reported only when the
+/// opener starts the line, the closer ends it, and what lies between is exactly the Annotation.
+pub(crate) fn sole_annotation_line(text: &str, lang: &Language) -> Option<usize> {
+    // A `pattern` language matches anywhere while [`locate`] reports line 1 regardless, so no position is knowable and the one below would be a guess at another line's expense.
+    if lang.pattern.is_some() || !matches!(analyze(text, lang, None), Outcome::Ok) {
+        return None;
+    }
+    let annotation = extract_from(text, lang)?;
+    let (line_no, raw) = first_meaningful_line(text)?;
+    let line = raw.trim();
+
+    // Delimiters in `locate`'s order, so the two cannot disagree about which opened a line.
+    let body = lang
+        .docstring
+        .iter()
+        .find_map(|delim| {
+            line.strip_prefix(delim.as_str())
+                .and_then(|rest| rest.strip_suffix(delim.as_str()))
+        })
+        .or_else(|| {
+            lang.block.as_ref().and_then(|(open, close)| {
+                line.strip_prefix(open.as_str())
+                    .and_then(|rest| rest.strip_suffix(close.as_str()))
+            })
+        })
+        .or_else(|| lang.line.as_deref().and_then(|m| line.strip_prefix(m)))?;
+
+    (body.trim() == annotation).then_some(line_no - 1)
+}
+
+/// Marker-agnostic extraction over already-read text: locate the first meaningful line and, if it
+/// carries the invariant `Concern:` opener, return the annotation from there on — leading marker
+/// dropped, trailing block closer stripped. Keys on the format's fixed opener rather than a language
+/// delimiter, so it reads the SAME three-field line from a file whose grammar is unknown.
 pub fn extract_any_from(text: &str) -> Option<String> {
     let (_, line) = first_meaningful_line(text)?;
     let start = line.find(CONCERN_KEY)?;
     let mut annotation = line[start..].trim_end();
-    // Strip a single trailing block-comment closer so a `<!-- … -->` / `""" … """` wrapper on an
-    // unrecognized file yields the same bare body a marker-based read would (the leading marker is
-    // already gone — we sliced from `Concern:`).
     for closer in BLOCK_CLOSERS {
         if let Some(stripped) = annotation.strip_suffix(closer) {
             annotation = stripped.trim_end();
@@ -55,11 +80,15 @@ pub fn extract_any_from(text: &str) -> Option<String> {
 /// removed, so a closer appearing inside the annotation's own prose is untouched.
 const BLOCK_CLOSERS: &[&str] = &["-->", "*/", "\"\"\"", "'''", "*)", "#}", "-}", "}}"];
 
-/// The first line that carries real content, with its 1-based line number: line 1, else the line
-/// past a `#!` shebang (+1), else the first non-blank line after leading blanks (+1 each). `None`
-/// when the head holds no such line. The ONE place the shebang/blank skip lives — both [`locate`]
-/// (which needs the line number for diagnostics) and the marker-agnostic [`extract_any_from`]
-/// (which ignores it) build on it, so they cannot drift on where a file's annotation may begin.
+/// The delimiter line opening and closing a YAML frontmatter block. Matched exactly (trailing
+/// whitespace aside): an indented `---` is prose, and the block must sit at the very start of
+/// the file, so a `---` further down stays a horizontal rule or a document separator.
+const FRONTMATTER_FENCE: &str = "---";
+
+/// The first line carrying real content, with its 1-based number: line 1, else past a `#!` shebang,
+/// a closed YAML frontmatter block, or leading blanks. The ONE place that skip lives, so [`locate`]
+/// and [`extract_any_from`] cannot drift. Frontmatter is skipped for a shebang's reason — line 1 is
+/// spoken for by another contract, and requiring the annotation above it would exclude both.
 fn first_meaningful_line(text: &str) -> Option<(usize, &str)> {
     let mut lines = text.lines();
     let mut line_no = 1usize;
@@ -67,6 +96,27 @@ fn first_meaningful_line(text: &str) -> Option<(usize, &str)> {
     if current.starts_with("#!") {
         current = lines.next()?;
         line_no += 1;
+    }
+    if current.trim_end() == FRONTMATTER_FENCE {
+        // Probe a clone: only a CLOSED block is a prefix, so a file merely opening with a horizontal rule is left where it was rather than swallowed to EOF.
+        let mut probe = lines.clone();
+        let mut probe_no = line_no;
+        let closed = loop {
+            match probe.next() {
+                Some(line) => {
+                    probe_no += 1;
+                    if line.trim_end() == FRONTMATTER_FENCE {
+                        break true;
+                    }
+                }
+                None => break false,
+            }
+        };
+        if closed {
+            lines = probe;
+            line_no = probe_no + 1;
+            current = lines.next()?;
+        }
     }
     while current.trim().is_empty() {
         current = lines.next()?;
@@ -122,8 +172,7 @@ fn locate(text: &str, lang: &Language) -> Located {
                 }
             }
         }
-        // Pattern-based languages carry no natural line for a regex match, so a miss
-        // is reported at line 1 with the first line as `raw` (a documented limitation).
+        // Pattern-based languages carry no natural line for a regex match, so a miss is reported at line 1 with the first line as `raw` — a documented limitation.
         return match text.lines().next() {
             Some(raw) => Located::NoComment {
                 line: 1,
@@ -139,9 +188,7 @@ fn locate(text: &str, lang: &Language) -> Located {
 
     let first = current.trim_start();
 
-    // Each branch COMMITS once its opening delimiter matches (mirroring the original
-    // `return non_empty(...)`): an empty-content comment is a landing, not a
-    // fall-through, so `extract_from` stays byte-identical.
+    // Each branch COMMITS once its opening delimiter matches: an empty-content comment is a landing, not a fall-through.
     for delim in &lang.docstring {
         if let Some(rest) = first.strip_prefix(delim.as_str()) {
             let rest = rest.strip_suffix(delim.as_str()).unwrap_or(rest);
@@ -203,13 +250,10 @@ pub(crate) const PART_CONCERN: &str = "concern";
 pub(crate) const PART_NON_CONCERN: &str = "non_concern";
 pub(crate) const PART_IO: &str = "io";
 
-/// The human label for a part token (`concern` -> `Concern`) — the field name as it appears
-/// in the annotation itself, so a diagnostic quotes what the author typed while the machine
-/// surface keeps the snake_case token. Kept beside the tokens, the ONE place the pairing lives.
-///
-/// The three tokens above are the only ones that exist (they are `pub(crate)` constants and
-/// every caller passes one), so anything else is a caller bug, not input — it fails loudly
-/// rather than leaking a snake_case token into human prose.
+/// The human label for a part token (`concern` -> `Concern`) — the field name as it appears in the
+/// annotation, so a diagnostic quotes what the author typed while the machine surface keeps the
+/// snake_case token. The three tokens above are the only ones that exist and every caller passes
+/// one, so anything else is a caller bug and fails loudly rather than leaking a token into prose.
 pub(crate) fn part_label(part: &str) -> &'static str {
     match part {
         PART_CONCERN => "Concern",
@@ -230,31 +274,29 @@ pub enum Outcome {
     /// wrong-marker line when one was present (so the message can hint at it), or
     /// `None` for an empty / unreadable head.
     Missing { line: usize, raw: Option<String> },
-    /// A comment is present but does not carry three non-empty `Concern: … | Non-concern: …
-    /// | IO: …` fields — a key is absent, a field is empty after trimming, or the ` | `
-    /// structure is broken. `missing` names which of the three keyed fields are absent or
-    /// empty (by [`PART_CONCERN`] etc.) so an agent knows what to add; `actual` is the
-    /// extracted comment text. `detail` is human prose for the two cases `missing` alone
-    /// reads wrong on — a present-but-empty field, and a broken structure whose keys are all
-    /// visible — and `None` for a plainly absent key.
+    /// A comment is present but does not carry three non-empty fields — a key is absent, a field is
+    /// empty after trimming, or the ` | ` structure is broken. `missing` names which keyed fields are
+    /// absent or empty so an agent knows what to add; `actual` is the extracted text. `detail` is
+    /// prose for the two cases `missing` alone reads wrong on, and `None` for a plainly absent key.
     Malformed {
         line: usize,
         actual: String,
         missing: Vec<&'static str>,
         detail: Option<String>,
     },
-    /// All three fields are present and non-empty, but at least one is longer than the bound
-    /// the caller supplied. `parts` names each offending field with its length in Unicode
-    /// scalar values; `max` is the bound it breached.
+    /// All three fields are present and non-empty, but the annotation as a whole is longer than the
+    /// bound the caller supplied. `length` is its size in Unicode scalar values. The bound is on the
+    /// WHOLE annotation, not each field: what an agent pays for is the contract it ingests, and
+    /// three fields each under a per-field bound can still add up to more than anyone wants.
     TooLong {
         line: usize,
         actual: String,
-        parts: Vec<(&'static str, usize)>,
+        length: usize,
         max: usize,
     },
 }
 
-/// Diagnose `text` against the one annotation format, bounding each part at `max_len`
+/// Diagnose `text` against the one annotation format, bounding the WHOLE annotation at `max_len`
 /// characters when a bound is supplied (`None` raises no length issue at any length). The
 /// strict layer turns this into a message; [`extract`]/[`extract_from`] stay unchanged for
 /// the tree renderer.
@@ -270,17 +312,13 @@ pub fn analyze(text: &str, lang: &Language, max_len: Option<usize>) -> Outcome {
 }
 
 /// Check an already-located annotation body against the three-field format and the optional
-/// per-part bound `max_len` — the shared tail of both [`analyze`] (which locates a file's
-/// first comment first) and [`analyze_charter`] (whose whole input IS the body, no comment to
-/// locate). ONE checker, so a marker-bearing comment and a bare `.annotation` line are held
-/// to the exact same shape and can never drift. Structure outranks length: at most one
-/// outcome exists per input, and length is evaluated only for an otherwise-conforming line.
+/// whole-annotation bound — the shared tail of [`analyze`] and [`analyze_charter`]. ONE checker, so
+/// a marker-bearing comment and a bare `.annotation` line are held to the same shape and cannot
+/// drift. Structure outranks length: one outcome per input, and length only for a conforming line.
 fn check_found(text: String, line: usize, max_len: Option<usize>) -> Outcome {
     match parse_fields(&text) {
         Some(fields) => {
-            // A present-but-empty field is the same defect class as an absent one (CHECK1
-            // admits both), so it is `Malformed` with that part named — and `detail` carries
-            // the difference, since the key IS visible in `actual`.
+            // A present-but-empty field is the same defect class as an absent one (CHECK1 admits both), so it is `Malformed` with that part named; `detail` carries the difference, since the key IS visible in `actual`.
             let empty = empty_parts(&fields);
             if !empty.is_empty() {
                 let detail = Some(empty_detail(&empty));
@@ -292,21 +330,19 @@ fn check_found(text: String, line: usize, max_len: Option<usize>) -> Outcome {
                 };
             }
             if let Some(max) = max_len {
-                let parts = over_length_parts(&text, max);
-                if !parts.is_empty() {
+                let length = text.trim().chars().count();
+                if length > max {
                     return Outcome::TooLong {
                         line,
                         actual: text,
-                        parts,
+                        length,
                         max,
                     };
                 }
             }
             Outcome::Ok
         }
-        // A comment, but not the three-field shape — name which keys are absent. All three
-        // keys present yet unparseable means the ` | ` structure is broken or the keys are
-        // out of order, so NO part could be extracted: report all three, and say why.
+        // All three keys present yet unparseable means the ` | ` structure is broken or the keys are out of order, so NO part could be extracted: report all three, and say why.
         None => {
             let mut missing = absent_parts(&text);
             let mut detail = None;
@@ -324,18 +360,103 @@ fn check_found(text: String, line: usize, max_len: Option<usize>) -> Outcome {
     }
 }
 
-/// Diagnose a bare (marker-less) `.annotation` file body — the whole file IS the annotation,
-/// with no comment marker to strip — against the SAME three-field grammar and `max_len` bound
-/// [`analyze`] applies after locating a file's first comment. An empty/whitespace body is
-/// `Missing` (an empty opt-in file is a defect, not a silent no-op). Reuses [`check_found`],
-/// so a directory's charter is checked by the one checker, never a second parser.
+/// Diagnose a bare (marker-less) `.annotation` body — the whole file IS the annotation — against the
+/// SAME grammar and bound [`analyze`] applies after locating a comment. An empty body is `Missing`:
+/// an empty opt-in file is a defect, not a silent no-op. Reuses [`check_found`], so a directory's
+/// charter and a file's sidecar go through one checker, never a second parser.
 pub fn analyze_charter(text: &str, max_len: Option<usize>) -> Outcome {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Outcome::Missing { line: 1, raw: None };
     }
-    check_found(trimmed.to_string(), 1, max_len)
+    let outcome = check_found(trimmed.to_string(), 1, max_len);
+    // An `.annotation` is the ONE place an annotation is written bare, so wrapping it in a marker is the easy mistake: it stays malformed either way, but "the ` | ` separators are missing" is the one diagnosis that is definitely false when they are plainly there.
+    let Outcome::Malformed {
+        line,
+        actual,
+        missing,
+        detail,
+    } = outcome
+    else {
+        return outcome;
+    };
+    let detail = match unwrapped_bare_line(&actual) {
+        Some(wrapped) => Some(wrapped.detail()),
+        None => detail,
+    };
+    Outcome::Malformed {
+        line,
+        actual,
+        missing,
+        detail,
+    }
 }
+
+/// The 1-based line of the first non-whitespace content BELOW the annotation an `.annotation`
+/// artifact holds, or `None` when it holds that one line and nothing else. Located by
+/// [`first_meaningful_line`], so a body opening with blank lines is conforming. The rule is
+/// "nothing but whitespace below that line", never "contains a newline" — every editor writes one.
+pub(crate) fn content_past_first_line(body: &str) -> Option<usize> {
+    let (annotation_line, _) = first_meaningful_line(body)?;
+    body.lines()
+        .enumerate()
+        .skip(annotation_line)
+        .find(|(_, line)| !line.trim().is_empty())
+        .map(|(index, _)| index + 1)
+}
+
+/// A bare annotation line someone wrapped in a comment marker: the marker to remove, and the
+/// conforming line underneath it.
+pub(crate) struct Wrapped {
+    opener: &'static str,
+    closer: Option<&'static str>,
+    /// The text between the markers — a line [`parse_fields`] accepts.
+    pub(crate) bare: String,
+}
+
+impl Wrapped {
+    /// The `detail` prose: name the marker to delete. Nothing else needs saying — the line
+    /// inside it is already correct, which is exactly what makes this diagnosable.
+    pub(crate) fn detail(&self) -> String {
+        let markers = match self.closer {
+            Some(closer) => format!("`{}` and `{closer}`", self.opener),
+            None => format!("`{}`", self.opener),
+        };
+        format!(
+            "a `.annotation` file holds a bare annotation line with no comment marker; remove \
+             the {markers}"
+        )
+    }
+}
+
+/// The conforming annotation inside a comment-wrapped bare line, or `None` when `text` carries
+/// no comment marker — or when what is inside one is still not the format, in which case
+/// removing the marker is not the whole fix and the ordinary diagnosis stands.
+pub(crate) fn unwrapped_bare_line(text: &str) -> Option<Wrapped> {
+    let (opener, rest) = COMMENT_OPENERS
+        .iter()
+        .find_map(|open| text.strip_prefix(*open).map(|rest| (*open, rest)))?;
+    let mut bare = rest.trim();
+    let mut closer = None;
+    for candidate in BLOCK_CLOSERS {
+        if let Some(stripped) = bare.strip_suffix(candidate) {
+            bare = stripped.trim_end();
+            closer = Some(*candidate);
+            break;
+        }
+    }
+    parse_fields(bare)?;
+    Some(Wrapped {
+        opener,
+        closer,
+        bare: bare.to_string(),
+    })
+}
+
+/// The comment openers a wrapped bare line is recognized by — exactly the four markers
+/// `src/annotation-guide.md` teaches, since the mistake is copying one of those. `<!--` is
+/// tested before `--` so the diagnostic quotes the whole marker the author typed.
+const COMMENT_OPENERS: &[&str] = &["<!--", "//", "--", "#"];
 
 /// The `detail` prose for a comment whose three keys are all present yet whose structure
 /// defeats [`parse_fields`]. Without it a reader is told all three parts are absent while all
@@ -343,11 +464,10 @@ pub fn analyze_charter(text: &str, max_len: Option<usize>) -> Outcome {
 const BROKEN_STRUCTURE: &str = "the ` | ` field separators are missing or the keys are out of \
                                 order, so no part could be extracted";
 
-/// Split a bare three-field line into its `(concern, non_concern, io)` values, or `None` when
-/// it is not structurally the format. The render-side counterpart of [`analyze_charter`]:
-/// "render, don't reason" — it only splits (reusing the ONE [`parse_fields`] grammar), leaving
-/// every issue to `--strict-check`. Fed both a `.annotation` body and an entry file's
-/// already-extracted annotation (both bare three-field lines), so promotion needs no re-parse.
+/// Split a bare three-field line into its values, or `None` when it is not structurally the format.
+/// The render-side counterpart of [`analyze_charter`] — "render, don't reason": it only splits,
+/// reusing the ONE grammar, and leaves every issue to `--strict-check`. Fed both an `.annotation`
+/// body and an entry file's already-extracted line, so promotion needs no re-parse.
 pub fn split_charter(text: &str) -> Option<(String, String, String)> {
     let fields = parse_fields(text.trim())?;
     Some((
@@ -390,33 +510,6 @@ fn parse_fields(text: &str) -> Option<Fields<'_>> {
     })
 }
 
-/// The MAXIMAL extent of each field, for the length bound ALONE — never for parse or render.
-/// Each span runs from where its value can first begin to where it can last end, so it is the
-/// widest text the line's grammar allows that field to hold:
-/// `concern` reaches the LAST ` | Non-concern:`, `non_concern` runs from the FIRST one to the
-/// LAST ` | IO:` after it, and `io` runs from the FIRST ` | IO:` after that to the end.
-///
-/// Why measure over spans rather than over [`parse_fields`]' values: the three values always
-/// partition the line minus its separators, so the total measured length is fixed and picking a
-/// different occurrence only MOVES length between fields — first-occurrence under-measures a
-/// field whose prose quotes a separator ahead of the real key, last-occurrence under-measures one
-/// that quotes it after, and which is right depends on the field the quote sits in, which the
-/// string does not say. Spans OVERLAP instead: on a conforming line each separator occurs once,
-/// first and last are the same occurrence and all three spans equal the parsed values exactly;
-/// on a line that quotes a separator every span grows, so the bound over-measures and fails
-/// LOUDLY. A bound that over-measures annoys an author; one that under-measures lies to them.
-///
-/// `None` only when the text is not the format at all — the same three tests [`parse_fields`]
-/// makes, so a text it accepted yields spans here.
-fn measured_spans(text: &str) -> Option<[(&str, &'static str); 3]> {
-    let rest = text.strip_prefix(CONCERN_KEY)?;
-    let concern = rest[..rest.rfind(NON_CONCERN_SEP)?].trim();
-    let after_nc = &rest[rest.find(NON_CONCERN_SEP)? + NON_CONCERN_SEP.len()..];
-    let non_concern = after_nc[..after_nc.rfind(IO_SEP)?].trim();
-    let io = after_nc[after_nc.find(IO_SEP)? + IO_SEP.len()..].trim();
-    Some(paired(concern, non_concern, io))
-}
-
 /// Which of the three keyed fields are absent from a comment that failed to parse, by
 /// presence of the key TEXT (this path never sees a field value, so it cannot judge
 /// emptiness — [`empty_parts`] owns that). Case-sensitive: the keys are exact, and `Concern:`
@@ -446,34 +539,14 @@ fn empty_parts(f: &Fields) -> Vec<&'static str> {
         .collect()
 }
 
-/// Which of the three fields are longer than `max`, each with its length, in the same
-/// Concern -> Non-concern -> IO order. Measured in Unicode scalar values over each field's
-/// trimmed [`measured_spans`] extent — never the key, the ` | ` separators alone, or the whole
-/// line — so the bound means the same thing in every language. A field exactly at `max` passes;
-/// only longer fails.
-///
-/// Takes the annotation TEXT, not the parsed [`Fields`]: a field's length is measured over its
-/// maximal extent, which the values a single split produced cannot express (see
-/// [`measured_spans`]).
-fn over_length_parts(text: &str, max: usize) -> Vec<(&'static str, usize)> {
-    measured_spans(text)
-        .expect("over_length_parts: only called on text parse_fields accepted")
-        .into_iter()
-        .filter_map(|(value, part)| {
-            let len = value.trim().chars().count();
-            (len > max).then_some((part, len))
-        })
-        .collect()
-}
-
 /// The three parsed values paired with their stable part tokens, in the format's own order.
 fn part_values<'a>(f: &Fields<'a>) -> [(&'a str, &'static str); 3] {
     paired(f.concern, f.non_concern, f.io)
 }
 
 /// Three field texts paired with their stable part tokens, in the format's own order — the ONE
-/// ordered table every per-part check iterates (the emptiness check over parsed values, the
-/// length check over maximal spans), so they cannot disagree on order.
+/// place that pairing is written down. Every per-part list is built by iterating it (today, the
+/// emptiness check's `missing` names), so a list can never order or label parts its own way.
 fn paired<'a>(concern: &'a str, non_concern: &'a str, io: &'a str) -> [(&'a str, &'static str); 3] {
     [
         (concern, PART_CONCERN),
@@ -497,9 +570,9 @@ fn empty_detail(parts: &[&'static str]) -> String {
     )
 }
 
-/// Join prose fragments as an English list: `A`, `A and B`, `A, B and C`. The ONE joiner every
-/// annotation diagnostic uses — this module's empty-field prose and [`crate::strict`]'s
-/// over-length prose — so two messages about the same three fields cannot punctuate differently.
+/// Join prose fragments as an English list: `A`, `A and B`, `A, B and C`. The ONE joiner the
+/// empty-field prose uses, so two messages about the same three fields cannot punctuate
+/// differently.
 pub(crate) fn join_clauses<S: AsRef<str>>(items: &[S]) -> String {
     match items {
         [] => String::new(),
@@ -513,8 +586,7 @@ pub(crate) fn join_clauses<S: AsRef<str>>(items: &[S]) -> String {
 }
 
 /// A counted noun for prose: `1 character`, `21 characters` — the pluralization the
-/// over-length diagnostic renders a field's length with. Kept beside [`join_clauses`], the
-/// other prose helper the diagnostics share.
+/// over-length diagnostic renders the annotation's length with.
 pub(crate) fn counted(n: usize, noun: &str) -> String {
     if n == 1 {
         format!("{n} {noun}")
@@ -523,14 +595,17 @@ pub(crate) fn counted(n: usize, noun: &str) -> String {
     }
 }
 
-/// The descriptive text of a candidate annotation to SEED a file-tailored strict-check
-/// suggestion — whatever a file already carries before its ` | Non-concern:` boundary, with a
-/// leading `Concern:` key stripped. Empty when the text is only a delimiter/contract with no
-/// lead-in. Cuts at the same separator, at the same first occurrence, as [`parse_fields`], so the
-/// seed is exactly the `Concern` the checker parsed: a bare ` | ` is prose, not a boundary, and
-/// never cuts here.
+/// The descriptive text of a candidate annotation to SEED a file-tailored suggestion — whatever the
+/// file carries before its ` | Non-concern:` boundary, with a leading `Concern:` stripped. Empty
+/// when there is only a delimiter with no lead-in. Cuts at the same separator and occurrence as
+/// [`parse_fields`], so a bare ` | ` is prose, not a boundary, and never cuts here.
 pub(crate) fn concern_seed(text: &str) -> &str {
-    let head = match text.find(NON_CONCERN_SEP) {
+    // Cut at whichever KEY comes first, not at `Non-concern` alone: a line missing that key (`Concern: x | IO: none`) otherwise seeds the whole remainder, and the suggestion comes back carrying a second `IO:` — a stub that passes the checker while saying nothing.
+    let head = match [text.find(NON_CONCERN_SEP), text.find(IO_SEP)]
+        .into_iter()
+        .flatten()
+        .min()
+    {
         Some(at) => &text[..at],
         None => text,
     };
@@ -582,8 +657,6 @@ mod tests {
 
     #[test]
     fn strips_leading_bom_before_shebang() {
-        // A BOM ahead of the shebang must not make line 1 look non-shebang and get
-        // mis-read as the annotation. decode_head strips it at the read boundary.
         let l = lang(Some("#"), None, &[]);
         let head = decode_head(format!("\u{feff}#!/usr/bin/env bash\n# {OK}\n").as_bytes());
         assert_eq!(extract_from(&head, &l).unwrap(), OK);
@@ -636,12 +709,6 @@ mod tests {
 
     #[test]
     fn extract_any_reads_the_format_regardless_of_marker() {
-        // Marker-AGNOSTIC: the annotation is found by its fixed `Concern:` opener, so a file
-        // whose comment grammar the tool does not configure still yields the same bare body —
-        // any leading marker is dropped (we slice from `Concern:`) and a trailing block closer
-        // is stripped. Covers a hash line, an HTML/Vue block, a docstring, a shebang skip, and
-        // a marker the tool has no language for at all (a Lisp `;;`). A line with no `Concern:`
-        // opener carries nothing — an ordinary code/data line stays un-annotated, no false hit.
         let want = "Concern: a | Non-concern: b | IO: none";
         for text in [
             "# Concern: a | Non-concern: b | IO: none\n",
@@ -662,10 +729,7 @@ mod tests {
 
     #[test]
     fn analyze_distinguishes_ok_missing_and_malformed() {
-        // Behaviour only: assert on the `Outcome` variant, not the user-facing prose
-        // (that is frozen once at the e2e level). A fully-formed three-field line is Ok;
-        // a comment that is not the format is Malformed and names which keys are absent
-        // and the real line; a foreign first line is Missing with the raw line captured.
+        // Assert on the `Outcome` variant, never the user-facing prose — that is frozen once, at the e2e level.
         let l = lang(Some("#"), None, &[]);
         assert_eq!(
             analyze(&format!("# {OK}\n"), &l, None),
@@ -694,9 +758,7 @@ mod tests {
 
     #[test]
     fn malformed_names_only_the_absent_keys() {
-        // A comment with two of three keys is Malformed, and `missing` names ONLY the
-        // absent one — the machine delta an agent adds, not prose. A genuinely absent key
-        // carries no `detail`: the report already reads right without one.
+        // A genuinely absent key carries no `detail`: the report already reads right without one.
         let l = lang(Some("//"), None, &[]);
         assert_eq!(
             analyze("// Concern: does X | IO: (a) -> b\n", &l, None),
@@ -711,10 +773,7 @@ mod tests {
 
     #[test]
     fn an_empty_part_is_malformed_and_named() {
-        // A present-but-EMPTY field is fatal, reported as Malformed with that part in
-        // `missing` — the regression guard for the emptiness check that used to live inside
-        // the deleted content grader. `detail` carries what `missing` alone cannot: the key
-        // IS visible in the offending line.
+        // `detail` carries what `missing` alone cannot: the key IS visible in the offending line.
         let l = lang(Some("//"), None, &[]);
         match analyze(
             "// Concern:  | Non-concern: eviction | IO: (a) -> b\n",
@@ -736,8 +795,6 @@ mod tests {
 
     #[test]
     fn every_empty_part_is_reported_not_just_the_first() {
-        // `missing` must not under-report: all three empty fields are named, in the
-        // format's own order, and the detail names all three too.
         let l = lang(Some("//"), None, &[]);
         match analyze("// Concern:  | Non-concern:  | IO: \n", &l, None) {
             Outcome::Malformed {
@@ -755,9 +812,7 @@ mod tests {
 
     #[test]
     fn broken_structure_with_all_keys_present_reports_all_three() {
-        // The parser needs the space-padded ` | ` delimiters, in order. A line carrying all
-        // three keys that still will not parse yields no extractable part, so all three are
-        // reported — and `detail` says why, since every key is plainly visible.
+        // The parser needs the space-padded ` | ` delimiters, in order — hence an unpadded line and an out-of-order one.
         let l = lang(Some("//"), None, &[]);
         for line in [
             "Concern: a|Non-concern: b|IO: c",
@@ -781,9 +836,6 @@ mod tests {
 
     #[test]
     fn form_only_checking_admits_any_wording() {
-        // The check is form-only: a present, non-empty part passes whatever words it holds.
-        // Freezes the removal of the word-list graders, the inward-Non-concern gate, the
-        // bracket-placeholder gate, and the IO-operand gate.
         let l = lang(Some("//"), None, &[]);
         for ok in [
             "// Concern: utils | Non-concern: none | IO: none\n",
@@ -801,29 +853,30 @@ mod tests {
     }
 
     #[test]
-    fn a_part_over_the_bound_is_too_long() {
-        // Length is per part, in Unicode scalar values, over the trimmed maximal SPAN. Exactly at
-        // the bound passes; only strictly longer fails; an absent bound never fails.
+    fn an_annotation_over_the_bound_is_too_long() {
         let l = lang(Some("//"), None, &[]);
-        let at = "x".repeat(10);
-        let over = "é".repeat(11);
-        let line_at = format!("// Concern: {at} | Non-concern: b | IO: c\n");
-        let line_over = format!("// Concern: {over} | Non-concern: b | IO: c\n");
+        let at = "Concern: aaaa | Non-concern: b | IO: c";
+        let over = "Concern: éééééé | Non-concern: b | IO: c";
+        let bound = at.chars().count();
         assert_eq!(
-            analyze(&line_at, &l, Some(10)),
+            analyze(&format!("// {at}\n"), &l, Some(bound)),
             Outcome::Ok,
-            "a part exactly at the bound passes"
+            "an annotation exactly at the bound passes"
         );
         assert_eq!(
-            analyze(&line_over, &l, None),
+            analyze(&format!("// {over}\n"), &l, None),
             Outcome::Ok,
             "no bound raises no length issue at any length"
         );
-        match analyze(&line_over, &l, Some(10)) {
-            Outcome::TooLong { parts, max, .. } => {
-                // 11 scalar values, 22 bytes — the count is characters, not bytes.
-                assert_eq!(parts, vec![(PART_CONCERN, 11)]);
-                assert_eq!(max, 10);
+        match analyze(&format!("// {over}\n"), &l, Some(bound)) {
+            Outcome::TooLong { length, max, .. } => {
+                // Counted in scalar values, not bytes: `é` is two bytes and one character, so a byte count would fail a line that fits.
+                assert_eq!(length, over.chars().count());
+                assert!(
+                    over.len() > over.chars().count(),
+                    "the two counts differ here"
+                );
+                assert_eq!(max, bound);
             }
             other => panic!("expected TooLong, got {other:?}"),
         }
@@ -831,8 +884,6 @@ mod tests {
 
     #[test]
     fn structure_outranks_length() {
-        // At most one outcome per input, and length is checked only for an otherwise
-        // conforming line: an empty part on an over-length line stays Malformed.
         let l = lang(Some("//"), None, &[]);
         let long = "y".repeat(50);
         let line = format!("// Concern: {long} | Non-concern:  | IO: c\n");
@@ -845,144 +896,44 @@ mod tests {
     }
 
     #[test]
-    fn a_separator_quoted_before_the_real_key_reports_the_true_length() {
-        // Bypass A: a `Concern` whose prose quotes BOTH separators, colons and all, ahead of
-        // the real keys. The parser splits at the first occurrence, so the parsed `Concern` is
-        // only the 150 characters before the quote — three fields all under 200, exit 0, while
-        // the field the author actually wrote runs 300. The bound measures the MAXIMAL span
-        // (here: everything up to the LAST ` | Non-concern:`), so the 300 is what is reported.
-        let l = lang(Some("//"), None, &[]);
-        let true_concern = format!(
-            "{}{NON_CONCERN_SEP} {}{IO_SEP} {}",
-            "q".repeat(150),
-            "m".repeat(50),
-            "t".repeat(77),
-        );
-        assert_eq!(true_concern.chars().count(), 300);
-        let line = format!("// Concern: {true_concern} | Non-concern: b | IO: c\n");
-        match analyze(&line, &l, Some(200)) {
-            Outcome::TooLong { parts, max, .. } => {
-                assert_eq!(parts, vec![(PART_CONCERN, 300)]);
-                assert_eq!(max, 200);
-            }
-            other => panic!("expected TooLong with the true Concern length, got {other:?}"),
-        }
-        // Parsing is untouched: still the first occurrence, so the parsed fields are the
-        // quote-truncated ones (150 characters of `Concern`, and an `IO` that swallowed the
-        // real keys), and the seed cuts at exactly the boundary the parser did. Only
-        // MEASUREMENT widened — parse and render behaviour are byte-for-byte as before.
-        let bare = format!("Concern: {true_concern} | Non-concern: b | IO: c");
-        let f = parse_fields(&bare).unwrap();
-        assert_eq!(
-            (f.concern, f.non_concern, f.io),
-            (
-                "q".repeat(150).as_str(),
-                "m".repeat(50).as_str(),
-                format!("{} | Non-concern: b | IO: c", "t".repeat(77)).as_str(),
-            )
-        );
-        assert_eq!(concern_seed(&bare), "q".repeat(150));
-    }
-
-    #[test]
-    fn a_separator_quoted_after_the_real_key_reports_the_true_length() {
-        // Bypass B, the mirror image: the ` | IO:` separator is quoted a SECOND time, after
-        // the real one. Measuring from the LAST occurrence would attribute 108 characters to
-        // `non_concern` and 100 to `io` — both under 200, exit 0 — while the text the `IO:`
-        // key actually introduces is 207 long. The `io` span runs from the FIRST ` | IO:` to
-        // the end of the line, so the 207 is reported and nothing is redistributed.
-        let l = lang(Some("//"), None, &[]);
-        let true_io = format!("{} | IO: {}", "m".repeat(100), "t".repeat(100));
-        assert_eq!(true_io.chars().count(), 207);
-        let line = format!("// Concern: c1 | Non-concern: b | IO: {true_io}\n");
-        match analyze(&line, &l, Some(200)) {
-            Outcome::TooLong { parts, max, .. } => {
-                assert_eq!(parts, vec![(PART_IO, 207)]);
-                assert_eq!(max, 200);
-            }
-            other => panic!("expected TooLong with the true IO length, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn a_repeated_non_concern_separator_reports_the_widest_span() {
-        // A second ` | Non-concern:` between the real key and the ` | IO:`. Which occurrence
-        // opens the field is unknowable from the string, so the bound takes the widest reading
-        // — first key to last ` | IO:` — and 216 fails. Measuring from the last occurrence
-        // would see 100 and pass.
-        let l = lang(Some("//"), None, &[]);
-        let line = format!(
-            "// Concern: c | Non-concern: {} | Non-concern: {} | IO: z\n",
-            "x".repeat(100),
-            "y".repeat(100),
-        );
-        match analyze(&line, &l, Some(200)) {
-            Outcome::TooLong { parts, max, .. } => {
-                assert_eq!(parts, vec![(PART_NON_CONCERN, 216)]);
-                assert_eq!(max, 200);
-            }
-            other => panic!("expected TooLong naming non_concern, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn a_non_concern_separator_quoted_inside_io_stays_a_length_finding() {
-        // The `IO` field quotes ` | Non-concern:`, so the LAST ` | Non-concern:` of the line
-        // sits inside `IO` and nothing follows it that carries an ` | IO:` key. Splitting at
-        // that last occurrence makes the line unparseable and mis-reports it as malformed;
-        // first-occurrence parsing keeps it a well-formed line whose `IO` is 216 long, and the
-        // bound says exactly that — a length finding, not a structural one.
-        let l = lang(Some("//"), None, &[]);
-        let true_io = format!("{} | Non-concern: {}", "m".repeat(100), "t".repeat(100));
-        assert_eq!(true_io.chars().count(), 216);
-        let line = format!("// Concern: c | Non-concern: b | IO: {true_io}\n");
-        match analyze(&line, &l, Some(200)) {
-            Outcome::TooLong { parts, max, .. } => {
-                assert_eq!(parts, vec![(PART_IO, 216)]);
-                assert_eq!(max, 200);
-            }
-            other => panic!("expected TooLong naming io, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn on_a_conforming_line_every_measured_span_is_the_parsed_field() {
-        // The safety property the maximal spans rest on: a line holding each separator exactly
-        // once has first == last, so all three spans collapse onto the parsed values and the
-        // bound measures precisely what it measured before. Freezes that this fix is a no-op
-        // on every conforming annotation, this repo's own included.
+    fn a_quoted_separator_cannot_hide_length_from_a_whole_line_bound() {
+        // A whole-line bound cannot be evaded by quoting a separator: however the keys divide the line, every character is still in it.
         let l = lang(Some("//"), None, &[]);
         for text in [
-            OK,
-            "Concern: a | Non-concern: b | IO: none",
-            "Concern: pipes a | b | Non-concern: x || y | IO: (a) -> b",
-            "Concern: holds Non-concern: as prose | Non-concern: IO: bare | IO: c",
+            // a separator quoted BEFORE the real key
+            format!(
+                "Concern: {}{NON_CONCERN_SEP} {}{IO_SEP} {} | Non-concern: b | IO: c",
+                "q".repeat(150),
+                "m".repeat(50),
+                "t".repeat(77)
+            ),
+            // and quoted AFTER it, inside IO
+            format!(
+                "Concern: c1 | Non-concern: b | IO: {} | IO: {}",
+                "m".repeat(100),
+                "t".repeat(100)
+            ),
+            // a repeated Non-concern key
+            format!(
+                "Concern: c | Non-concern: {} | Non-concern: {} | IO: z",
+                "x".repeat(100),
+                "y".repeat(100)
+            ),
         ] {
-            let f = parse_fields(text).unwrap();
-            assert_eq!(
-                measured_spans(text).unwrap(),
-                part_values(&f),
-                "span and parsed field must agree on: {text}"
-            );
-            assert_eq!(
-                analyze(&format!("// {text}\n"), &l, Some(200)),
-                Outcome::Ok,
-                "a conforming line passes the bound: {text}"
-            );
+            let line = format!("// {text}\n");
+            match analyze(&line, &l, Some(200)) {
+                Outcome::TooLong { length, max, .. } => {
+                    assert_eq!(length, text.chars().count(), "counts the line as written");
+                    assert_eq!(max, 200);
+                }
+                other => panic!("expected TooLong on {text:?}, got {other:?}"),
+            }
         }
-        let f = parse_fields(OK).unwrap();
-        assert_eq!(
-            (f.concern, f.non_concern, f.io),
-            ("runs the loop", "transport", "(Job) -> Result")
-        );
-        assert_eq!(concern_seed(OK), "runs the loop");
     }
 
     #[test]
     fn a_bare_pipe_in_prose_never_false_splits() {
-        // Why the separators carry their keys AND colons: a field's own freetext (a shell
-        // pipe, a Rust closure, SQL `||`) holds ` | ` without marking a boundary. This is the
-        // property the colons exist to guarantee — parser, seed and length span all honour it.
+        // Why the separators carry their keys AND colons: a field's own freetext (a shell pipe, a Rust closure, SQL `||`) holds ` | ` without marking a boundary.
         let text = "Concern: pipes a | b through | x | y and ors a || b \
                     | Non-concern: storage | IO: (a) -> b";
         let f = parse_fields(text).unwrap();
@@ -998,9 +949,112 @@ mod tests {
     }
 
     #[test]
+    fn a_closed_yaml_frontmatter_block_is_skipped_like_a_shebang() {
+        let md = lang(None, Some(("<!--", "-->")), &[]);
+        let ok = "Concern: the skill brief | Non-concern: running it | IO: none";
+        assert_eq!(
+            analyze(
+                &format!("---\ndescription: d\n---\n<!-- {ok} -->\n"),
+                &md,
+                None
+            ),
+            Outcome::Ok,
+            "frontmatter then the annotation is a conforming file"
+        );
+        assert_eq!(
+            analyze(
+                "---\ndescription: d\n---\n\n<!-- just a note -->\n",
+                &md,
+                None
+            ),
+            Outcome::Malformed {
+                line: 5,
+                actual: "just a note".into(),
+                missing: vec![PART_CONCERN, PART_NON_CONCERN, PART_IO],
+                detail: None,
+            },
+            "the diagnostic line number counts the skipped block and blanks"
+        );
+        assert_eq!(
+            analyze("---\nan unclosed opener\n", &md, None),
+            Outcome::Missing {
+                line: 1,
+                raw: Some("---".into()),
+            },
+            "with no closing fence there is no block to skip"
+        );
+        // A `---` that is NOT at the start stays a horizontal rule: the annotation on line 1 is still read, and nothing below is a prefix.
+        assert_eq!(
+            extract_from(&format!("<!-- {ok} -->\n---\nbody\n---\n"), &md).as_deref(),
+            Some(ok),
+        );
+        // Marker-agnostic reads share the ONE scanner, so they skip the block too.
+        assert_eq!(
+            extract_any_from(&format!("---\ndescription: d\n---\n# {ok}\n")).as_deref(),
+            Some(ok),
+        );
+    }
+
+    #[test]
+    fn a_bare_line_wrapped_in_a_comment_marker_names_the_marker() {
+        for (body, markers, bare) in [
+            (
+                "<!-- Concern: a | Non-concern: b | IO: none -->",
+                "`<!--` and `-->`",
+                "Concern: a | Non-concern: b | IO: none",
+            ),
+            (
+                "# Concern: a | Non-concern: b | IO: none",
+                "`#`",
+                "Concern: a | Non-concern: b | IO: none",
+            ),
+        ] {
+            match analyze_charter(body, None) {
+                Outcome::Malformed {
+                    missing, detail, ..
+                } => {
+                    assert_eq!(
+                        missing,
+                        vec![PART_CONCERN, PART_NON_CONCERN, PART_IO],
+                        "the verdict is unchanged — no part is extractable from: {body}"
+                    );
+                    assert_eq!(
+                        detail.as_deref(),
+                        Some(
+                            format!(
+                                "a `.annotation` file holds a bare annotation line with no \
+                                 comment marker; remove the {markers}"
+                            )
+                            .as_str()
+                        ),
+                        "for: {body}"
+                    );
+                }
+                other => panic!("expected Malformed for {body:?}, got {other:?}"),
+            }
+            assert_eq!(unwrapped_bare_line(body).unwrap().bare, bare);
+        }
+        // A marker wrapping something that is STILL not the format is not the whole fix, so the ordinary diagnosis stands rather than a marker message that under-reports.
+        assert!(unwrapped_bare_line("<!-- Concern: a | IO: b -->").is_none());
+        match analyze_charter("<!-- Concern: a | IO: b -->", None) {
+            Outcome::Malformed {
+                missing, detail, ..
+            } => {
+                assert_eq!(missing, vec![PART_NON_CONCERN]);
+                assert_eq!(detail, None);
+            }
+            other => panic!("expected Malformed, got {other:?}"),
+        }
+        // An unwrapped, conforming charter is untouched.
+        assert_eq!(
+            analyze_charter("Concern: a | Non-concern: b | IO: c", None),
+            Outcome::Ok
+        );
+    }
+
+    #[test]
     fn locate_reports_real_line_past_a_shebang() {
-        // The shebang trap the dogfood found: the annotation lives on line 2, and a
-        // malformed comment must be reported at line 2, never a hardcoded line 1.
+        // The annotation lives on line 2, so a malformed comment must be reported at line 2, never a hardcoded line 1.
         let l = lang(Some("#"), None, &[]);
         assert_eq!(
             analyze("#!/usr/bin/env bash\n# just a comment\n", &l, None),
@@ -1010,6 +1064,32 @@ mod tests {
                 missing: vec![PART_CONCERN, PART_NON_CONCERN, PART_IO],
                 detail: None,
             },
+        );
+    }
+
+    #[test]
+    fn content_past_first_line_ignores_trailing_whitespace_but_not_prose() {
+        // The trap: a trailing newline is what every editor writes, and blank lines below it are still whitespace — neither is content.
+        for clean in [
+            "",
+            "Concern: a | Non-concern: b | IO: none",
+            "one line\n",
+            "one line\n\n\n  \n",
+        ] {
+            assert_eq!(
+                content_past_first_line(clean),
+                None,
+                "clean body: {clean:?}"
+            );
+        }
+        assert_eq!(content_past_first_line("one line\nprose"), Some(2));
+        // Keying on line 1 instead of the first meaningful one would report the annotation itself as stray content and tell the author to delete it.
+        assert_eq!(content_past_first_line("\n\nConcern: a | IO: b\n"), None);
+        assert_eq!(content_past_first_line("\n \tone line\n\nprose"), Some(4));
+        assert_eq!(content_past_first_line("one line\n\nprose"), Some(3));
+        assert_eq!(
+            content_past_first_line("one line\n\n\nprose\nmore"),
+            Some(4)
         );
     }
 }

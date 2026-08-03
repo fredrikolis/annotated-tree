@@ -1,8 +1,8 @@
-<!-- Concern: the prose standard for README.md and README_APPENDIX.md — the voice the docs use, and that every claim, example, and link matches the shipped code | Non-concern: when the review runs and how it is reported (.githooks/commit-msg owns that), the annotation format, code principles, or the bibliography | IO: none -->
+<!-- Concern: the prose standard for this repo's human-facing docs — their voice, and that claims, examples and links match the code | Non-concern: the annotation format or code principles | IO: none -->
 # Communication Style
 
-The rules for reviewing changes to README.md and README_APPENDIX.md, scored one changed
-line at a time.
+The rules for reviewing changes to README.md, README_APPENDIX.md and CONTRIBUTING.md,
+scored one changed line at a time.
 
 The first seven are voice, a judgment call per line. The last three are checkable, not
 matters of taste: verify them against the code and the headings.

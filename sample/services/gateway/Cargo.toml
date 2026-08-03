@@ -2,6 +2,10 @@
 name = "gateway"
 version = "0.1.0"
 edition = "2021"
+# This tree is a FIXTURE, but cargo cannot tell: `cargo install --git` searches the whole
+# repository and refuses when two packages carry binaries. `src/main.rs` stays on disk because
+# the rendered tree is frozen in tests/golden/; this only stops cargo auto-discovering it.
+autobins = false
 
 [dependencies]
 shared = { path = "../shared" }

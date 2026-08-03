@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the folder-charter contract — resolution, the rendered and JSON surfaces, .annotation form, and the require_package_charter gate | Non-concern: the resolution units, or the annotation grammar | IO: (charter fixtures) -> asserted (stdout, code)
+// Concern: end-to-end tests for the folder charter — resolution, render, JSON, and the require_package_charter gate | Non-concern: the resolution units or the grammar | IO: (fixtures) -> asserted output
 
 use std::path::PathBuf;
 
@@ -26,8 +26,7 @@ fn dir_line<'a>(out: &'a str, name: &str) -> Option<&'a str> {
 
 #[test]
 fn annotation_breadcrumb_charters_a_grouping_folder() {
-    // A pure grouping folder (no code entry file) carries a `.annotation` breadcrumb, so its
-    // directory row shows the authored charter — the universal fallback for entry-file-less dirs.
+    // The `.annotation` breadcrumb is the universal fallback for a directory with no code entry file to promote.
     let (out, code) = run(&[], "charter");
     assert_eq!(code, 0);
     let line = dir_line(&out, "grouping").expect("grouping/ dir row is present");
@@ -41,9 +40,7 @@ fn annotation_breadcrumb_charters_a_grouping_folder() {
 
 #[test]
 fn annotation_breadcrumb_overrides_the_entry_file() {
-    // Most-explicit-wins: a `.annotation` beside an entry file (`__init__.py`) overrides the
-    // promoted entry-file annotation on the DIRECTORY row — while the entry file still carries
-    // its own annotation on its OWN row (different subjects, both true; not a DRY violation).
+    // Most-explicit-wins on the directory row only: the entry file keeps its own annotation on its own row, since the two describe different subjects.
     let (out, _) = run(&[], "charter");
     let dir = dir_line(&out, "overridden").expect("overridden/ dir row is present");
     assert!(
@@ -66,9 +63,7 @@ fn annotation_breadcrumb_overrides_the_entry_file() {
 
 #[test]
 fn entry_file_annotation_is_promoted_to_the_directory_row() {
-    // With no `.annotation`, a package dir's charter is its code entry file's annotation,
-    // promoted for free. `charter/overridden` has an override, so use the `charter_rule`
-    // crate whose `src/lib.rs` is the entry file and whose dir carries no breadcrumb.
+    // `charter/overridden` carries an override, so this needs `charter_rule` — a crate whose src/lib.rs is the entry file and whose dir has no breadcrumb.
     let (out, code) = run(&[], "charter_rule");
     assert_eq!(code, 0, "rendering (not strict) exits 0");
     let line = dir_line(&out, "withcharter").expect("withcharter/ dir row is present");
@@ -80,8 +75,7 @@ fn entry_file_annotation_is_promoted_to_the_directory_row() {
 
 #[test]
 fn charter_surfaces_as_a_keyed_object_in_json() {
-    // JSON carries the charter as a keyed `{concern, non_concern, io}` object (agent dispatch),
-    // and omits it on charter-less dirs (absent-key convention keeps such trees byte-identical).
+    // The absent-key convention on charter-less dirs is what keeps such trees byte-identical.
     let (out, code) = run(&["--format", "json"], "charter");
     assert_eq!(code, 0);
     let doc: serde_json::Value = serde_json::from_str(&out).expect("json parses");
@@ -100,9 +94,7 @@ fn charter_surfaces_as_a_keyed_object_in_json() {
 
 #[test]
 fn malformed_annotation_breadcrumb_fails_strict_check() {
-    // Opting in means doing it right: a present-but-malformed `.annotation` is a FATAL violation
-    // (not a silent no-op), diagnosed by the SAME grammar as a file annotation and located at
-    // the breadcrumb path.
+    // Opting in means doing it right: a malformed `.annotation` is fatal, not a silent no-op, and is judged by the SAME grammar as a file annotation.
     let (out, code) = run(&["--strict-check"], "charter_malformed");
     assert_eq!(code, 1, "a malformed .annotation fails the check:\n{out}");
     assert!(
@@ -113,9 +105,7 @@ fn malformed_annotation_breadcrumb_fails_strict_check() {
 
 #[test]
 fn malformed_annotation_serializes_as_a_located_violation() {
-    // The structured surface: the breadcrumb violation rides in `violations` with the
-    // `.annotation` path and the shared `malformed_annotation` category — an agent dispatches
-    // on it exactly like a file annotation violation.
+    // The breadcrumb rides the SHARED `malformed_annotation` category, so an agent dispatches on it exactly like a file annotation violation.
     let (out, code) = run(&["--strict-check", "--format", "json"], "charter_malformed");
     assert_eq!(code, 1);
     let doc: serde_json::Value = serde_json::from_str(&out).expect("json parses");
@@ -131,12 +121,7 @@ fn malformed_annotation_serializes_as_a_located_violation() {
 
 #[test]
 fn require_package_charter_flags_a_charterless_package() {
-    // The opt-in gate (the fixture's `.annotated-tree.toml` sets require_package_charter = true):
-    // `nocharter` owns an annotated file but its crate resolves no charter (its annotated file is
-    // not the entry file) — a fatal rule violation. `withcharter` (entry-file charter) is clean.
-    // ALSO the regression guard for the shared `annotated_files` / `packages_owning_annotations`
-    // path: the removed orphan advisory was the other consumer, and the graph build is now
-    // reached only via `Rules::is_active()`. If either seam broke, this gate goes silent.
+    // Also the regression guard for the shared `annotated_files` / `packages_owning_annotations` path, now reached only via `Rules::is_active()`: if that seam breaks, this gate goes silent rather than failing.
     let (out, code) = run(&["--strict-check"], "charter_rule");
     assert_eq!(
         code, 1,
@@ -154,8 +139,7 @@ fn require_package_charter_flags_a_charterless_package() {
 
 #[test]
 fn require_package_charter_serializes_with_a_stable_code() {
-    // Structured: the gate rides the existing rule-violation surface with the stable dispatch
-    // code `missing_package_charter` and the offending package dir — no new envelope field.
+    // The gate rides the existing rule-violation surface — stable dispatch code, offending package dir, no new envelope field.
     let (out, code) = run(&["--strict-check", "--format", "json"], "charter_rule");
     assert_eq!(code, 1);
     let doc: serde_json::Value = serde_json::from_str(&out).expect("json parses");
@@ -167,4 +151,102 @@ fn require_package_charter_serializes_with_a_stable_code() {
         .expect("a missing_package_charter rule violation is present");
     assert_eq!(rv["packages"], serde_json::json!(["nocharter"]));
     assert_eq!(rv["path"], serde_json::json!("packages/nocharter"));
+}
+
+#[test]
+fn the_trailing_whitespace_guard_cannot_be_silently_disarmed() {
+    // THE TRAP: every editor terminates a file with a newline, so a rule keyed on "the body contains a newline" would have failed every real adopter on day one, while the hand-crafted fixtures — which had none — sailed through and kept the suite green.
+    let body = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/charter/grouping/.annotation"),
+    )
+    .expect("the grouping charter fixture is readable");
+    assert!(
+        body.ends_with("\n\n"),
+        "the fixture must end in a trailing newline AND a blank line, or \
+         annotation_breadcrumb_charters_a_grouping_folder and \
+         charter_surfaces_as_a_keyed_object_in_json silently stop testing the trap: {body:?}"
+    );
+    assert_eq!(
+        body.lines().filter(|l| !l.trim().is_empty()).count(),
+        1,
+        "and it must still hold exactly ONE line of content: {body:?}"
+    );
+}
+
+#[test]
+fn a_charter_with_prose_below_its_line_resolves_to_no_charter() {
+    // TREE1: a `.annotation` holding more than its one line resolves to NOTHING, rather than to a charter with a newline inside it.
+    let (out, code) = run(&[], "charter_noisy");
+    assert_eq!(code, 0, "rendering still exits 0:\n{out}");
+    let line = dir_line(&out, "noisy").expect("noisy/ dir row is present");
+    assert!(
+        !line.contains('#'),
+        "the directory row carries no charter: {line}"
+    );
+    assert!(
+        !out.contains("STRAY-PROSE") && !out.contains("NOISY-CHARTER"),
+        "neither the stray prose nor the line it was attached to reaches the map:\n{out}"
+    );
+    // Counted over the tree rows themselves, not over stdout lines, so a footer note added later cannot fail this spuriously.
+    assert_eq!(
+        out.lines().filter(|l| l.contains("── ")).count(),
+        3,
+        "one row per path:\n{out}"
+    );
+
+    let (json, _) = run(&["--format", "json"], "charter_noisy");
+    let doc: serde_json::Value = serde_json::from_str(&json).expect("json parses");
+    let noisy = doc["roots"][0]["dirs"]
+        .as_array()
+        .expect("dirs array")
+        .iter()
+        .find(|d| d["name"] == serde_json::json!("noisy"))
+        .expect("noisy dir node");
+    assert!(
+        noisy.get("charter").is_none(),
+        "and the machine contract carries no charter either: {noisy}"
+    );
+}
+
+#[test]
+fn a_charter_with_prose_below_its_line_fails_strict_check_alone() {
+    // Reported ALONE — `violations` stays empty — because which line is the annotation is exactly what this file has not settled.
+    let (out, code) = run(&["--strict-check", "--no-guide"], "charter_noisy");
+    assert_eq!(code, 1, "a multi-line charter now fails:\n{out}");
+    assert!(
+        out.contains("noisy/.annotation:2: holds more than the one line"),
+        "located at the charter, at the first stray line:\n{out}"
+    );
+    assert!(
+        out.contains("Found 1 annotation file(s) with trailing content"),
+        "with its own count, kept out of the annotation error count:\n{out}"
+    );
+    assert!(
+        !out.contains("STRAY-PROSE"),
+        "the stray prose is never echoed into the report:\n{out}"
+    );
+
+    let (json, code) = run(&["--strict-check", "--format", "json"], "charter_noisy");
+    assert_eq!(code, 1);
+    let doc: serde_json::Value = serde_json::from_str(&json).expect("strict json parses");
+    assert_eq!(doc["passed"], serde_json::json!(false));
+    assert_eq!(
+        doc["error_count"],
+        serde_json::json!(0),
+        "not an annotation error — the parts were never judged: {json}"
+    );
+    assert!(
+        doc["violations"]
+            .as_array()
+            .expect("violations array")
+            .is_empty(),
+        "the part diagnosis is suppressed, not stacked: {json}"
+    );
+    let trailing = doc["trailing_content"]
+        .as_array()
+        .expect("trailing_content array");
+    assert_eq!(trailing.len(), 1, "{json}");
+    assert_eq!(trailing[0]["path"], serde_json::json!("noisy/.annotation"));
+    assert_eq!(trailing[0]["line"], serde_json::json!(2));
 }

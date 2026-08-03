@@ -1,0 +1,1 @@
+Concern: the strict-check report contract, field by field | Non-concern: producing that report (strict.rs owns it) | IO: none

@@ -1,4 +1,4 @@
-// Concern: cross-references every manifest into per-directory dependency edges (internal, external, reverse "used by") | Non-concern: parsing manifest syntax or rendering | IO: (roots) -> map<dir, DirDeps>
+// Concern: cross-references every manifest into per-directory dependency edges — internal, external and reverse | Non-concern: parsing manifest syntax or rendering | IO: (roots) -> map<dir, DirDeps>
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -25,11 +25,10 @@ pub struct DirDeps {
     pub external: Vec<String>,
 }
 
-/// The package-level internal-edge list, keyed by canonical name + ecosystem. This
-/// is the graph `build` already computes for directory keying; exposing it lets
-/// policy evaluation (`rules`) reason over edges, and blast-radius (`--since`) map
-/// files to their owning package, without re-walking or re-parsing. `dir` is the
-/// package's canonical directory, matching the `dir_deps` keys.
+/// The package-level internal-edge list, keyed by canonical name + ecosystem — the same one `build`
+/// already computes for directory keying. Exposing it lets `rules` reason over edges and `--since`
+/// map files to their owning package, without re-walking or re-parsing. `dir` is the package's
+/// canonical directory, matching the `dir_deps` keys.
 #[derive(Debug, Clone)]
 pub struct PackageEdges {
     pub name: String,
@@ -38,12 +37,10 @@ pub struct PackageEdges {
     pub dir: PathBuf,
 }
 
-/// A non-fatal issue found while building the graph: a manifest a parser could not
-/// read or parse. The map is still produced (just missing that package's edges), so the
-/// failure is surfaced as a located, dispatchable diagnostic — a stable `code`, the
-/// offending `path`, and a human `message` — mirroring [`crate::strict::AnnotationViolation`]
-/// so an agent branches on `code` instead of scraping prose. The CLI prints `message` to
-/// stderr; the `--format json` / MCP `map` envelope carries the whole struct in `warnings`.
+/// A non-fatal issue found while building the graph: a manifest a parser could not read or parse.
+/// The map is still produced, just missing that package's edges, so the failure surfaces as a
+/// located diagnostic — stable `code`, offending `path`, human `message` — and an agent branches on
+/// `code`. The CLI prints `message` to stderr; `--format json` carries the struct in `warnings`.
 #[derive(Debug, Clone, Serialize)]
 pub struct Warning {
     pub code: &'static str,
@@ -68,27 +65,29 @@ struct Package {
     external: Vec<String>,
 }
 
-/// Scan `roots` for every known manifest, then resolve the graph. Directories are
-/// keyed by canonicalized absolute path. The manifest walk applies the SAME filter as
-/// the code-file walk (gitignore, hidden, `tests`, `-I` excludes) so that "what's
-/// graphed" equals "what's shown"; a multi-root run drives that filter from the
-/// PRIMARY (first) root's ignore settings, matching how the primary root's config
-/// already governs the shared render/rules choices.
-pub fn build(roots: &[PathBuf], gitignore: bool, include_tests: bool, excludes: &GlobSet) -> Graph {
+/// Scan `roots` for every known manifest, then resolve the graph. Directories are keyed by
+/// canonical absolute path. The manifest walk applies the SAME filter as the code-file walk, and
+/// `max_depth` bounds it one level below the deepest displayed row, so "what's graphed" is exactly
+/// "what's shown". `None` scans every depth; a multi-root run drives both from the PRIMARY root.
+pub fn build(
+    roots: &[PathBuf],
+    gitignore: bool,
+    include_tests: bool,
+    excludes: &GlobSet,
+    max_depth: Option<usize>,
+) -> Graph {
     let parsers = crate::manifest::parsers();
     let mut raw: Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
+    let scope = WalkScope {
+        gitignore,
+        include_tests,
+        excludes,
+        max_depth,
+    };
     for root in roots {
-        collect_manifests(
-            root,
-            gitignore,
-            include_tests,
-            excludes,
-            &parsers,
-            &mut raw,
-            &mut warnings,
-        );
+        collect_manifests(root, &scope, &parsers, &mut raw, &mut warnings);
     }
 
     // Known package names per ecosystem, canonicalized, for internal detection.
@@ -134,8 +133,7 @@ pub fn build(roots: &[PathBuf], gitignore: bool, include_tests: bool, excludes: 
         });
     }
 
-    // Reverse edges: for each *resolved* internal dep D of P, D is "used by" P.
-    // Unresolved deps have no target package in the tree, so no reverse edge.
+    // Reverse edges: for each *resolved* internal dep D of P, D is "used by" P. Unresolved deps have no target package in the tree, so no reverse edge.
     let mut used_by: HashMap<(Ecosystem, String), Vec<String>> = HashMap::new();
     for pkg in &packages {
         for dep in pkg.internal.iter().filter(|d| d.resolved) {
@@ -150,8 +148,7 @@ pub fn build(roots: &[PathBuf], gitignore: bool, include_tests: bool, excludes: 
         names.dedup();
     }
 
-    // The package edge list is derived from the same resolved packages the
-    // directory map is built from — computed once, no re-derivation in `rules`.
+    // The package edge list is derived from the same resolved packages the directory map is built from — computed once, no re-derivation in `rules`.
     let package_edges = packages
         .iter()
         .map(|pkg| PackageEdges {
@@ -185,11 +182,9 @@ pub fn build(roots: &[PathBuf], gitignore: bool, include_tests: bool, excludes: 
 }
 
 impl Graph {
-    /// The transitive reverse-dependency closure of `pkg` within ecosystem `eco`:
-    /// every package that (directly or indirectly) depends on `pkg`. This is the
-    /// "blast radius" — who could break if `pkg` changes — walked over the resolved
-    /// internal edges (the inverse of the `used_by` relation). The seed `pkg` itself
-    /// is NOT included; only its dependents. Cycle-safe via a visited set, so a
+    /// The transitive reverse-dependency closure of `pkg` within ecosystem `eco` — the "blast
+    /// radius", every package that directly or indirectly depends on it — walked over the resolved
+    /// internal edges. The seed itself is NOT included. Cycle-safe via a visited set, so a
     /// dependency cycle terminates instead of looping.
     pub fn reverse_closure(&self, pkg: &str, eco: Ecosystem) -> HashSet<String> {
         let mut result = HashSet::new();
@@ -210,11 +205,10 @@ impl Graph {
         result
     }
 
-    /// The set of package directories in the blast radius of a change set: for each
-    /// changed file, resolve its owning package (nearest ancestor package dir), take
-    /// that package's reverse-dependency closure, and map those dependents back to
-    /// their directories. The returned dirs are canonical, so a walked file is "in
-    /// the blast radius" iff it `starts_with` one of them.
+    /// The set of package directories in the blast radius of a change set: for each changed file,
+    /// resolve its owning package, take that package's reverse-dependency closure, and map those
+    /// dependents back to their directories. The returned dirs are canonical, so a walked file is in
+    /// the blast radius iff it `starts_with` one of them.
     pub fn blast_radius_dirs(&self, changed: &HashSet<PathBuf>) -> HashSet<PathBuf> {
         let mut affected: HashSet<(Ecosystem, String)> = HashSet::new();
         for file in changed {
@@ -242,22 +236,29 @@ impl Graph {
     }
 }
 
-fn collect_manifests(
-    root: &Path,
+/// How a manifest walk is shaped: the code-file walk's exact filter, plus the render's
+/// `-L LEVEL` (which this walk bounds one level DEEPER than the rows — see
+/// [`crate::walk::cap_manifest_depth`]), carried as one value so the two travel together
+/// and cannot drift apart between roots.
+struct WalkScope<'a> {
     gitignore: bool,
     include_tests: bool,
-    excludes: &GlobSet,
+    excludes: &'a GlobSet,
+    max_depth: Option<usize>,
+}
+
+fn collect_manifests(
+    root: &Path,
+    scope: &WalkScope<'_>,
     parsers: &[Box<dyn ManifestParser>],
     out: &mut Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)>,
     warnings: &mut Vec<Warning>,
 ) {
-    // One traversal for every manifest kind: dispatch each entry to the parser
-    // whose filename it matches. (Previously one full walk per parser.) Shares the
-    // code-file walk's exact directory filter (`configured_walk`), so gitignored/
-    // hidden/`tests`/`-I`-excluded manifests are skipped just like their files —
-    // no spurious "could not parse manifest" warnings for invisible files, and no
-    // package leaking into the name set from a dir the tree never shows.
-    let walker = crate::walk::configured_walk(root, gitignore, include_tests, excludes).build();
+    // Shares the code-file walk's exact directory filter, so an invisible manifest raises no "could not parse" warning and leaks no package into the name set from a dir the tree never shows.
+    let mut builder =
+        crate::walk::configured_walk(root, scope.gitignore, scope.include_tests, scope.excludes);
+    crate::walk::cap_manifest_depth(&mut builder, scope.max_depth);
+    let walker = builder.build();
     for entry in walker.flatten() {
         let fname = entry.file_name();
         let Some(parser) = parsers.iter().find(|p| fname == p.filename()) else {
@@ -267,9 +268,7 @@ fn collect_manifests(
         let Some(dir) = path.parent() else { continue };
         match parser.parse(path) {
             Ok(parsed) => out.push((parser.ecosystem(), dir.to_path_buf(), parsed)),
-            // The `message` embeds the path (via the parser's `with_context`) so stderr
-            // reads exactly as before; `path` is the same manifest as a structured field
-            // for the JSON/MCP `warnings` array to dispatch on.
+            // The `message` embeds the path (via the parser's `with_context`) so stderr reads exactly as before; `path` is the same manifest as a structured field for the JSON `warnings` array to dispatch on.
             Err(err) => warnings.push(Warning {
                 code: crate::exit::code::MANIFEST_PARSE_ERROR,
                 path: path.display().to_string(),
@@ -370,10 +369,11 @@ mod tests {
             ("worker", &["core"]),
             ("gateway", &["api"]),
         ]);
-        // Editing core blasts everything that (transitively) depends on it.
         assert_eq!(closure(&g, "core"), vec!["api", "gateway", "worker"]);
-        // A leaf that nothing depends on has an empty radius.
-        assert!(closure(&g, "gateway").is_empty());
+        assert!(
+            closure(&g, "gateway").is_empty(),
+            "a leaf nothing depends on has an empty radius"
+        );
     }
 
     #[test]
@@ -390,9 +390,7 @@ mod tests {
 
     #[test]
     fn cycle_terminates() {
-        // a <-> b cycle, plus c depending on a. Must not loop forever.
         let g = graph(&[("a", &["b"]), ("b", &["a"]), ("c", &["a"])]);
-        // Everything else in the cycle/dependents, minus the seed itself.
         assert_eq!(closure(&g, "a"), vec!["b", "c"]);
         assert_eq!(closure(&g, "b"), vec!["a", "c"]);
     }

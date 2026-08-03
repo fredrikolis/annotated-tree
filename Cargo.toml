@@ -1,6 +1,6 @@
 [package]
 name = "annotated-tree"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "Map an unfamiliar codebase in one command: an annotated directory tree with a cross-ecosystem (Python/npm/Cargo/Go) package dependency graph."
 license = "MIT"
@@ -27,29 +27,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 
-# MCP server mode (opt-in `mcp` feature). The ONLY async surface in the tool, so
-# both the runtime and the SDK are OPTIONAL: a default `cargo build`/`cargo install`
-# links NO tokio and NO rmcp, keeping the sync-core justification in `lib.rs` true.
-# Transport is stdio only (the correct local-desktop MCP transport); no HTTP stack.
-rmcp = { version = "2", default-features = false, features = [
-    "server",
-    "transport-io",
-    "macros",
-], optional = true }
-tokio = { version = "1", default-features = false, features = [
-    "rt-multi-thread",
-    "io-std",
-], optional = true }
-
-[features]
-# MCP server mode. Pulls in the tokio runtime + the rmcp MCP SDK behind this one
-# switch; the default binary stays async-runtime-free.
-mcp = ["dep:rmcp", "dep:tokio"]
-
 [profile.release]
 lto = true
 strip = true
 codegen-units = 1
-# NOT `panic = "abort"`: the `--mcp` server converts a panicked handler task into a
-# JSON-RPC error so the long-lived server survives (see `mcp.rs`), which only works
-# when panics unwind. The small binary-size cost is worth a server that stays alive.

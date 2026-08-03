@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 
 use crate::config::CliOverrides;
 use crate::exit;
@@ -20,30 +20,28 @@ pub enum Format {
 
 /// Annotated directory tree with a cross-ecosystem package dependency graph.
 #[derive(Debug, Parser)]
-#[command(name = "annotated-tree", version)]
+#[command(name = "annotated-tree", version, disable_help_subcommand = true)]
 pub struct Cli {
     /// Directories to analyze [default: current directory].
     pub paths: Vec<PathBuf>,
 
     /// Exit non-zero if any code file lacks a conforming first-line annotation. Each PATH
-    /// may be a directory (lint every code file under it) or a single file (lint just that
-    /// file — the natural unit for a pre-commit hook or checking the file you just wrote).
+    /// may be a directory (lint every code file under it) or a single file.
     #[arg(long)]
     pub strict_check: bool,
 
-    /// Suppress the annotation-writing guide that a failing --strict-check prints by
-    /// default after the violations (for a caller that already knows the format). The
-    /// violations, counts, and exit code are unaffected.
+    /// Suppress the annotation-writing guide a failing --strict-check prints after the
+    /// violations. Violations, counts, and exit code are unaffected.
     #[arg(long)]
     pub no_guide: bool,
 
-    /// Fail --strict-check when any annotation field (Concern, Non-concern, IO) is longer
-    /// than N characters. 200 by default; 0 means no bound, so it turns the shipped or a
-    /// repo-configured one off. Overrides `[rules] max_annotation_length`.
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", help = crate::strict::LENGTH_RULE)]
     pub max_length: Option<usize>,
 
-    /// Descend at most LEVEL directories deep.
+    /// Descend at most LEVEL directories deep. Caps the WALK, not just the output: nothing
+    /// below the cutoff is visited, counted against --max-files, or contributes graph
+    /// edges, so a shallow render gives a shallower graph. Every directory shown still
+    /// states its own dependency facts. Does not cap --strict-check.
     #[arg(short = 'L', long, value_name = "LEVEL")]
     pub max_depth: Option<usize>,
 
@@ -72,8 +70,9 @@ pub struct Cli {
     pub ignore: Vec<String>,
 
     /// Also show files matching GLOB even when their extension maps to no known language
-    /// (repeatable; pipe-separated allowed). The positive counterpart of --ignore: an included
-    /// file's annotation is read marker-agnostically. `--include '*'` shows every file.
+    /// (repeatable; pipe-separated allowed). An included file's annotation is read
+    /// marker-agnostically. `--include '*'` shows every file. View only: --strict-check
+    /// never lints what this opts in.
     #[arg(long = "include", value_name = "GLOB")]
     pub include: Vec<String>,
 
@@ -112,22 +111,84 @@ pub struct Cli {
     #[arg(long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
-    /// Serve over stdio as an MCP server exposing the map, dependency, and
-    /// strict-check tools (requires a build with --features mcp).
-    #[arg(long)]
-    pub mcp: bool,
-
-    /// Print the JSON output schema (map document, strict-check report, and the error
-    /// and warning shapes) to stdout and exit, so an agent can fetch the wire contract
-    /// programmatically without a human.
+    /// Print the JSON wire contract to stdout and exit: the map document, the strip report, the
+    /// strict-check report, and the error and warning shapes.
     #[arg(long)]
     pub schema: bool,
 
-    /// Print the guide for reproducing the repo's local enforcement git hooks (the
-    /// pre-commit --strict-check gate and the commit-msg neutral-review attestation) to
-    /// stdout and exit, so an agent can set enforcement up without a human.
+    /// Print the setup guide for this repo's local enforcement git hooks to stdout and
+    /// exit: the pre-commit --strict-check gate and the commit-msg review attestation.
     #[arg(long)]
     pub githook_guide: bool,
+
+    /// Print the annotation-writing guide to stdout and exit: the same full text a failing
+    /// --strict-check appends, reachable without a violation to trigger it.
+    #[arg(long)]
+    pub annotation_guide: bool,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Put each file's annotation in your agent's Bash tool results.
+    BashAnnotator(BashAnnotator),
+    /// Remove first-line annotations from FILEs, and from DIRs under -R.
+    Strip(Strip),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct Strip {
+    /// Files to strip; directories need -R.
+    #[arg(required = true, value_name = "PATH")]
+    pub paths: Vec<std::path::PathBuf>,
+
+    /// Descend into directories.
+    #[arg(short = 'R', short_alias = 'r', long)]
+    pub recursive: bool,
+
+    /// Actually edit the files. Without it, the ones that would change are listed and nothing
+    /// is written.
+    #[arg(short = 'y', long)]
+    pub yes: bool,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct BashAnnotator {
+    /// Add both Claude Code hook entries — PreToolUse and SessionStart — to FILE
+    /// [default: ~/.claude/settings.json].
+    #[arg(long)]
+    pub install_claude_hook: bool,
+
+    /// Remove the hook entries this tool added from FILE, and nothing else.
+    #[arg(long)]
+    pub uninstall_claude_hook: bool,
+
+    /// Print what each quoted CMD would become. Substitutes nothing and runs nothing.
+    #[arg(long)]
+    pub check: bool,
+
+    /// Hook entry point: one PreToolUse event on stdin, an updatedInput or nothing out.
+    #[arg(long)]
+    pub rewrite_tool_call: bool,
+
+    /// Print the once-per-session announcement to stdout and exit: the SessionStart hook entry
+    /// runs this, so what the agent is told is what you see here.
+    #[arg(long)]
+    pub session_announcement: bool,
+
+    /// Pipeline entry point: append each printed path's annotation to the line it appeared on.
+    #[arg(long)]
+    pub annotate_tool_output: bool,
+
+    /// A settings FILE, the CMDs to check, or the producer's argv.
+    #[arg(
+        trailing_var_arg = true,
+        allow_hyphen_values = true,
+        value_name = "ARGS"
+    )]
+    pub args: Vec<std::ffi::OsString>,
 }
 
 const EXAMPLES: &str = "\
@@ -139,15 +200,6 @@ EXAMPLES:
     annotated-tree --strict-check f.rs  Lint a single file (e.g. a pre-commit hook)
     annotated-tree --since main .     Changed files plus their blast radius";
 
-/// The `ANNOTATION FORMAT:` help section — the compact head of the one canonical annotation
-/// guide ([`crate::guide::essence`]), whose `{TEMPLATE}`/`{EXAMPLE}` placeholders are filled
-/// from the ENFORCED contract ([`crate::strict::EXPECTED`] + [`crate::config::builtin_example`]), so
-/// `--help`, a failing `--strict-check`, and the guide doc advertise the SAME exemplar (no
-/// advertise-vs-enforce drift). Built at runtime because it is derived, not a literal.
-fn annotation_help_block() -> String {
-    crate::guide::essence()
-}
-
 /// The `EXIT CODES:` help section. Each line is sourced from the [`exit`] taxonomy
 /// constants (not a hand-typed literal), so `--help` cannot advertise a code that has
 /// drifted from what `run()`/`main` actually return — the self-correcting-help contract.
@@ -157,7 +209,8 @@ fn exit_codes_block() -> String {
 EXIT CODES:
     {}  clean run (tree rendered, or --strict-check passed)
     {}  --strict-check found at least one violation
-    {}  usage error — bad flag or value (emitted by clap before the run)
+    {}  usage error — bad flag or value, an unusable bash-annotator invocation, or a
+       directory given to strip without -R
     {}  a root exceeded --max-files; nothing written
     {}  precondition/environment error (missing dir, git/--since failure, bad config, I/O)",
         exit::SUCCESS,
@@ -170,12 +223,12 @@ EXIT CODES:
 
 /// Parse argv into a [`Cli`]. Builds `after_help` at runtime (rather than a derive
 /// literal) so the annotation-format example is sourced from the embedded config
-/// via [`annotation_help_block`] and the EXIT CODES block from the [`exit`] constants,
+/// via [`crate::guide::essence`] and the EXIT CODES block from the [`exit`] constants,
 /// keeping help and enforcement in lockstep.
 pub fn parse() -> Cli {
     let command = Cli::command().after_help(format!(
         "{EXAMPLES}\n\n{}\n\n{}",
-        annotation_help_block(),
+        crate::guide::essence(),
         exit_codes_block()
     ));
     let matches = command.get_matches();
@@ -200,15 +253,13 @@ impl Cli {
             include_tests: self.include_tests.then_some(true),
             include: self.include.clone(),
             config_file: self.config.clone(),
-            // `--no-limit`/`--force` wins over `--max-files`; either present means
-            // the CLI spoke (outer Some), so env/config are not consulted.
+            // `--no-limit`/`--force` wins over `--max-files`; either present means the CLI spoke (outer Some), so env/config are not consulted.
             max_files: if self.no_limit {
                 Some(None)
             } else {
                 self.max_files.map(Some)
             },
-            // `--full` wins over `--max-per-node`; either present means the CLI
-            // spoke (outer Some), so config/default are not consulted.
+            // `--full` wins over `--max-per-node`; either present means the CLI spoke (outer Some), so config/default are not consulted.
             max_per_node: if self.full {
                 Some(None)
             } else {

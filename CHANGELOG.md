@@ -1,11 +1,155 @@
-<!-- Concern: version history and notable changes | Non-concern: usage or roadmap (see README) | IO: none -->
+<!-- Concern: version history and notable changes | Non-concern: usage or roadmap | IO: none -->
 # Changelog
 
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] - 2026-08-02
+
+### Added
+- `trailing_content` on the `--strict-check` report (its own list, like `orphan_sidecars`: content
+  past line 1 is a defect of the FILE, not an issue about an Annotation, so `CHECK1` is untouched).
+  **BREAKING** for a consumer that builds a `StrictReport` by struct literal.
+- Per-file `.annotation` **sidecars** (#1). A file that maps to no comment marker — a CSV, a
+  dataset, a binary — carries its contract in a `<name>.annotation` file beside it, holding the
+  same bare three-field line a folder's `.annotation` holds. Three consequences:
+  a file carrying a sidecar is **listed whatever its extension** (writing the sidecar is the
+  opt-in, so no `--include` is needed); the sidecar's own row is **suppressed**, under a criterion
+  the report now states (see Changed); and a sidecar is only ever read for a file that cannot hold
+  a first-line comment, so `foo.rs.annotation` beside a `foo.rs` is an ordinary file, not a
+  sidecar, and an annotation's location stays determined by the path it annotates.
+- `orphan_sidecars` on the `--strict-check` report: a `<name>.annotation` whose named file does
+  not exist annotates nothing, and is reported as `path: message` (its own list — a dangling path
+  is not an issue about an Annotation, and no `[rules]` table configures it). It FAILS the check.
+  Nothing is deleted or rewritten: `--strict-check` still makes no write of any kind.
+- `--strict-check` enforces a sidecar body with the same grammar as a folder charter, reported at
+  the sidecar's own path with `language: "sidecar"`.
+- `FileNode.sidecar` in the JSON map (omitted when false): the row's annotation came from the
+  sidecar beside it. **BREAKING** for a consumer that builds a `FileNode` by struct literal.
+- A leading **YAML frontmatter** block is skipped when looking for a file's annotation, exactly as
+  a `#!` shebang already was (#16). A Claude Code skill/agent/command, or any static-site page,
+  must keep its frontmatter on line 1; before this, such a file could not carry an annotation at
+  all, so shipping skills and enforcing `--strict-check` were mutually exclusive. Only a CLOSED
+  block at the very start is a prefix — a `---` further down stays a horizontal rule.
+- `annotated-tree bash-annotator` puts each file's contract in an agent's own `grep`, `find`
+  and `ls` results, through a Claude Code `PreToolUse` hook that pipes eligible calls through an
+  annotator; `--install-claude-hook` switches it on. It is a verb on the one binary, so it ships
+  on **every** channel: npx, `cargo binstall`, the curl installer, `cargo install`. The tool
+  itself is never substituted and the wrapped command's exit status is preserved.
+- `annotated-tree bash-annotator --install-claude-hook [FILE]` and
+  `--uninstall-claude-hook [FILE]`. Cargo has no post-install or pre-uninstall step — the only
+  code it runs is `build.rs`, at build time — so switching the hook on is an explicit command.
+  It MERGES its entries into the settings file, keeping every other key: that file
+  holds the permissions a user has accepted, and a setup step that overwrote it would cost them
+  all of them. Defaults to `~/.claude/settings.json`; pass `.claude/settings.local.json` for a
+  single repo. Idempotent, writes atomically, refuses a file that does not parse rather than
+  replacing it, and `--uninstall-claude-hook` removes only the entries it added.
+- `bash-annotator` says what it does ONCE, through a `SessionStart` entry `--install-claude-hook`
+  writes beside the `PreToolUse` one, running `annotated-tree bash-annotator --session-announcement`
+  — a verb you can run by hand to read exactly what the agent is told. Not an `additionalContext` on
+  each rewritten call: `PreToolUse` fires before the command runs, so that text would repeat per call
+  and describe contracts nothing printed. Claude Code adds a `SessionStart` hook's stdout to the
+  agent's context verbatim, so it is printed bare, with no JSON envelope. Each entry names the one
+  verb that does its job, so the settings file says what each is for.
+- That announcement introduces the tool itself, not only the trailing annotations it explains: that
+  `annotated-tree` is installed, that running it on a directory yields a map you can route from
+  without opening the files, when to reach for one, and that `--annotation-guide` is the reference
+  for writing an annotation. A notice that only prevents confusion leaves the map unused. The text
+  now lives in `src/bash_annotator/session-announcement.md`, so `--session-announcement` still
+  prints exactly what the agent is handed.
+- `--annotation-guide` prints the annotation-writing guide to stdout and exits — the same full text
+  a failing `--strict-check` appends, reachable without a violation to trigger it. It ADDS a way to
+  reach the guide, it does not move it: `--help` still carries its compact head, and a failing
+  `--strict-check` still appends it in full.
+- `annotated_tree::resolve_charter` — resolve a directory's charter through the public API.
+  `Charter` was already exported with no way to obtain one.
+
+### Changed
+- **BREAKING (gate).** An `.annotation` file — a directory charter or a `<name>.annotation`
+  sidecar — must hold ONE bare annotation line and nothing but whitespace after it.
+  `--strict-check` now FAILS a body with prose below line 1, reporting it in a new
+  `trailing_content` list; the map shows such a directory or file WITHOUT a contract rather than
+  with one. Before this, the stray text landed inside the `IO` field newline and all, and one
+  render row printed as two — a `tree` view whose line count was wrong, a JSON string with a `\n`
+  in it, and a strict-check finding spanning three lines with an unpasteable `suggestion`. The
+  rule is "nothing but whitespace after the first line", never "contains a newline": every editor
+  writes a trailing one, so a charter that ends with a newline (or with blank lines) is ordinary
+  and passes.
+- The `trailing_content` finding is reported ALONE for an offending file: its parts are not
+  diagnosed until it is one line again, because echoing the offending text into `found` and
+  `suggestion` is what split the report line in the first place.
+- **BREAKING.** `[rules] max_annotation_length` / `--max-length <N>` now bounds the WHOLE
+  annotation, not each field. The bound is on the line an agent ingests: three fields each
+  under a per-field bound could still add up to a line nobody wants in a map read a hundred
+  times a session. A repo that passes today at 200 per-field will fail — this one did, in 51
+  files, every one of which shortened without losing anything it said. The guide now states
+  the diagnosis: a line that will not fit is an architecture defect, not a compression
+  problem. Do not raise the bound; it is the detector.
+- **BREAKING (JSON).** `defect.too_long` (an array naming each over-length field) is replaced
+  by `defect.length` (the annotation's own length). `defect.max` is unchanged.
+- The maximal-span measurement is gone with it. It existed only because a per-field bound was
+  evadable — prose quoting ` | Non-concern:` split the line early and every measured part came
+  in under the limit. A whole-line count cannot be evaded that way, so the machinery was
+  deleted rather than carried forward.
+- The annotation guide gains a FOLDER CHARTERS section: a `.annotation` states the directory's
+  one job one altitude above its files, and never restates them.
+- `-L LEVEL` caps the **walk**, not just the render (#15). The traversal stops at the deepest
+  level the output can show, so `annotated-tree -L 1 ~` no longer walks an entire home directory
+  to print one level (measured on one: 2.4 s warm and 253k directory reads, down to 17 ms and
+  88). Three user-visible consequences:
+  **empty directories are listed** — a directory earns its row by being VISITED, not by holding
+  a listable file somewhere beneath it. Below the cutoff nothing is visited, so "has a listable
+  descendant" is a question the deepest rows can no longer answer, and answering it at one depth
+  but not another would be the worse rule; a folder whose contents are all unlistable (only a
+  `notes.txt`, or nothing at all) now gets a row at every depth, where it used to be invisible.
+  The `-L` cap **cuts the input to the dependency graph**, so a shallow render shows a shallower
+  graph of the same tree instead of edges drawn from manifests the caller asked not to see. The
+  manifest walk runs exactly ONE level below the deepest row, because a package's manifest lives
+  INSIDE the package, one level under the row that names it — so every directory the map
+  DISPLAYS still states its own `<- depends on […]` / `used by: […]` facts, while a package
+  below the cutoff is no row, is never read, and contributes no edge (a path/workspace
+  dependency on one now renders as `(unresolved)`). The extra level reads manifests only and
+  can never add a row.
+  And **`--strict-check` is not capped**: a gate is not a rendered view, so it still lints every
+  file at every depth, `-L` or no `-L`.
+- The text map states the one exclusion criterion it applies to `.annotation` files, on stderr
+  and only when a sidecar row was actually suppressed. The JSON map states it structurally
+  instead, as `"sidecar": true` on the row that took the contract.
+- A malformed `.annotation` body that is a **conforming line wrapped in a comment marker** is
+  now diagnosed as exactly that — "remove the `<!--` and `-->`" — instead of "the ` | ` field
+  separators are missing", which was the one explanation that could not be true (#17). The
+  printed `suggestion` is the line from inside the wrapper, so it is usable as printed; it used
+  to embed the malformed text and could not be pasted. Same verdict, same parts reported.
+- `SPEC.md` gains an **accessory** vocabulary entry, stating that anything annotated-tree offers
+  that helps an agent consume Annotations outside a Report performs no run, emits no Report, and
+  is therefore governed by none of the invariants.
+
+### Removed
+- **The MCP server.** `--mcp`, the `mcp` Cargo feature, and its `rmcp` + `tokio` optional
+  dependencies are gone; `--mcp` is now an unknown flag (exit 2). It only ever served the
+  MAP — the same document `--format json` emits, byte-for-byte — to clients that cannot
+  shell out to a binary, and the tool's core value now arrives through the Claude Code
+  `PreToolUse` hook, which needs a shell. Replace an `annotated-tree --mcp` server entry
+  with `annotated-tree --format json` (the map) or `annotated-tree --strict-check
+  --format json` (the report); the `dependencies` / `dependents` tools have no CLI
+  equivalent and are gone with it, along with the `unknown_package` dispatch code that
+  only they emitted. The crate now links no async runtime at all and has no Cargo
+  features.
+- **Windows builds.** The `x86_64-pc-windows-msvc` release target, the Windows CI leg, and
+  the `annotated-tree-win32-x64` npm package are no longer built or published. Already-published
+  Windows artifacts stay on their channels — install a prior release, or build from source with
+  `cargo install annotated-tree` (the code contains no `cfg(windows)`; nothing was made
+  Windows-incompatible, it is simply no longer built or tested). Windows hosts now fall
+  through the shell installer's generic "unsupported operating system" path, and `npx
+  annotated-tree` on Windows reports an unsupported platform.
+
+### Fixed
+- `--max-files` aborted runs over files that would never have been shown (#15). `-L 1
+  --max-files 5` on a tree holding 41 files three levels down exited 3 with nothing written,
+  and on any large tree the DEFAULT `--max-files 10000` failed a one-level render outright.
+  The count is now over what the capped walk visits, so it is bounded by `-L` like everything
+  else.
 
 ## [0.5.0] - 2026-07-30
 
@@ -228,7 +372,8 @@ Initial release.
   installer.
 - Golden-file and integration test suite; CI across Linux, macOS and Windows.
 
-[Unreleased]: https://github.com/fredrikolis/annotated-tree/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/fredrikolis/annotated-tree/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.2.1...v0.3.0

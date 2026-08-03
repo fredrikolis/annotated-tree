@@ -1,4 +1,4 @@
-// Concern: resolves and represents a directory's concern charter — the three-field line on its render row | Non-concern: locating a file's first comment or checking a line's form (annotation.rs) | IO: (dir, Config) -> Option<Charter>
+// Concern: resolves and represents a directory's concern charter — the three-field line on its render row | Non-concern: a file's first comment, or a line's form | IO: (dir, Config) -> Option<Charter>
 
 use std::path::Path;
 
@@ -50,6 +50,17 @@ pub fn from_line(text: &str) -> Option<Charter> {
     })
 }
 
+/// A [`Charter`] from the WHOLE body of an `.annotation` file, or `None` when the file holds
+/// anything but whitespace past its first line. `.annotation` is ONE bare line, so prose under it
+/// resolves to NO charter and the directory row stays silent — "render, don't reason", with
+/// `--strict-check` reporting the file. The file-scale twin of [`from_line`].
+pub fn from_file_body(body: &str) -> Option<Charter> {
+    annotation::content_past_first_line(body)
+        .is_none()
+        .then(|| from_line(body))
+        .flatten()
+}
+
 /// Entry-file basenames (under `src/`) for a Rust crate whose charter is its `lib.rs` (else
 /// `main.rs`) annotation. Applies only when the directory holds a `Cargo.toml`. Bare basenames
 /// are the single source of truth — the filesystem resolver joins them under `src/`, the model
@@ -73,24 +84,21 @@ pub const DIRECT_ENTRY_FILES: &[&str] = &[
 /// Read a directory's `.annotation` breadcrumb, or `None` when absent/unreadable. Read DIRECTLY
 /// (never through the code-file walk) so it resolves even though `.annotation` is dot-hidden and
 /// excluded from the rendered tree — the metadata read the walk's display filters must not hide.
-pub fn read_charter_file(abs_dir: &Path) -> Option<String> {
-    std::fs::read_to_string(abs_dir.join(CHARTER_FILE)).ok()
+pub fn read_charter_file(dir: &Path) -> Option<String> {
+    std::fs::read_to_string(dir.join(CHARTER_FILE)).ok()
 }
 
-/// Resolve `abs_dir`'s charter from the FILESYSTEM (the strict-check path, which holds no built
-/// tree): `.annotation` breadcrumb first (its presence overrides, even if it fails to parse —
-/// most-explicit-wins), else the promoted annotation of the code entry file. Re-reads the entry
-/// file's head via [`annotation::extract`]; the model path instead reuses the already-extracted
-/// `FileNode.annotation` (no re-parse). Both share [`from_line`] and the entry-file tables.
-pub fn resolve_from_fs(abs_dir: &Path, config: &Config) -> Option<Charter> {
-    // 1. `.annotation` breadcrumb — its mere presence is the resolution (a malformed body
-    //    yields `None` here and is flagged by `--strict-check`; it never falls through).
-    if let Some(content) = read_charter_file(abs_dir) {
-        return from_line(&content);
+/// Resolve `dir`'s charter from the FILESYSTEM (the strict-check path, which holds no built tree):
+/// `.annotation` breadcrumb first — its presence overrides even if it fails to parse — else the
+/// promoted annotation of the code entry file. Re-reads that head via [`annotation::extract`], where
+/// the model path reuses the already-extracted `FileNode.annotation`.
+pub fn resolve_from_fs(dir: &Path, config: &Config) -> Option<Charter> {
+    if let Some(content) = read_charter_file(dir) {
+        return from_file_body(&content);
     }
     // 2. Rust crate: promote src/lib.rs (else src/main.rs), only for a manifest-bearing crate.
-    if abs_dir.join("Cargo.toml").is_file() {
-        let src = abs_dir.join("src");
+    if dir.join("Cargo.toml").is_file() {
+        let src = dir.join("src");
         if let Some(charter) = CRATE_ENTRY_FILES
             .iter()
             .find_map(|base| entry_annotation(&src.join(base), config))
@@ -102,7 +110,7 @@ pub fn resolve_from_fs(abs_dir: &Path, config: &Config) -> Option<Charter> {
     // 3. Direct child entry file (module / package / index / doc).
     DIRECT_ENTRY_FILES
         .iter()
-        .find_map(|name| entry_annotation(&abs_dir.join(name), config))
+        .find_map(|name| entry_annotation(&dir.join(name), config))
         .and_then(|a| from_line(&a))
 }
 
@@ -120,8 +128,7 @@ mod tests {
 
     #[test]
     fn from_line_splits_a_bare_three_field_charter() {
-        // A bare (marker-less) line — a `.annotation` body — splits into the three keyed
-        // fields via the ONE annotation grammar; the render line round-trips it verbatim.
+        // A bare (marker-less) line — a `.annotation` body — splits into the three keyed fields via the ONE annotation grammar; the render line round-trips it verbatim.
         let c = from_line("Concern: owns the API | Non-concern: storage (db owns it) | IO: none")
             .expect("a valid three-field line parses");
         assert_eq!(c.concern, "owns the API");
@@ -141,8 +148,7 @@ mod tests {
 
     #[test]
     fn advertised_example_is_self_conforming() {
-        // The DbC guarantee against advertise-vs-enforce drift: the bare exemplar a malformed
-        // `.annotation` diagnostic shows must itself pass the charter grammar it advertises.
+        // The DbC guarantee against advertise-vs-enforce drift: the bare exemplar a malformed `.annotation` diagnostic shows must itself pass the charter grammar it advertises.
         assert_eq!(
             annotation::analyze_charter(EXAMPLE, None),
             annotation::Outcome::Ok

@@ -1,4 +1,4 @@
-// Concern: end-to-end tests freezing the tool's stdout for the text, JSON, Markdown, strict-check, and guide surfaces — by golden file or structural assertion | Non-concern: unit-level logic | IO: (sample tree, temp fixtures) -> asserted output
+// Concern: freezes the tool's output across the text, JSON, Markdown, strict-check and guide surfaces | Non-concern: what the sample tree contains | IO: (sample tree, fixtures) -> pass/fail
 
 use std::path::PathBuf;
 
@@ -86,8 +86,7 @@ fn ascii_is_default_with_glyphs_substituted() {
 
 #[test]
 fn strict_check_reports_offenders() {
-    // `--no-guide` keeps this golden pinned to the report itself; the guide that a bare
-    // failing `--strict-check` prints is covered by `strict_failure_prints_guide_on_stdout`.
+    // `--no-guide` keeps this golden pinned to the report itself; the guide that a bare failing `--strict-check` prints is covered by `strict_failure_prints_guide_on_stdout`.
     assert_golden("strict_check.txt", &["--strict-check", "--no-guide"], 1);
 }
 
@@ -133,9 +132,7 @@ fn strict_check_accepts_a_single_file() {
     let (_out, code) = check(&bad);
     assert_eq!(code, 1, "a malformed single file fails strict-check");
 
-    // A file whose extension maps to no language is a precondition error: in text mode
-    // `run()` returns `Err` (the binary renders it as `error:` prose and exits PRECONDITION),
-    // never a silent pass or a lint failure.
+    // A file whose extension maps to no language is a precondition error: in text mode `run()` returns `Err` (the binary renders it as `error:` prose and exits PRECONDITION), never a silent pass or a lint failure.
     let cli = Cli::parse_from([
         "annotated-tree",
         "--strict-check",
@@ -152,10 +149,9 @@ fn strict_check_accepts_a_single_file() {
     );
 }
 
-/// `--strict-check --format json` is the machine-consumable counterpart to the TEXT
-/// report: the same verdict, structured. Freeze the shape (not the whole fixture) —
-/// `passed`/counts at the envelope, and each violation carrying the fields an agent
-/// acts on (category, real line, a conformant example). The exit code stays 1 on
+/// `--strict-check --format json` is the machine-consumable counterpart to the TEXT report: the
+/// same verdict, structured. Freeze the shape, not the whole fixture — `passed`/counts at the
+/// envelope, and each violation carrying the fields an agent acts on. The exit code stays 1 on
 /// failure, matching the text path.
 #[test]
 fn strict_check_json_emits_structured_violations() {
@@ -172,8 +168,7 @@ fn strict_check_json_emits_structured_violations() {
         "one annotation gap (only the intentionally-malformed utils.py)"
     );
     assert_eq!(doc["files_checked"], serde_json::json!(20), "files checked");
-    // The convergence numerator: 19 of the 20 files carry a conforming annotation; only
-    // the one malformed file does not.
+    // The convergence numerator: 19 of the 20 files carry a conforming annotation; only the one malformed file does not.
     assert_eq!(
         doc["annotated_count"],
         serde_json::json!(19),
@@ -182,8 +177,7 @@ fn strict_check_json_emits_structured_violations() {
 
     let violations = doc["violations"].as_array().expect("violations array");
     assert_eq!(violations.len(), 1, "one record per annotation gap");
-    // The Python util has a comment but not the three-field shape — a malformed_annotation
-    // at line 1, echoing the offending content and a conformant example to copy.
+    // The Python util has a comment but not the three-field shape — a malformed_annotation at line 1, echoing the offending content and a conformant example to copy.
     let py = violations
         .iter()
         .find(|v| v["path"] == serde_json::json!("packages/core/acme_core/utils.py"))
@@ -202,15 +196,14 @@ fn strict_check_json_emits_structured_violations() {
         "the example is a conformant annotation line: {:?}",
         py["example"]
     );
-    // The machine-coded delta an agent branches on: the comment carries NONE of the three
-    // keyed fields, so all are missing; `too_long`/`max` are absent when they do not apply.
+    // The machine-coded delta an agent branches on: the comment carries NONE of the three keyed fields, so all are missing; `length`/`max` are absent when they do not apply.
     assert_eq!(
         py["defect"]["missing"],
         serde_json::json!(["concern", "non_concern", "io"]),
         "defect names the missing fields, not prose"
     );
     assert!(
-        py["defect"].get("too_long").is_none() && py["defect"].get("max").is_none(),
+        py["defect"].get("length").is_none() && py["defect"].get("max").is_none(),
         "empty/absent defect fields are omitted (absent-key convention)"
     );
     // The contract to converge on: the fill-in template plus which fields are enforced.
@@ -235,10 +228,7 @@ fn strict_check_json_emits_structured_violations() {
         "no recommended-only fields (all three are required): {:?}",
         py["expected"]["recommended"]
     );
-    // The file-tailored scaffold: reuses the file's own text as the Concern seed, opens
-    // with the language marker, and leaves the judgment slots as `<…>` placeholders —
-    // which mark what an agent should replace, on a line whose FORM already conforms (this
-    // run sets no length bound, which would apply to the stub like any other line).
+    // The `<…>` slots mark what an agent should replace, on a line whose FORM already conforms.
     let suggestion = py["suggestion"].as_str().expect("suggestion string");
     assert!(
         suggestion.starts_with("# Concern: small helpers used across the engine")
@@ -322,10 +312,9 @@ fn md_format_surfaces_package_headings() {
     }
 }
 
-/// A FAILING `--strict-check` prints the annotation guide inline on stdout by default (the
-/// teaching rides on the surface the agent already reads); `--no-guide` suppresses it; a
-/// PASSING run never shows it. Assert the guide's load-bearing invariants — the enforced
-/// template, the GOOD/FAILS contrast, and the brevity doctrine — rather than byte-freezing
+/// A FAILING `--strict-check` prints the annotation guide inline on stdout by default; `--no-guide`
+/// suppresses it, and a PASSING run never shows it. Assert the guide's load-bearing invariants — the
+/// enforced template, the GOOD/FAILS contrast, the brevity doctrine — rather than byte-freezing
 /// instructional prose. Uses a throwaway fixture with one unannotated file.
 #[test]
 fn strict_failure_prints_guide_on_stdout() {
@@ -394,6 +383,53 @@ fn strict_failure_prints_guide_on_stdout() {
     );
 }
 
+/// `--annotation-guide` is the way to READ the guide without provoking a violation to print it.
+/// Pin the info-flag semantics (whole guide alone on stdout, exit 0), that the same text still
+/// reaches `--help`, and that the guide states the length bound — an agent that has to discover the
+/// bound by being rejected pays for the annotation twice.
+#[test]
+fn annotation_guide_flag_prints_the_guide_alone() {
+    // The flag short-circuits before any traversal, so the appended sample path is unused.
+    let (out, code) = run(&["--annotation-guide"]);
+    assert_eq!(
+        code, 0,
+        "--annotation-guide is an info flag: print and exit clean"
+    );
+    assert!(
+        out.starts_with("ANNOTATION GUIDE"),
+        "the guide is printed alone, with nothing before it, got: {out}"
+    );
+    assert!(
+        out.contains("HOW TO FIND THE NON-CONCERN"),
+        "the flag prints the FULL guide, not just the --help essence, got: {out}"
+    );
+    assert!(
+        !out.contains("EXIT CODES:") && !out.contains("Usage:"),
+        "nothing but the guide goes to stdout, got: {out}"
+    );
+
+    for fact in ["200", "--max-length", "max_annotation_length"] {
+        assert!(
+            out.contains(fact),
+            "the guide must state `{fact}` of the bound it forbids raising, got: {out}"
+        );
+    }
+
+    let help = std::process::Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
+        .arg("--help")
+        .output()
+        .expect("run --help");
+    let help = String::from_utf8(help.stdout).expect("utf8");
+    assert!(
+        help.contains("ANNOTATION GUIDE") && help.contains("max_annotation_length"),
+        "--help still carries the guide, bound included, got: {help}"
+    );
+    assert!(
+        help.contains("--annotation-guide"),
+        "a new flag lands with its --help text, got: {help}"
+    );
+}
+
 /// `--githook-guide` ships the commit-message ATTESTATION KEYS to adopters who wire the example
 /// hook into their own repo, so those keys are an external contract with consumers we cannot
 /// coordinate. Pin the keys — never the prose around them — and pin the absence of the retired
@@ -410,15 +446,19 @@ fn githook_guide_ships_the_attestation_keys() {
         "MAJOR:",
         "MODERATE:",
         "MINOR:",
-        "Annotation-Issues:",
-        "Style-Issues:",
+        "Annotation-MAJOR:",
+        "Annotation-MODERATE:",
+        "Annotation-MINOR:",
+        "Style-MAJOR:",
+        "Style-MODERATE:",
+        "Style-MINOR:",
     ] {
         assert!(
             out.contains(key),
             "the guide must ship the `{key}` attestation key, got: {out}"
         );
     }
-    for retired in ["MEDIUM", "/10"] {
+    for retired in ["MEDIUM", "/10", "Annotation-Issues:", "Style-Issues:"] {
         assert!(
             !out.contains(retired),
             "the guide must not name the retired `{retired}` payload, got: {out}"

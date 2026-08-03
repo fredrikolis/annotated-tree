@@ -1,0 +1,1 @@
+Concern: the npm channel — its platform packages, the shim that picks one, the version stamper | Non-concern: producing the binaries (release.yml) | IO: (version, binaries) -> publishable packages

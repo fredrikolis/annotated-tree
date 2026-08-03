@@ -1,4 +1,4 @@
-// Concern: end-to-end tests freezing the form-only annotation check and the per-part length bound | Non-concern: the per-part checker units (src/annotation.rs) or the golden report text | IO: (temp fixtures) -> asserted (stdout, code)
+// Concern: end-to-end tests freezing the annotation form check and whole-annotation length bound | Non-concern: the checker units or the golden report text | IO: (fixtures) -> asserted (stdout, code)
 
 use annotated_tree::Cli;
 use clap::Parser;
@@ -29,8 +29,7 @@ fn check(name: &str, args: &[&str], files: &[(&str, &str)]) -> (String, i32) {
 
 #[test]
 fn wording_is_never_a_finding() {
-    // Form only: filler words, a Non-concern pointing at the file itself, and `<…>`
-    // placeholder slots are all present and non-empty, so every one of them PASSES.
+    // Form only: filler words, a Non-concern pointing at the file itself, and `<…>` placeholder slots are all present and non-empty, so every one of them PASSES.
     let (out, code) = check(
         "wording",
         &["--no-guide"],
@@ -58,10 +57,7 @@ fn wording_is_never_a_finding() {
 
 #[test]
 fn the_emitted_suggestion_itself_passes() {
-    // The sharpest single assertion for this change: the file-tailored stub the report prints
-    // is itself a well-formed line, so applying it clears the form defect instead of stacking
-    // a second one. Its `<…>` slots are still unwritten judgments, and a length bound would
-    // apply to the stub like any other line.
+    // The stub the report prints is itself a well-formed line, so applying it clears the form defect instead of stacking a second one.
     let (json, code) = check(
         "suggestion",
         &["--format", "json"],
@@ -86,8 +82,7 @@ fn the_emitted_suggestion_itself_passes() {
 
 #[test]
 fn an_empty_field_fails_and_the_text_says_which() {
-    // Without the detail clause the human line claims `concern` is missing while `Concern:`
-    // is plainly visible in `found` — the defect the carrier exists to fix.
+    // Without the detail clause the human line claims `concern` is missing while `Concern:` is plainly visible in `found` — the defect the carrier exists to fix.
     let (out, code) = check(
         "empty-text",
         &["--no-guide"],
@@ -151,18 +146,32 @@ fn a_broken_structure_with_every_key_reports_all_three() {
 
 #[test]
 fn the_length_bound_fires_only_past_the_limit() {
-    let under = format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(19));
-    let at = format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(20));
-    let over = format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(21));
+    // The bound is on the WHOLE annotation, marker excluded, so these are sized by that total.
+    let body = |n: usize| format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(n));
+    // "Concern: " + n + " | Non-concern: b | IO: c" is n + 34 characters.
+    let under = body(5); // 39
+    let at = body(6); // 40
+    let over = body(7); // 41
 
     let (out, code) = check(
         "len-pass",
-        &["--no-guide", "--max-length", "20"],
+        &["--no-guide", "--max-length", "40"],
         &[("under.rs", &under), ("at.rs", &at)],
     );
     assert_eq!(code, 0, "under and exactly at the bound pass:\n{out}");
 
-    // No flag, no repo config: the built-in layer supplies 200, so a 250-character field fails.
+    let (out, code) = check(
+        "len-over",
+        &["--no-guide", "--max-length", "40"],
+        &[("over.rs", &over)],
+    );
+    assert_eq!(code, 1, "one character past the bound fails:\n{out}");
+    assert!(
+        out.contains("the annotation is 41 characters, over the 40 limit"),
+        "the whole annotation is counted, and named as such: {out}"
+    );
+
+    // No flag, no repo config: the built-in layer supplies 200.
     let long = format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(250));
     let (out, code) = check("len-default", &["--no-guide"], &[("long.rs", &long)]);
     assert_eq!(
@@ -170,44 +179,21 @@ fn the_length_bound_fires_only_past_the_limit() {
         "the shipped 200 bound applies with no flag:\n{out}"
     );
     assert!(
-        out.contains("the Concern field is 250 characters, over the 200 limit"),
+        out.contains("over the 200 limit"),
         "the default bound is 200: {out}"
-    );
-    assert!(
-        out.contains("`--max-length 0`"),
-        "the report teaches the escape from the shipped bound: {out}"
-    );
-
-    let (out, code) = check(
-        "len-disabled",
-        &["--no-guide", "--max-length", "0"],
-        &[("long.rs", &long), ("over.rs", &over)],
-    );
-    assert_eq!(code, 0, "`--max-length 0` turns the bound off:\n{out}");
-
-    let (out, code) = check(
-        "len-fail",
-        &["--no-guide", "--max-length", "20"],
-        &[("over.rs", &over)],
-    );
-    assert_eq!(code, 1, "one character over the bound fails:\n{out}");
-    assert!(
-        out.contains("annotation is too long")
-            && out.contains("the Concern field is 21 characters, over the 20 limit"),
-        "the message names the field, its length, and the bound: {out}"
     );
 }
 
 #[test]
 fn the_length_bound_is_machine_readable_and_covers_charters() {
-    // A `.annotation` charter line is held to the SAME bound as a file annotation, and the
-    // structured surface names the offending part with its length plus the bound once.
+    // A `.annotation` charter line is held to the SAME bound as a file annotation, and the structured surface carries the annotation's length plus the bound, as two numbers.
     let long = "z".repeat(30);
     let (json, code) = check(
         "len-json",
         &["--format", "json", "--max-length", "20"],
         &[
-            ("ok.rs", "// Concern: a | Non-concern: b | IO: c\n"),
+            // Short fields, but 35 characters of line: over the bound as a whole.
+            ("over.rs", "// Concern: a | Non-concern: b | IO: c\n"),
             (
                 ".annotation",
                 &format!("Concern: {long} | Non-concern: b | IO: c\n"),
@@ -225,9 +211,13 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
     assert_eq!(v["category"], serde_json::json!("annotation_too_long"));
     assert_eq!(v["language"], serde_json::json!("charter"));
     assert_eq!(
-        v["defect"]["too_long"],
-        serde_json::json!([{ "part": "concern", "length": 30 }]),
-        "the offending part and its length: {v}"
+        v["defect"]["length"],
+        serde_json::json!(
+            "Concern: zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz | Non-concern: b | IO: c"
+                .chars()
+                .count()
+        ),
+        "the annotation's own length, not a field's: {v}"
     );
     assert_eq!(
         v["defect"]["max"],
@@ -235,15 +225,32 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
         "the bound is one number per violation: {v}"
     );
     assert!(
+        v["defect"]
+            .as_object()
+            .is_some_and(|d| d.len() == 2 && d.contains_key("length") && d.contains_key("max")),
+        "two numbers and nothing else — no per-field list, no empty `missing`: {v}"
+    );
+    assert!(
         v.get("suggestion").is_none(),
-        "no stub is emitted for an over-length field — the key is absent, not null: {v}"
+        "no stub is emitted for an over-length annotation — the key is absent, not null: {v}"
+    );
+    // Charters and file annotations reach that suppression by separate paths, so asserting it on the charter alone leaves the ordinary case — a commented file — unguarded.
+    let file = doc["violations"]
+        .as_array()
+        .expect("violations array")
+        .iter()
+        .find(|v| v["path"] == serde_json::json!("over.rs"))
+        .expect("the over-length file annotation surfaces as a violation");
+    assert_eq!(file["category"], serde_json::json!("annotation_too_long"));
+    assert!(
+        file.get("suggestion").is_none(),
+        "nor for an over-length FILE annotation — the key is absent, not null: {file}"
     );
 }
 
 #[test]
 fn malformed_outranks_too_long() {
-    // At most one outcome per file: an over-length line that also has an empty field stays
-    // `malformed_annotation` — structure is the more basic defect.
+    // At most one outcome per file: an over-length line that also has an empty field stays `malformed_annotation` — structure is the more basic defect.
     let long = "w".repeat(40);
     let (json, code) = check(
         "precedence",
@@ -262,15 +269,14 @@ fn malformed_outranks_too_long() {
         "structure outranks length: {v}"
     );
     assert!(
-        v["defect"].get("too_long").is_none(),
-        "one violation carries one defect kind: {v}"
+        v["defect"].get("length").is_none() && v["defect"].get("max").is_none(),
+        "one violation carries one defect kind — no length numbers on a malformed line: {v}"
     );
 }
 
 #[test]
 fn a_clean_tree_carries_no_warnings_surface() {
-    // The advisory channel is gone: the JSON document has no `warnings` key at all, and the
-    // TEXT report has no `Found N warning(s)` block.
+    // The advisory channel is gone: the JSON document has no `warnings` key at all, and the TEXT report has no `Found N warning(s)` block.
     let files: &[(&str, &str)] = &[("ok.rs", "// Concern: a | Non-concern: b | IO: c\n")];
     let (json, code) = check("no-warn-json", &["--format", "json"], files);
     assert_eq!(code, 0);
@@ -285,5 +291,126 @@ fn a_clean_tree_carries_no_warnings_surface() {
     assert!(
         !out.contains("warning"),
         "no advisory block on the TEXT surface: {out}"
+    );
+}
+
+#[test]
+fn a_comment_wrapped_charter_names_the_marker_and_suggests_the_bare_line() {
+    // "The separators are missing" is the one diagnosis that cannot be true when they are plainly there, and a stub seeded from the wrapped text embeds the marker, so it cannot be pasted either.
+    let (out, code) = check(
+        "wrapped-charter",
+        &["--no-guide"],
+        &[
+            (
+                ".annotation",
+                "<!-- Concern: demo crate | Non-concern: y | IO: none -->\n",
+            ),
+            ("a.rs", "// Concern: a | Non-concern: b | IO: none\n"),
+        ],
+    );
+    assert_eq!(code, 1, "a wrapped charter is still malformed:\n{out}");
+    assert!(
+        out.contains("remove the `<!--` and `-->`"),
+        "the diagnosis names the marker to delete:\n{out}"
+    );
+    assert!(
+        !out.contains("field separators are missing"),
+        "and never claims the separators are missing when they are there:\n{out}"
+    );
+    assert!(
+        out.contains("suggestion: Concern: demo crate | Non-concern: y | IO: none"),
+        "the suggestion is the line from inside the wrapper — usable as printed:\n{out}"
+    );
+}
+
+#[test]
+fn yaml_frontmatter_keeps_line_one_and_the_annotation_still_counts() {
+    // Frontmatter must keep line 1, so requiring the annotation above it made shipping Claude Code skills and enforcing `--strict-check` mutually exclusive.
+    let (out, code) = check(
+        "frontmatter",
+        &["--no-guide"],
+        &[
+            (
+                "SKILL.md",
+                "---\ndescription: reviews code\n---\n<!-- Concern: the review brief | Non-concern: running it | IO: none -->\n\n# Skill\n",
+            ),
+            ("rule.md", "---\n\nopens with a horizontal rule\n"),
+        ],
+    );
+    assert_eq!(code, 1, "only the rule-opener file fails:\n{out}");
+    assert!(
+        !out.contains("SKILL.md"),
+        "an annotation under frontmatter passes:\n{out}"
+    );
+    assert!(
+        out.contains("rule.md:1: missing annotation"),
+        "an unclosed `---` is a horizontal rule, not a prefix to skip:\n{out}"
+    );
+    assert!(
+        out.contains("1 of 2 files annotated"),
+        "the skill counts toward coverage:\n{out}"
+    );
+}
+
+#[test]
+fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
+    // An `.annotation`'s stray lines reach no report surface, on any of the three shapes that produce them — and the malformed-first-line cases prove the precedence rule: without it, `found:` and `suggestion:` echo the stray line and ONE finding prints as THREE lines.
+    let files = &[
+        ("main.rs", "// Concern: a | Non-concern: b | IO: none\n"),
+        (
+            "noisy/.annotation",
+            "Concern: NOISY | Non-concern: n | IO: none\nSTRAY-VALID-FIRST-LINE\n",
+        ),
+        (
+            "noisy/inner.rs",
+            "// Concern: c | Non-concern: d | IO: none\n",
+        ),
+        (
+            "broken/.annotation",
+            "not a charter line\nSTRAY-MALFORMED-FIRST-LINE\n",
+        ),
+        (
+            "broken/inner.rs",
+            "// Concern: e | Non-concern: f | IO: none\n",
+        ),
+        ("trials.csv", "a,b\n"),
+        (
+            "trials.csv.annotation",
+            "not even a charter line\nSTRAY-SIDECAR\n",
+        ),
+    ];
+    let (out, code) = check("no-stray-text", &["--no-guide"], files);
+    assert_eq!(code, 1, "{out}");
+
+    for stray in [
+        "STRAY-VALID-FIRST-LINE",
+        "STRAY-MALFORMED-FIRST-LINE",
+        "STRAY-SIDECAR",
+    ] {
+        assert!(!out.contains(stray), "{stray} reached the report:\n{out}");
+    }
+
+    // Three artifacts, three findings, each located and each on ONE line. Sorted by path, so the report is deterministic regardless of walk order.
+    for located in [
+        "broken/.annotation:2: holds more than the one line",
+        "noisy/.annotation:2: holds more than the one line",
+        "trials.csv.annotation:2: holds more than the one line",
+    ] {
+        assert!(out.contains(located), "missing {located:?}:\n{out}");
+    }
+    assert!(
+        out.contains("Found 3 annotation file(s) with trailing content"),
+        "{out}"
+    );
+
+    // And NOTHING was diagnosed about any of their parts — including the two whose first line is malformed, which is the whole point of the precedence rule.
+    assert!(
+        out.contains("All 4 files passed"),
+        "no annotation violation: main.rs, noisy/inner.rs, broken/inner.rs and trials.csv are the \
+         four checked files:\n{out}"
+    );
+    assert!(
+        out.contains("3 of 4 files annotated"),
+        "the CSV's contract does not conform, so it is not counted as annotated:\n{out}"
     );
 }

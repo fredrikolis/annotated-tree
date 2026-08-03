@@ -1,4 +1,6 @@
 /target
-# Extracted release binaries staged for `npm/scripts/build-npm.mjs` and other
-# packaging — injected from release artifacts, never committed.
+# Extracted release binaries staged for `distribution/npm/scripts/build-npm.mjs`
+# and other packaging — injected from release artifacts, never committed.
 /dist
+# Claude Code writes permission approvals here; the tracked example is .claude/settings.json.
+.claude/settings.local.json

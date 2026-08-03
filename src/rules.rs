@@ -1,4 +1,4 @@
-// Concern: declares the resolved `[rules]` table and evaluates its dependency half (denied edges, forbidden cycles/orphans) | Non-concern: computing edges, enforcing the annotation length bound it declares, or formatting the report | IO: (packages, Rules) -> Vec<Violation>
+// Concern: declares the `[rules]` table and evaluates its dependency half — deny, cycles, orphans | Non-concern: computing edges, or enforcing the bound | IO: (packages, Rules) -> Vec<Violation>
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -83,9 +83,7 @@ pub struct Violation {
 pub fn evaluate(packages: &[PackageEdges], rules: &Rules) -> Vec<Violation> {
     let mut out = Vec::new();
 
-    // Fail-Fast (DbC on user config): a rule that names a package absent from the
-    // tree can never fire, silently masking the author's intent — surface it as a
-    // finding rather than passing quietly.
+    // Fail-fast on user config: a rule naming a package absent from the tree can never fire, silently masking the author's intent.
     unknown_deny_packages(packages, &rules.deny, &mut out);
     deny_violations(packages, &rules.deny, &mut out);
     if rules.forbid_cycles {
@@ -176,8 +174,7 @@ fn orphan_violations(packages: &[PackageEdges], out: &mut Vec<Violation>) {
 }
 
 fn cycle_violations(packages: &[PackageEdges], out: &mut Vec<Violation>) {
-    // Index packages so edges become node indices; only resolved edges whose target
-    // is a package in the SAME ecosystem form a real arc.
+    // Only a resolved edge whose target is a package in the SAME ecosystem forms a real arc.
     let mut index: HashMap<(Ecosystem, &str), usize> = HashMap::new();
     for (i, pkg) in packages.iter().enumerate() {
         index.insert((pkg.ecosystem, pkg.name.as_str()), i);
@@ -195,8 +192,7 @@ fn cycle_violations(packages: &[PackageEdges], out: &mut Vec<Violation>) {
 
     for cycle in find_cycles(&adjacency) {
         let mut names: Vec<&str> = cycle.iter().map(|&i| packages[i].name.as_str()).collect();
-        // The ordered node path (members in cycle order, loop NOT closed) — the
-        // structured counterpart of the ` -> `-joined message.
+        // Members in cycle order with the loop NOT closed — the structured counterpart of the ` -> `-joined message.
         let path: Vec<String> = names.iter().map(|s| s.to_string()).collect();
         names.push(names[0]); // close the loop for a readable A -> B -> C -> A message
         out.push(Violation {
@@ -292,8 +288,7 @@ mod tests {
             forbid_cycles: true,
             ..Default::default()
         };
-        // The real contract: one cycle reported exactly once, naming its members. The
-        // exact ` -> `-joined render is a presentation detail, not frozen here.
+        // The ` -> `-joined render is a presentation detail, deliberately not frozen here.
         let msgs = messages(&packages, &rules);
         assert_eq!(msgs.len(), 1, "one cycle reported once: {msgs:?}");
         assert!(
@@ -310,8 +305,7 @@ mod tests {
             forbid_cycles: true,
             ..Default::default()
         };
-        // Once-only edge case: the 2-cycle is reachable from both nodes but reported
-        // a single time.
+        // A 2-cycle is reachable from both nodes and must still be reported once.
         let msgs = messages(&packages, &rules);
         assert_eq!(
             msgs.len(),
@@ -359,9 +353,7 @@ mod tests {
             deny: vec![("web".to_string(), "core".to_string())],
             ..Default::default()
         };
-        // Behaviour only: a matched deny fires (paired with `deny_ignores_a_non_matching_edge`
-        // for the silent case). The exact prose is frozen once at the e2e level
-        // (tests/rules.rs), so this asserts it fires and names both packages, no more.
+        // The prose is frozen once at the e2e level (tests/rules.rs), so this asserts firing and package-naming, no more.
         let msgs = messages(&packages, &rules);
         assert_eq!(msgs.len(), 1, "a matched deny rule fires once: {msgs:?}");
         assert!(
@@ -389,10 +381,7 @@ mod tests {
             deny: vec![("web".to_string(), "ghost".to_string())],
             ..Default::default()
         };
-        // Behaviour only (consistent with the sibling tests above, which assert firing
-        // and package-naming rather than the exact prose — that prose is frozen once at
-        // the e2e level): a deny rule naming an absent package fires exactly one finding
-        // that names the ghost package.
+        // Behaviour only, as in the sibling tests: the prose is frozen once at the e2e level.
         let msgs = messages(&packages, &rules);
         assert_eq!(msgs.len(), 1, "unknown-package deny fires once: {msgs:?}");
         assert!(
@@ -404,8 +393,7 @@ mod tests {
 
     #[test]
     fn orphan_packages_is_the_shared_definition() {
-        // The definition the `forbid_orphans` rule builds on: exactly the package with no
-        // edge in or out is returned, and the connected pair (web -> core) is not.
+        // The shared definition `forbid_orphans` builds on, asserted directly rather than through the rule.
         let packages = [pkg("web", &["core"]), pkg("core", &[]), pkg("lonely", &[])];
         let orphans: Vec<&str> = orphan_packages(&packages)
             .iter()
@@ -425,8 +413,7 @@ mod tests {
             forbid_orphans: true,
             ..Default::default()
         };
-        // Behaviour only (as above): the one package with no edge in or out is flagged
-        // by name, and the two connected packages are not.
+        // Behaviour only, as above.
         let msgs = messages(&packages, &rules);
         assert_eq!(msgs.len(), 1, "only the orphan is flagged: {msgs:?}");
         assert!(

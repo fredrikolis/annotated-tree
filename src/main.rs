@@ -7,11 +7,7 @@ use annotated_tree::exit;
 
 fn main() -> ExitCode {
     let cli = annotated_tree::parse_cli();
-    // Wrap `io::stdout()` (which locks per write) rather than holding a persistent
-    // `stdout.lock()` guard across the whole run: `--mcp` hands stdout to an rmcp
-    // stdio server whose tokio writer locks std stdout from a blocking-pool thread,
-    // which would deadlock against a guard held on this thread. BufWriter still
-    // batches, so normal runs pay no extra locking.
+    // Wrapping `io::stdout()` takes the lock once per flushed block rather than once per formatted fragment, and nothing else in the process needs stdout.
     let mut handle = io::BufWriter::new(io::stdout());
     let mut errout = io::stderr();
 
@@ -20,10 +16,7 @@ fn main() -> ExitCode {
             let _ = handle.flush();
             ExitCode::from(code as u8)
         }
-        // Any error out of `run()` is a precondition/environment failure (missing root
-        // dir, git/`--since` failure, bad config, I/O) — distinct from a clap usage error
-        // (exit 2, which clap emits itself before `run()`) and from a runaway-scope abort
-        // (exit 3, returned as `Ok`). Agents branch recovery on this code.
+        // Exit 2 arrives two ways — clap emits it before `run()` for a bad flag, and `bash-annotator` returns `Ok(2)` for an invocation it cannot act on — and a runaway-scope abort is exit 3. Agents branch recovery on this code.
         Err(err) => {
             let _ = handle.flush();
             let _ = writeln!(errout, "error: {err:#}");

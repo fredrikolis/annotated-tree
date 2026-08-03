@@ -1,9 +1,13 @@
-<!-- Concern: the invariants annotated-tree must always satisfy, and the vocabulary they quantify over | Non-concern: how any of them is implemented (src/ owns that), why one was adopted or retired (git history owns that), and how to author a good annotation (docs/annotation-guide.md owns that) | IO: none -->
+<!-- Concern: the invariants annotated-tree must always satisfy, and the vocabulary they quantify over | Non-concern: how any is implemented, why one was adopted, or how to author an annotation | IO: none -->
 # SPEC — annotated-tree
 
 The register of decisions annotated-tree is willing to freeze: a vocabulary of product
 entities and the invariants over them. How any of them is enforced — the gates, the hooks,
 the tests — lives with the enforcement, not here.
+
+**Intentionally under-specified.** Anything no clause forbids is admissible. A new capability
+needs no clause admitting it — only the absence of one it breaks, so read this to find what a
+change would violate, never to find permission for it.
 
 ## Vocabulary
 
@@ -15,6 +19,11 @@ the tests — lives with the enforcement, not here.
   it deliberately is not, and its inputs and outputs.
 - **Report** — everything a run emits about a Workspace on any channel a caller can observe,
   its exit status included.
+- **accessory** — anything annotated-tree offers that helps an agent consume Annotations outside a
+  Report, such as adding them to another program's output. It performs no run and emits no Report,
+  so nothing below governs it.
+- **maintenance** — a run that edits the Annotations of its own Workspace rather than only
+  reporting on them.
 
 ## TREE
 
@@ -27,8 +36,8 @@ an exclusion criterion the Report states and a reader can apply to any path.
 ## CHECK
 
 **CHECK1** — Every issue a Report raises about a file's or directory's Annotation is that one of
-its parts is absent, is empty after trimming whitespace, or is longer than a bound its caller
-gives.
+its parts is absent, that one of its parts is empty after trimming whitespace, or that the whole
+Annotation is longer than a bound its caller gives.
 
 ## CORE
 
@@ -42,4 +51,5 @@ annotates, and no Annotation appears anywhere else.
 **CORE3** — Every Annotation is recoverable by reading a fixed position in the artifact that
 carries it.
 
-**CORE4** — Every run creates, changes, or removes no artifact anywhere other than its Report.
+**CORE4** — Every run other than a maintenance creates, changes, or removes no artifact anywhere
+other than its Report.

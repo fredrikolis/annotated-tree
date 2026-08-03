@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::rules::Rules;
 
-const DEFAULT_CONFIG: &str = include_str!("../default_config.toml");
+const DEFAULT_CONFIG: &str = include_str!("default_config.toml");
 
 /// The raw, all-optional shape parsed from a TOML layer. Every layer omits most
 /// fields; merging overlays later layers onto earlier ones.
@@ -24,8 +24,8 @@ struct RawConfig {
 }
 
 /// Lint rules parsed from a `[rules]` table. Declarative and regex-free: `deny` names package
-/// pairs, the flags toggle structural checks, `max_annotation_length` bounds each annotation
-/// part.
+/// pairs, the flags toggle structural checks, `max_annotation_length` bounds the whole
+/// annotation line.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawRules {
@@ -86,7 +86,7 @@ pub struct CliOverrides {
     /// `max_files`: `None` = CLI silent (use config/default); `Some(None)` =
     /// `--full` (cap disabled); `Some(Some(n))` = `--max-per-node n`.
     pub max_per_node: Option<Option<usize>>,
-    /// `--max-length <N>`: the per-part annotation length bound. A plain `Option<usize>` —
+    /// `--max-length <N>`: the whole-annotation length bound. A plain `Option<usize>` —
     /// `None` is "the CLI said nothing; fall through to the config layers". There is no
     /// `--full`-style sentinel; `--max-length 0` is how you turn the shipped bound off,
     /// since 0 normalizes to "no bound" (the same normalization `--max-per-node 0` uses).
@@ -99,19 +99,14 @@ pub struct Display {
     pub ascii: bool,
     pub gitignore: bool,
     pub include_tests: bool,
-    /// Show at most this many subdirectories AND this many files per directory,
-    /// replacing the overflow with a `[+N folders and F files]` marker. `None`
-    /// means "no cap" (only via `--full`/`--max-per-node 0`). A display concern,
-    /// so it lives here, not in `Limits` — it truncates the rendered tree, it does
-    /// not bound the walk (every file is still visited).
+    /// Show at most this many subdirectories AND files per directory, replacing the overflow with a
+    /// `[+N folders and F files]` marker; `None` means no cap. A display concern, so it lives here
+    /// rather than in `Limits` — it truncates the rendered tree, it does not bound the walk.
     pub max_per_node: Option<usize>,
-    /// Glob selectors that ADD files of any type to the walk beyond the recognized-language
-    /// set (the `--include`/`[display] include` positive filter). A file is listed when its
-    /// extension maps to a known language OR it matches one of these; an unrecognized match
-    /// shows its annotation via marker-agnostic extraction. Empty means the default behaviour
-    /// (recognized languages only). Compiled to a `GlobSet` at the walk call site (via
-    /// [`crate::util::build_globset`]); kept as patterns here so config resolution stays
-    /// glob-free and a bad pattern surfaces at the walk, next to `-I`'s.
+    /// Glob selectors that ADD files of any type beyond the recognized-language set. A file is
+    /// listed when its extension maps to a known language OR matches one of these; an unrecognized
+    /// match shows its annotation via marker-agnostic extraction. Compiled to a `GlobSet` at the
+    /// walk call site, so a bad pattern surfaces there, next to `-I`'s.
     pub include: Vec<String>,
 }
 
@@ -135,21 +130,18 @@ pub struct Language {
     pub pattern: Option<Regex>,
 }
 
-/// The canonical, marker-free annotation body — one concrete, self-conforming instance of
-/// the fixed three-field format. The FORMAT is invariant, so the per-language example is
-/// DERIVED from (this body + the language's comment marker), never stored/configured. Kept
-/// distinct from [`crate::strict::EXPECTED`]'s abstract `{placeholder}` template: this is a
-/// filled, valid line, that is the fill-in contract.
+/// The canonical, marker-free annotation body — one concrete, self-conforming instance of the fixed
+/// three-field format. The FORMAT is invariant, so a per-language example is DERIVED from this body
+/// plus the language's marker, never configured. Distinct from [`crate::strict::EXPECTED`]'s
+/// abstract template: this is a filled, valid line, that is the fill-in contract.
 const EXAMPLE_BODY: &str =
     "Concern: runs the core loop | Non-concern: transport | IO: (Job) -> Result";
 
 impl Language {
     /// A full, conformant annotation line for this language — [`EXAMPLE_BODY`] wrapped in the
-    /// language's comment marker (line token, else block open/close, else docstring delimiter)
-    /// — shown verbatim in `--help` and `--strict-check` diagnostics. Derived rather than
-    /// configured because the format is invariant; a tested invariant
-    /// ([`tests::builtin_examples_are_self_conforming`]) guarantees it round-trips through the
-    /// extractor+validator as `Outcome::Ok`.
+    /// language's comment marker — shown verbatim in `--help` and `--strict-check` diagnostics.
+    /// Derived rather than configured because the format is invariant, and a tested invariant
+    /// guarantees it round-trips through the extractor and validator as `Outcome::Ok`.
     pub fn example(&self) -> String {
         if let Some(line) = &self.line {
             format!("{line} {EXAMPLE_BODY}")
@@ -168,9 +160,7 @@ impl Language {
 pub struct Config {
     pub display: Display,
     pub limits: Limits,
-    // Architectural `[rules]` are a strict-check concern the internal crate consumes; kept
-    // crate-private so making `Config` a public type does not leak the internal `Rules` shape
-    // into the library API (the low-level walk/annotation consumer never needs it).
+    // Architectural `[rules]` are a strict-check concern the internal crate consumes; kept crate-private so making `Config` a public type does not leak the internal `Rules` shape into the library API (the low-level walk/annotation consumer never needs it).
     pub(crate) rules: Rules,
     languages: Vec<Language>,
     ext_to_lang: HashMap<String, usize>,
@@ -243,9 +233,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
         dd.gitignore = sd.gitignore.or(dd.gitignore);
         dd.include_tests = sd.include_tests.or(dd.include_tests);
         dd.max_per_node = sd.max_per_node.or(dd.max_per_node);
-        // `include` is a whole list, so a layer that sets it REPLACES (not appends) — the same
-        // precedence `[rules] deny` uses, so a repo file can fully re-state the selectors rather
-        // than inherit a user file's. CLI selectors are folded in additively later, in `resolve`.
+        // `include` is a whole list, so a layer that sets it REPLACES (not appends) — the same precedence `[rules] deny` uses, so a repo file can fully re-state the selectors rather than inherit a user file's. CLI selectors are folded in additively later, in `resolve`.
         dd.include = sd.include.or_else(|| dd.include.take());
     }
     if let Some(sl) = src.limits {
@@ -254,8 +242,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
     }
     if let Some(sr) = src.rules {
         let dr = dst.rules.get_or_insert_with(Default::default);
-        // `deny` is a whole list, so a layer that sets it replaces (not appends);
-        // the flags overlay per the standard `.or()` precedence.
+        // `deny` is a whole list, so a layer that sets it replaces (not appends); the flags overlay per the standard `.or()` precedence.
         dr.deny = sr.deny.or_else(|| dr.deny.take());
         dr.forbid_cycles = sr.forbid_cycles.or(dr.forbid_cycles);
         dr.forbid_orphans = sr.forbid_orphans.or(dr.forbid_orphans);
@@ -269,9 +256,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
 
 fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     let disp = raw.display.unwrap_or_default();
-    // Selectors are config-first, then CLI: a config `[display] include` sets a baseline and
-    // each `--include` on the command line ADDS to it, so a run can widen the tree beyond what
-    // the repo file already opts in without having to re-state it.
+    // Selectors are config-first, then CLI: a config `[display] include` sets a baseline and each `--include` on the command line ADDS to it, so a run can widen the tree beyond what the repo file already opts in without having to re-state it.
     let mut include = disp.include.clone().unwrap_or_default();
     include.extend(cli.include.iter().cloned());
     let display = Display {
@@ -296,27 +281,12 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
     for (name, lang) in entries {
-        let pattern =
-            match &lang.pattern {
-                Some(p) => Some(Regex::new(p).with_context(|| {
-                    format!("language '{name}': invalid extraction pattern `{p}`")
-                })?),
-                None => None,
-            };
-        let block = lang.block.map(|[open, close]| (open, close));
-
         let idx = languages.len();
         for ext in &lang.extensions {
             let key = ext.strip_prefix('.').unwrap_or(ext).to_lowercase();
             ext_to_lang.insert(format!(".{key}"), idx);
         }
-        languages.push(Language {
-            name,
-            line: lang.comment,
-            block,
-            docstring: lang.docstring.unwrap_or_default(),
-            pattern,
-        });
+        languages.push(to_language(name, lang)?);
     }
 
     Ok(Config {
@@ -328,22 +298,53 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     })
 }
 
+/// One `[languages.*]` entry resolved into a [`Language`]. Its own function so the raw shape is
+/// turned into the resolved one in ONE place, whether the entry arrives from a merged layer through
+/// [`resolve`] or straight from the built-in table through [`builtin_markdown`].
+fn to_language(name: String, raw: RawLanguage) -> Result<Language> {
+    let pattern = match &raw.pattern {
+        Some(p) => Some(
+            Regex::new(p)
+                .with_context(|| format!("language '{name}': invalid extraction pattern `{p}`"))?,
+        ),
+        None => None,
+    };
+    Ok(Language {
+        name,
+        line: raw.comment,
+        block: raw.block.map(|[open, close]| (open, close)),
+        docstring: raw.docstring.unwrap_or_default(),
+        pattern,
+    })
+}
+
+/// The Markdown [`Language`] as the BUILT-IN table defines it, for reading a document compiled into
+/// the binary. Derived from [`DEFAULT_CONFIG`] rather than restated, so it cannot drift from the
+/// built-in grammar the gate starts from before a user's file layers over it.
+/// Reads nothing: the table is compiled in, as [`builtin_example`] is.
+pub(crate) fn builtin_markdown() -> Language {
+    let mut raw: RawConfig =
+        toml::from_str(DEFAULT_CONFIG).expect("built-in default config is valid TOML");
+    let markdown = raw
+        .languages
+        .remove("markdown")
+        .expect("built-in default config defines a markdown language");
+    to_language("markdown".to_string(), markdown)
+        .expect("built-in markdown language needs no pattern to compile")
+}
+
 /// A representative conformant annotation line for `--help`'s ANNOTATION FORMAT block: the
-/// canonical [`EXAMPLE_BODY`] with the default `//` line marker (the help text separately
-/// notes how the marker varies by language). Derived from the same body every language's
-/// [`Language::example`] wraps, so `--help` and `--strict-check` cannot advertise different
-/// exemplars.
+/// canonical [`EXAMPLE_BODY`] with the default `//` marker, the help text separately noting how the
+/// marker varies. Derived from the same body every language's [`Language::example`] wraps, so
+/// `--help` and `--strict-check` cannot advertise different exemplars.
 pub fn builtin_example() -> String {
     format!("// {EXAMPLE_BODY}")
 }
 
 /// Resolve the `[rules]` table. Takes the CLI overrides because `max_annotation_length` has a
-/// `--max-length` flag, which must win over the merged config layers like every other CLI
-/// value (built-in < user < repo < CLI). A resolved bound of `0` normalizes to `None` (no
-/// bound) exactly as [`resolve_max_per_node`] does for its own numeric knob: an empty field is
-/// already fatal, so a literal bound of 0 could only mean "fail every annotation", which is
-/// never what a caller asks for — and it doubles as the way to switch the shipped bound (200,
-/// from the built-in layer) off from the command line.
+/// `--max-length` flag, which must win over the merged layers like every other CLI value. A
+/// resolved bound of `0` normalizes to `None`, as [`resolve_max_per_node`] does: an empty field is
+/// already fatal, so a literal 0 could only mean "fail everything" — and it is how you switch it off.
 fn resolve_rules(raw: RawRules, cli: &CliOverrides) -> Rules {
     Rules {
         deny: raw
@@ -445,9 +446,7 @@ mod tests {
 
     #[test]
     fn builtin_example_matches_rust_derived() {
-        // `--help` sources its exemplar from `builtin_example()`; it must equal the `//`
-        // (Rust/Go/TS) language's DERIVED example, so help and the per-file diagnostic
-        // advertise the same body from the one `EXAMPLE_BODY` source.
+        // `--help` sources its exemplar from `builtin_example()`; it must equal the `//` (Rust/Go/TS) language's DERIVED example, so help and the per-file diagnostic advertise the same body from the one `EXAMPLE_BODY` source.
         let raw: RawConfig = toml::from_str(DEFAULT_CONFIG).unwrap();
         let config = resolve(raw, &CliOverrides::default()).unwrap();
         let rust = config

@@ -25,7 +25,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp installer/install.sh annotated-tree-installer.sh
+          cp distribution/install.sh annotated-tree-installer.sh
           gh release upload "${{ github.ref_name }}" annotated-tree-installer.sh --clobber
 
   upload-assets:
@@ -51,8 +51,6 @@ jobs:
             os: macos-latest
           - target: aarch64-apple-darwin
             os: macos-latest
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -102,35 +100,27 @@ jobs:
         run: |
           set -eux
           tag="${{ github.ref_name }}"
-          targets="x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin x86_64-pc-windows-msvc"
+          targets="x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin"
           for target in $targets; do
             mkdir -p "dist/${target}"
-            # taiki-e packages Windows targets as .zip, every other target as .tar.gz.
-            case "$target" in
-              *windows*) ext=zip ;;
-              *)         ext=tar.gz ;;
-            esac
-            archive="annotated-tree-${target}.${ext}"
+            archive="annotated-tree-${target}.tar.gz"
             gh release download "$tag" -p "$archive" -O "$archive" --clobber
-            if [ "$ext" = zip ]; then
-              unzip -o "$archive" -d "dist/${target}"
-            else
-              tar -xzf "$archive" -C "dist/${target}"
-            fi
+            tar -xzf "$archive" -C "dist/${target}"
           done
       - name: Stamp version + inject binaries
         run: |
           set -eux
           version="${GITHUB_REF_NAME#v}"
-          node npm/scripts/build-npm.mjs "$version" dist
+          node distribution/npm/scripts/build-npm.mjs "$version" dist
       # No NODE_AUTH_TOKEN: `npm publish` auto-detects the OIDC id-token. Unscoped
       # packages are public by default; provenance is emitted automatically.
       - name: Publish platform packages then main package (OIDC)
         run: |
           set -eux
-          for plat in linux-x64-musl linux-arm64-musl darwin-x64 darwin-arm64 win32-x64; do
-            npm publish "./npm/platforms/${plat}"
+          for plat in linux-x64-musl linux-arm64-musl darwin-x64 darwin-arm64; do
+            npm publish "./distribution/npm/platforms/${plat}"
           done
-          # Leading ./ is REQUIRED: `npm publish npm` treats `npm` as the package spec
-          # (tries to republish the npm CLI); `./npm` publishes the local directory.
-          npm publish ./npm
+          # Leading ./ is REQUIRED: a bare `npm publish npm` would treat `npm` as the
+          # package spec (and try to republish the npm CLI); a leading ./ publishes the
+          # local directory.
+          npm publish ./distribution/npm

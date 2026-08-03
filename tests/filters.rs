@@ -1,4 +1,4 @@
-// Concern: end-to-end tests for the file-visibility filters — the -I/--ignore globs, --include-tests, and the --include selector | Non-concern: rendering glyphs | IO: (temp tree, flags) -> asserted stdout
+// Concern: freezes which files the -I/--ignore globs, --include-tests and the --include selector make visible | Non-concern: how a visible file renders | IO: (temp tree) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -122,8 +122,7 @@ fn include_glob_adds_unrecognized_files_with_marker_agnostic_annotation() {
         "an unrecognized extension is hidden by default:\n{base}"
     );
 
-    // `--include '*.zsh'` ADDS the shell script (recognized files stay), and its annotation is
-    // read marker-agnostically even though the config has no `.zsh` language.
+    // `--include '*.zsh'` ADDS the shell script (recognized files stay), and its annotation is read marker-agnostically even though the config has no `.zsh` language.
     let included = run(&dir, &["--include", "*.zsh"]);
     assert!(
         included.contains("main.rs"),
@@ -149,9 +148,7 @@ fn include_glob_adds_unrecognized_files_with_marker_agnostic_annotation() {
 #[test]
 fn strict_check_stays_recognized_only_under_include() {
     let dir = temp_tree_mixed("strict");
-    // `--include` governs the TREE view alone: `--strict-check` still lints recognized languages
-    // only, so it examines just `main.rs` and never the opted-in `.zsh`/`.bin` (whose comment
-    // grammar it could not validate). The tree's one `.rs` is annotated, so the gate passes.
+    // `--include` governs the TREE view alone: `--strict-check` still lints recognized languages only, so it examines just `main.rs` and never the opted-in `.zsh`/`.bin` (whose comment grammar it could not validate). The tree's one `.rs` is annotated, so the gate passes.
     let (code, out) = run_raw(&dir, &["--strict-check", "--include", "*"]);
     assert_eq!(code, 0, "the one recognized file is annotated:\n{out}");
     assert!(

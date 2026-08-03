@@ -1,12 +1,13 @@
-<!-- Concern: what annotated-tree is, when and why to use it, and how to adopt it in a project (CLAUDE.md, git hooks, config) | Non-concern: the exhaustive flag reference (annotated-tree --help owns it) or the extended argument | IO: none -->
+<!-- Concern: what annotated-tree is, when and why to use it, and how to adopt it in a project | Non-concern: the exhaustive flag reference (--help owns it) or the extended argument | IO: none -->
 # annotated-tree [![CI](https://github.com/fredrikolis/annotated-tree/actions/workflows/ci.yml/badge.svg)](https://github.com/fredrikolis/annotated-tree/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/annotated-tree.svg)](https://crates.io/crates/annotated-tree) [![npm](https://img.shields.io/npm/v/annotated-tree.svg)](https://www.npmjs.com/package/annotated-tree) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 `annotated-tree` extends Unix `tree`. Alongside the directory structure it renders each
 file's one-line **responsibility annotation**, giving an agent a fast map of a workspace,
 what every file is for, without opening the files. The annotation is a strict, checkable
 format, so the map cannot silently go missing or lose its shape, and an agent trusts it
-instead of re-deriving the structure each session. For code, it also cross-references
-package manifests into a cross-ecosystem dependency graph.
+instead of re-deriving the structure each session. It can also annotate the results of your
+agent's exploration tool calls. For code, it cross-references package manifests into a
+cross-ecosystem dependency graph.
 
 ```
 $ annotated-tree
@@ -22,13 +23,13 @@ $ annotated-tree
 ## Intended usage
 
 1. **Annotate every file.**  
-Have your agent write a one-line contract at the top of each file: what it is for, and what it is deliberately not. The `Non-concern` is the most valuable field, the boundary an agent would otherwise guess wrong (see [the format](#the-format) and [Good vs bad annotations](#good-vs-bad-annotations)).
+Have your agent write a one-line annotation at the top of each file (point it at `annotated-tree --annotation-guide` for editorial guidance). `Non-concern` is often the most valuable field as it documents the architectural/structural boundary the content itself does not speak to (see [the format](#the-format)).
 
-2. **Enforce it with a local git hook.**  
-It fails on a missing or stale annotation and catches it while the agent still has the context to fix it, so the map never rots (see [Enforce it](#enforce-it)).
+2. **Prevent stale annotations using a git hook.**  
+Well-written commit-time githooks will catch: a) **structural** issues mechanically using `annotated-tree --strict-check` and, b) **editorial** issues using a neutral agent reviewer (see ours here [`.githooks/`](.githooks/)). Blocking at commit catches the rot while the agent still has the context to fix it.
 
-3. **Read it at the start of every fresh session.**  
-Point your agent at the map before it touches code; it pays off most in architectural planning and bug-finding (see [Wire it into every session](#wire-it-into-every-session)).
+3. **Put them in front of the agent during daily work.**  
+Most agents did not see `annotated-tree` in their training set and will reflexively explore a folder using traditional `grep`/`find`/`ls`. To make sure that agents still see and use annotations for decision making, we can install a `PreToolUse` hook (see ours here [`.claude/settings.json`](.claude/settings.json)). The tool call still runs unchanged, but each path in the output is printed along with its annotation.
 
 ## TL;DR (for humans)
 
@@ -40,12 +41,12 @@ If agents do real work in your repo, you have hit these:
 - Its **memory and skill files** have drifted into a duplicated mess.
 
 `annotated-tree` fixes the cause, not the symptoms. It **makes your agent write a
-one-line contract at the top of every file** (what the file is for, and what it is
-deliberately not), and **a local git hook enforces it**, so the contracts can't go
+one-line annotation at the top of every file** (what the file is for, and what it is
+deliberately not), and **a local git hook enforces it**, so the annotations can't go
 missing or rot.
 That is workspace hygiene your agent keeps up itself.
 
-Once every file carries its contract, one command renders the whole workspace, each
+Once every file carries its annotation, one command renders the whole workspace, each
 file's job and how the code connects, so your agent plans against real structure instead
 of re-deriving it every session. The overview is only worth trusting *because* the
 process guarantees it is complete.
@@ -57,17 +58,23 @@ Set up https://github.com/fredrikolis/annotated-tree in this workspace.
 First read the raw README so you work from the source, not your priors:
 https://raw.githubusercontent.com/fredrikolis/annotated-tree/main/README.md
 
-Then install it, annotate the workspace (in batches if it's large, busiest areas
-first), add a local git hook that enforces annotations, and wire the map into
-every session. Set up only what fits, not everything. Recommend, then do it, and
-ask me only where you actually need a call.
+Then:
+- Install it.
+- Annotate the workspace in batches, busiest areas first. Editorial guidance:
+  `annotated-tree --annotation-guide`.
+- Add the commit-time git hooks. Setup guide: `annotated-tree --githook-guide`.
+- Put annotations in tool results:
+  `annotated-tree bash-annotator --install-claude-hook .claude/settings.json`.
+  Naming the file keeps it to this workspace; the default is my global
+  settings. Tell me to restart Claude Code afterwards, or it does not take
+  effect.
+- Wire the map into every session.
+
+Set up only what fits, not everything. Recommend, then do it, and ask me only
+where you actually need a call.
 ```
 
 ## Rationale (long read for agents)
-
-The extended argument (the infinite-context objection, related work, what is still
-unproven) and the full references for every citation on this page live in
-[README_APPENDIX.md](README_APPENDIX.md).
 
 ### Agentic development is software automation
 
@@ -161,7 +168,7 @@ only the opener; Markdown and HTML need both, e.g.
 `<!-- Concern: ... | Non-concern: ... | IO: ... -->`.
 
 - **Form.** All three fields must be present and non-empty. `--strict-check`
-  enforces that, plus a per-field length bound of 200 characters by default, and
+  enforces that, plus a 200-character bound on the whole annotation by default, and
   it **never checks what a field says**.
 - **Content.** Every field states WHAT, never why, how, or when. No mechanism,
   no rationale, no conditions. That one is a writing rule, not a check.
@@ -240,17 +247,26 @@ You can see it at once. `proposal` and `findings` rest on `sources/`. `NOTES.md`
 the log, not the spec. `experiments/` is disposable by design. You know where a new
 source file goes, and what it must not turn into, without opening one.
 
+`trials.csv` is a plain CSV with nowhere to put a comment, so its line lives in a
+`trials.csv.annotation` file beside it — a *sidecar*, holding the same bare
+`Concern | Non-concern | IO` line a folder's `.annotation` holds. The sidecar is the
+opt-in: a file that carries one is listed whatever its extension, and the sidecar
+itself never takes a row of its own. Only a file with no comment syntax gets one, so
+there is never a second place to look for a source file's annotation.
+
 A directory gets a charter the same way. A folder has one job too, the coarsest
 routing call an agent makes (does this change even belong in here), so it can carry
 its own `Concern | Non-concern | IO` line, promoted onto the folder's row in the tree
 (you saw one on `core/` at the top). Give it one with a `.annotation` file in the
 folder, or let its entry file stand in for free (`lib.rs`/`main.rs`, `mod.rs`,
 `__init__.py`, an `index.*`, a `doc.go`); the opt-in `require_package_charter` rule
-can require every package with a manifest to have one.
+can require every package with a manifest to have one. An `.annotation` carries the
+charter line and no prose under it. `--strict-check` fails a note written below (blank
+lines are fine); put the note in a README.
 
 ### How an agent uses it
 
-Five uses, roughly in the order a task hits them.
+Three uses, roughly in the order a task hits them.
 
 **Plan, before writing a line.** Read the tree to find the unit that already *owns*
 the concern you are about to touch, and put the change there instead of inventing a
@@ -264,7 +280,9 @@ state in one line, with a real `Non-concern`, is a design you have not made yet.
 Y" is the easy half. The half only a map can do is the unknown unknowns: grep finds
 what you already suspect is there (you search `retry`, `cache`, `auth` because you
 know to look), but you cannot grep a capability you do not know exists. The map indexes
-concerns, not identifiers.
+concerns, not identifiers. It reaches you two ways: rendered on demand, or appended to
+your own `ls` and `find` results when the tool-call annotator is on, so a listing carries
+the same concerns the tree does.
 
 ```
 core/
@@ -280,24 +298,12 @@ beside the others, and shipped, never learning that `planner.py` already routes 
 job through a cost-based optimizer. The map surfaces it and the real task changes
 shape: register with the optimizer, do not sit next to it. *Outcome: you reuse what
 exists instead of rebuilding a worse copy in the wrong place.* (To hand the map to
-another tool instead of reading it yourself, `--format json` or the built-in MCP
-server serve the same thing as structured data.)
+another tool instead of reading it yourself, `--format json` serves the same thing as
+structured data.)
 
 **Review and impact.** `--changed` shows what a branch touched plus its
 reverse-dependency blast radius, the things downstream that could break. *Outcome: you
 scope a review, or a change, to exactly what it can break.*
-
-**Check, mid-task.** Run `--strict-check` on yourself before committing and fix what it
-flags, presence and form, not a verdict on truth. Drift between a line and its code is
-a signal to fix in review, not a hard gate. *Outcome: annotations stay
-conformant before the commit hook ever has to reject you.*
-
-**Enforce, at commit.** The same `--strict-check` in a local pre-commit hook exits
-nonzero and blocks the commit before it lands, so coverage never silently rots. It gates architecture
-too: `deny` / `forbid_cycles` / `forbid_orphans` turn your intended boundaries into
-lint, failing the build when `web` reaches into `core` or a cycle appears. *Outcome:
-the map, and the architecture, cannot decay.* Setup is under
-[How to install and use it](#how-to-install-and-use-it).
 
 One boundary: the tool renders, it does not reason. It makes structure observable and
 leaves every judgment (what to annotate, where a concern belongs, whether the work is
@@ -316,21 +322,67 @@ Same prebuilt binary on every channel.
   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/fredrikolis/annotated-tree/releases/latest/download/annotated-tree-installer.sh | sh
   ```
 
+**annotated-tree makes no network request of its own.** The only program it starts is `git`, for
+`--since`, and only with local commands. It reads files and writes to stdout. Two commands write
+to disk:
+
+- `bash-annotator --install-claude-hook` and `--uninstall-claude-hook`, which edit one file: your
+  Claude Code settings.
+- `strip`, which rewrites the files you name, or with `-R` every annotated file in a directory.
+
 ### The commands
 
 `annotated-tree [PATHS]...` prints the annotated tree. The main flags are below. Run
 `--help` for the full, exact reference.
 
-| Capability | Flag |
+| Capability | Flag or command |
 |---|---|
 | Annotated tree + dependency graph | *(default)* |
 | Structured output for tooling and agents | `--format json` (versioned schema), `md` |
 | Only what changed, plus blast radius | `--changed`, `--since <ref>` |
-| Serve to agents and editors as MCP tools | `--mcp` *(build with `--features mcp`)* |
 | Lint annotations + architectural rules (git hook or CI) | `--strict-check` |
-| Bound each annotation field's length *(200 by default)* | `--max-length <N>`, `0` to disable |
+| Bound the whole annotation's length *(200 by default)* | `--max-length <N>`, `0` to disable |
 | Cap entries shown per directory (big corpora) | `--max-per-node <N>`, `--full` |
 | Runaway-scope guard | `--max-files <N>` |
+| Remove first-line annotations in bulk | `strip [-R] [-y] <PATH>...` |
+
+**An agent shown an existing annotation edits that line instead of reading the code**, so strip the
+ones you want rewritten first. `strip` also removes them from a tree that should not carry
+them.
+
+- It lists the files it would change, and **writes nothing until you pass `-y`**.
+- A directory needs `-R`. Without it, `strip` exits 2.
+- Under `-R`, `strip` skips what the tree render skips: gitignored paths, `tests/`, and
+  `node_modules`.
+- `-I` narrows `strip` on files you name as well as files it walks.
+- It deletes a line only when the whole line is a conforming annotation.
+- `strip` takes the blank line under the annotation with it.
+- A line that opens with one delimiter and ends in something else, such as `<!-- ... --><div>`,
+  keeps its annotation.
+- A `.annotation` charter or sidecar is reported and skipped. The whole file is the annotation, so
+  removing it means deleting the file yourself.
+
+### Put the annotations in your agent's tool call results
+
+Your agent starts a task by searching, and what comes back is a list of paths that says
+nothing about what any of them is for. A Claude Code hook pipes your agent's own `grep`,
+`find` and `ls` output through an annotator, so the paths come back carrying the annotations.
+The commands themselves run exactly as written:
+
+```
+$ grep -rl "Renderer" src
+src/render/mod.rs  # Concern: the renderer seam — the `Renderer` trait, the format -> renderer factory, and the shared el …
+src/render/text.rs  # Concern: formats the canonical map as a `tree`-style text view | Non-concern: filesystem reads | IO: …
+```
+
+Same command, same files, one line each, and your agent types nothing different. (Two of the
+six result lines are shown, sorted and abridged for width here; the annotator itself does
+neither.) Switch it on with `annotated-tree bash-annotator --install-claude-hook`, and see
+what any command would become with `annotated-tree bash-annotator --check '<cmd>'`.
+
+If you allowlist Bash commands, a `Bash(grep:*)` rule stops matching once the command is
+rewritten, and those searches start prompting. Widen the rule, approve the prompts, or leave the
+hook off where the allowlist matters more.
 
 ### Wire it into every session
 
@@ -362,8 +414,10 @@ Three gates under `.githooks/` (enable with `git config core.hooksPath .githooks
    *true*. Gate the commit on a neutral reviewer (not the author) who checks, per changed
    file, that the annotation still holds after the diff: `Concern` names what the file now
    does, `Non-concern` still excludes a real boundary the file does not own (not a truism),
-   `IO` still matches. Block unless the message reports zero issues.
-   [`.githooks/commit-msg`](.githooks/commit-msg) is a working example.
+   `IO` still matches. Grade each finding by what the fix costs, and block only on the ones
+   that need rework: a gate demanding zero findings never converges, because a reviewer with
+   nothing at stake always finds one more. `--githook-guide` ships the exact attestation
+   shape. [`.githooks/commit-msg`](.githooks/commit-msg) is a working example.
 
 3. **Standards enforcement (optional, recommended, workspace-dependent).** Layer your
    repo's architectural and anti-litter rules on top. Lint-checkable ones go in a repo
@@ -384,7 +438,11 @@ dependency rules, so enforcement is a property of the repo, not each contributor
 machine. The annotation format is invariant; the only per-language knob is the comment
 marker. Teaching it a new language is a few lines of TOML (an extension list + comment
 marker, or a regex for exotic comment syntax), no code change. See the shipped
-[default_config.toml](default_config.toml) for the exact keys.
+[default_config.toml](src/default_config.toml) for the exact keys.
+
+The crate also exposes its walk, annotation and render primitives as a library. That surface
+carries no stability promise: no semver policy, no deprecation cycle, and a breaking change
+arrives as a compile error. 0.6.0 is such a change.
 
 ## Beyond the codebase
 
@@ -401,15 +459,21 @@ sales/                   # Concern: work the current lead list | Non-concern: wh
 
 The skills carry their concern and boundary the way code does, and the split between
 scoring and outreach reads at a glance. `customer-list.csv` has no comment line to
-hold an annotation (plain CSV has no comment syntax), so it renders as a bare name,
-and the `sales/` charter above it carries the meaning instead.
+hold an annotation (plain CSV has no comment syntax), so it renders as a bare name
+until you drop a `customer-list.csv.annotation` sidecar beside it; the `sales/`
+charter above it carries the meaning meanwhile.
 
 The layers stack: the code repo, the product workspace that feeds it features and
 bugs, the business workspace that decides what to build above that. Each is a
 workspace an agent works, fed from the layer above and feeding the one below. Make each
 layer legible and the automation scales up the org, not only the codebase.
 
-## A note about the author
+## Additional Reading
+The extended argument (the infinite-context objection, related work, what is still
+unproven) and the full references for every citation on this page live in
+[README_APPENDIX.md](README_APPENDIX.md).
+
+## About the author
 
 Fredrik Rydén holds a Ph.D. in telerobotics from the University of Washington and has
 spent some fifteen years keeping humans in control of machines: teleoperating surgical
