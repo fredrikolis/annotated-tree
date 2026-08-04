@@ -15,9 +15,10 @@ inbound issue / human idea
 PRODUCT MANAGER ─ owns the request end to end. Indentation is scope:
 │  every line below is spawned by PM and reports back to it.
 │
-├─ TRIAGE, PM's own work.  reproduce it, or confirm the attribution
-│                          does a unit already own it?  the map
-│                          is this the tool's job?      SPEC.md
+├─ TRIAGE, PM's own work, upstream of this repo.
+│     reproduce it, or confirm the attribution
+│     does a unit already own it?   the map
+│     does a clause forbid it?      SPEC.md
 │     any of these fails ──► answer on the issue, stop here
 │
 ├─ spawns PLANNER ─ plans against the standards doc.        ◄─────┐
@@ -35,7 +36,7 @@ a separate flow, many commits later, outside all of the above:
    tag ──► CI ──► release
 ```
 
-**Triage.** First the work the issue actually needs: reproduce the bug, or confirm a reported regression is attributed to the right cause. Then two questions the repo can already answer. Does a unit own this concern? The map says, and a request that duplicates one is a routing answer, not a feature. Is it the tool's job at all? `SPEC.md` says, so the call is made against something written instead of re-argued each time.
+**Triage.** This happens in the product manager's workspace, before anything reaches this repo, and it is the only place a request is turned down. First the work the issue actually needs: reproduce the bug, or confirm a reported regression is attributed to the right cause. Then two questions answered against something written rather than re-argued. Does a unit own this concern? The map says, and a request that duplicates one is a routing answer, not a feature. Does a clause forbid it? [`SPEC.md`](SPEC.md) says, and only in that direction: a capability needs no clause admitting it.
 
 **Plan.** Planning against the rubric you will be judged by makes the review a checklist already satisfied, not a late verdict. PM then reviews the plan adversarially and sends it back until it holds, for the same reason the code is reviewed: PLANNER is the worst judge of its own plan. The plan is never written into the repo, and gitignoring it would not help, because `ls`, `find` and `grep` surface it either way. Staleness is not the real cost. A plan states its premises as fact, some of them are wrong, and an agent that reads one adopts them as constraints. In a review cycle that compounds: a reviewer disproves a premise, the file goes on asserting it, and the next round picks it up again. A written claim outlives its own correction, and misleading text degrades a model more than absence does (Macke & Doyle, 2024). The plan lives in context, or in a workspace the agent is not working in.
 
@@ -98,6 +99,8 @@ See `annotated-tree --githook-guide` for what each hook demands and the exact at
 
 In order, not parallel: B judges annotations against content A may still be changing. Fresh context and no hints, because naming what changed tells a REVIEWER what counts and it stops looking. To re-review, say only `re-review`.
 
+**Scope is not a reviewer's question.** It was settled before a plan existed, and a reviewer sees neither the issue nor the case for the change; an observation goes back as one MINOR line to the product manager, never as grounds to re-plan.
+
 **The brief carries one thing: INTENT.** What the change set out to do, stated flatly, as a spec would state it: no reason it is worth doing, no defence of the approach, no account of what it replaces. This is most of what stands between a review and a rubber stamp: a reviewer handed a case for the change grades the case. A stricter regime exists, escrowing the intent before the work starts, but writing it at review time has held up well enough here that the extra ceremony has not earned its place.
 
 **Commit.** A commit editing a rubric it is judged against lands alone, unreviewed, by explicit bypass. Judging a yardstick against itself is circular.
@@ -118,7 +121,7 @@ We found the balance by having the reviewer sort every finding it reports into t
 **The rule is one line: iterate until MAJOR and MODERATE are both zero.** 
 That terminates cleanly because both blocking buckets mean the same thing: there is work the reviewer has not judged yet. When there is none left, the loop is over. MINOR is what makes it reachable, because a finding can be recorded without restarting the review. Nothing is suppressed and no reviewer is asked to pretend the code is clean; findings are declassified, never hidden, so the pressure stays on the code instead of on the report. The loop ends when the reviewer has seen everything that matters, not when it runs out of things to say.
 
-**Two approaches we tried that failed**, both landing on the right-hand end:
+**Two approaches we tried that failed**, both by never settling:
 
 | What we asked for | What we got |
 |---|---|
@@ -166,7 +169,7 @@ my-project-pm/          # the PM's workspace, private, never published
 └── experiments/        # throwaway spikes; the deliverable is a conclusion
 ```
 
-Add a `SPEC.md` in the repo at this point, and keep it [intentionally under-specified](SPEC.md): triage is the first thing the PM loop does, and it is the only stage that needs one.
+Add a `SPEC.md` in the repo at this point, and keep it [intentionally under-specified](SPEC.md). It is read at triage; no gate in the repo references it.
 
 Writing it is the same balancing act as tuning the review loop. Under-specify and anything goes; over-specify and agents begin rejecting good requests by citing a clause that was never meant to carry the weight. We keep it deliberately under-specified, so that anything no clause forbids is admissible, for the same reason a comment restating the code earns nothing. Two things earn a clause and nothing else does:
 
