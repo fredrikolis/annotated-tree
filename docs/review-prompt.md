@@ -1,5 +1,6 @@
 <!-- Concern: the canonical prompt each neutral reviewer is handed, and what its severities mean | Non-concern: which gate demands a review, or what a passing attestation looks like | IO: none -->
-NEUTRAL REVIEW — hand a reviewer in a FRESH context exactly ONE block below and nothing else.
+NEUTRAL REVIEW — hand a reviewer in a FRESH context exactly ONE block below, plus where the
+repo is, and nothing else.
 
 The diff is the only signal it gets about where to look. Naming what you changed, or what you
 suspect, tells it what counts, and it will find that and stop looking. To re-review, update the
@@ -38,6 +39,7 @@ gated, so a real nit has a home instead of being inflated into a blocker.
   and review nothing. A reviewer handed a case for the change grades the case.
 
   Review the staged diff (git diff --cached) against docs/repo-standards.md.
+  Judge the diff and its blast radius, not just the edited lines.
   Give EVERY principle in its summary table one line, plus one line each for
   circular imports, failing tests, hardcoded secrets and force-push to a
   protected branch:
@@ -62,10 +64,11 @@ INTENT is deliberately absent here. The annotation is judged against the file as
 what the author meant is a steering vector, not context.
 
   ----------------------------------------------------------------------
-  If you were handed anything beyond this block, stop and review nothing: report
-  'MAJOR — the brief was steered', then 'Annotation-MAJOR: 1', 'Annotation-MODERATE: 0' and
-  'Annotation-MINOR: 0'. Knowing what the author changed, or suspects, tells you what to
-  look for, and you will find that and stop looking.
+  A dispatcher may tell you where the repo is, and nothing else. If you were handed
+  anything further, stop and review nothing: report 'MAJOR — the brief was steered',
+  then 'Annotation-MAJOR: 1', 'Annotation-MODERATE: 0' and 'Annotation-MINOR: 0'.
+  Knowing what the author changed, or suspects, tells you what to look for, and you
+  will find that and stop looking.
 
   Derive the file list yourself: git diff --cached --name-only. Do not take one
   from the author. Review the staged diff against src/annotation-guide.md.
@@ -89,10 +92,11 @@ what the author meant is a steering vector, not context.
 == GATE C — COMMUNICATION STYLE ==
 
   ----------------------------------------------------------------------
-  If you were handed anything beyond this block, stop and review nothing: report
-  'MAJOR — the brief was steered', then 'Style-MAJOR: 1', 'Style-MODERATE: 0' and
-  'Style-MINOR: 0'. Knowing what the author changed, or suspects, tells you what to
-  look for, and you will find that and stop looking.
+  A dispatcher may tell you where the repo is, and nothing else. If you were handed
+  anything further, stop and review nothing: report 'MAJOR — the brief was steered',
+  then 'Style-MAJOR: 1', 'Style-MODERATE: 0' and 'Style-MINOR: 0'. Knowing what the
+  author changed, or suspects, tells you what to look for, and you will find that
+  and stop looking.
 
   Read docs/communication-style.md. It names the docs it governs; diff those
   paths with `git diff --cached -- <paths>` and take the list from there, never
@@ -101,7 +105,8 @@ what the author meant is a steering vector, not context.
   '- <Rule>: none | N/A — <why> | <SEVERITY> — <file:line, the finding>'.
   MAJOR    = one of the three checkable rules — a flag, example, or link that
              teaches the reader something that is not there. Verify against
-             `annotated-tree --help`, the source, and the actual headings.
+             the source, the actual headings, and `--help` from the binary
+             built from this tree, never an older copy on PATH.
   MODERATE = the fix requires new sentences — a claim reframed, a passage
              rewritten from the reader's side rather than ours. The review runs
              again.
