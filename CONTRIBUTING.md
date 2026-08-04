@@ -36,7 +36,7 @@ a separate flow, many commits later, outside all of the above:
    tag ──► CI ──► release
 ```
 
-**Triage.** This happens in the product manager's workspace, before anything reaches this repo, and it is the only place a request is turned down. First the work the issue actually needs: reproduce the bug, or confirm a reported regression is attributed to the right cause. Then two questions answered against something written rather than re-argued. Does a unit own this concern? The map says, and a request that duplicates one is a routing answer, not a feature. Does a clause forbid it? [`SPEC.md`](SPEC.md) says, and only in that direction: a capability needs no clause admitting it.
+**Triage.** This happens in the product manager's workspace, before anything reaches this repo, and it is the only place a request is turned down. First the work the issue actually needs: reproduce the bug, or confirm a reported regression is attributed to the right cause. Then two questions answered against something written rather than re-argued. Does a unit own this concern? The map says, and a request that duplicates one is a routing answer, not a feature. Does a clause forbid it? [`SPEC.md`](SPEC.md) says, and only in that direction: a capability needs no clause admitting it. Nothing in `.githooks/` reads it: a clause is applied by judgment, never by a gate.
 
 **Plan.** Planning against the rubric you will be judged by makes the review a checklist already satisfied, not a late verdict. PM then reviews the plan adversarially and sends it back until it holds, for the same reason the code is reviewed: PLANNER is the worst judge of its own plan. The plan is never written into the repo, and gitignoring it would not help, because `ls`, `find` and `grep` surface it either way. Staleness is not the real cost. A plan states its premises as fact, some of them are wrong, and an agent that reads one adopts them as constraints. In a review cycle that compounds: a reviewer disproves a premise, the file goes on asserting it, and the next round picks it up again. A written claim outlives its own correction, and misleading text degrades a model more than absence does (Macke & Doyle, 2024). The plan lives in context, or in a workspace the agent is not working in.
 
@@ -169,7 +169,7 @@ my-project-pm/          # the PM's workspace, private, never published
 └── experiments/        # throwaway spikes; the deliverable is a conclusion
 ```
 
-Add a `SPEC.md` in the repo at this point, and keep it [intentionally under-specified](SPEC.md). It is read at triage; no gate in the repo references it.
+Add a `SPEC.md` to the repo at this point, not to the workspace, and keep it [intentionally under-specified](SPEC.md). Triage reads it from the workspace, but it lives with the code it constrains, so every checkout carries the invariants.
 
 Writing it is the same balancing act as tuning the review loop. Under-specify and anything goes; over-specify and agents begin rejecting good requests by citing a clause that was never meant to carry the weight. We keep it deliberately under-specified, so that anything no clause forbids is admissible, for the same reason a comment restating the code earns nothing. Two things earn a clause and nothing else does:
 
