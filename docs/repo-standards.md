@@ -13,7 +13,6 @@ Universal principles. All languages. All paradigms.
 - **Failing tests**: All tests pass before commit
 - **Hardcoded secrets**: API keys, passwords, tokens in code → Environment variables
 - **Force push to main/master**: Never on protected branches
-- **Against the repo charter**: functionality outside the root `.annotation` concerns/non-concerns → update the charter (the repo's SoC) first, or don't build it
 
 ---
 
@@ -95,6 +94,8 @@ Presentation (API/UI)  →  Business Logic  →  Data Access
 ```
 
 Each layer depends only on the layer below. Never above.
+
+**A charter is a routing instrument, not a whitelist.** A unit's charter states one job at its own altitude, so it answers *does this change belong in here* — never *should this have been built*. A change that lands where the owning charter's `Non-concern:` denies it is a misrouting: move the change, or move the charter. A `Concern:` that does not enumerate an addition is NOT a finding — a charter names what its files have in common, never their sum (src/annotation-guide.md). Whether a capability should exist at all is decided before a plan exists, and is not a reviewer's question.
 
 **SoC governs several principles here.** A violation surfaces downstream as defensive code (DbC — doing a job you don't own), a leaking API (Minimal API — blast radius crossing a boundary), or a multi-concern monolith (File Size — split by concern *first*). Fix it at the source: give each unit one job.
 

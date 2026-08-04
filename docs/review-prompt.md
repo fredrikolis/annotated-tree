@@ -38,11 +38,18 @@ gated, so a real nit has a home instead of being inflated into a blocker.
   and review nothing. A reviewer handed a case for the change grades the case.
 
   Review the staged diff (git diff --cached) against docs/repo-standards.md.
-  Give EVERY principle in its summary table one line, plus its AUTO-REJECT list:
+  Give EVERY principle in its summary table one line, plus one line each for
+  circular imports, failing tests, hardcoded secrets and force-push to a
+  protected branch:
   '- <Principle>: none | N/A — <why> | <SEVERITY> — <finding>'.
-  MAJOR    = wrong — a bug, an unintended consequence, an AUTO-REJECT hit. The
-             resolution has to be re-planned by a neutral task agent that did not
-             write it, before implementation and re-review.
+  Scope is not your question. You are not shown the case for the change and
+  cannot weigh it; whether it should exist was settled before a plan existed.
+  If the diff looks like it should not have been built, say so in ONE line as
+  'MINOR — scope, for the product manager', and review everything else.
+  MAJOR    = wrong — a bug, an unintended consequence, or one of the four
+             blockers above. The resolution has to be re-planned by a neutral
+             task agent that did not write it, before implementation and
+             re-review.
   MODERATE = the fix requires new code — a restructure, move, extract, or delete.
              The review runs again.
   MINOR    = the fix reshapes what is already there.
@@ -67,11 +74,13 @@ what the author meant is a steering vector, not context.
   MAJOR    = missing or false — no annotation where one is due, or a line that
              claims a job the file does not do, stale after this diff.
   MODERATE = the fix requires a new claim of ownership — Concern is the wrong job,
-             a charter sits at file altitude, the line only fits by splitting the
-             file. The review runs again.
+             a charter sits at file altitude, the file's concern is one its
+             directory charter's Non-concern denies, or the line only fits by
+             splitting the file. The review runs again.
   MINOR    = the fix reshapes what is already there — words that can be cut without
              changing what the line claims, a truism to sharpen, IO wrong,
-             why/how/when in a field, a pointer the tree already shows.
+             why/how/when in a field, a pointer the tree already shows. A Concern
+             that does not enumerate a file's contents is NOT a finding.
   N/A      = the file cannot carry a comment and has no sidecar duty.
   End with 'Annotation-MAJOR: <n>', 'Annotation-MODERATE: <n>',
   'Annotation-MINOR: <n>'. Do not pad the count.
