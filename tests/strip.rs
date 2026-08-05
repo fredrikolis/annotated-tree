@@ -231,3 +231,28 @@ fn a_directory_without_recursive_is_a_usage_error() {
         .starts_with("# Concern:"));
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// `strip -R` reaches an extensionless script, and takes its annotation without touching the
+/// shebang above it. Its language comes from that shebang, which is the whole safety argument for
+/// editing the file at all: knowing where the comment ends.
+#[test]
+fn strip_reaches_an_extensionless_script() {
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("at-strip-{}-shebang-{n}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hook = dir.join("pre-commit");
+    std::fs::write(
+        &hook,
+        "#!/usr/bin/env bash\n# Concern: a | Non-concern: b | IO: none\n\nset -e\n",
+    )
+    .unwrap();
+
+    assert_eq!(strip(&["strip", "-R", "-y", dir.to_str().unwrap()]), 0);
+    assert_eq!(
+        std::fs::read_to_string(&hook).unwrap(),
+        "#!/usr/bin/env bash\nset -e\n",
+        "the annotation and its blank line go; the shebang stays on line 1"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}

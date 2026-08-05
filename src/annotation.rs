@@ -35,7 +35,7 @@ pub(crate) fn sole_annotation_line(text: &str, lang: &Language) -> Option<usize>
         return None;
     }
     let annotation = extract_from(text, lang)?;
-    let (line_no, raw) = first_meaningful_line(text)?;
+    let (line_no, raw) = first_meaningful_line(text, lang.frontmatter_prefix)?;
     let line = raw.trim();
 
     // Delimiters in `locate`'s order, so the two cannot disagree about which opened a line.
@@ -62,7 +62,7 @@ pub(crate) fn sole_annotation_line(text: &str, lang: &Language) -> Option<usize>
 /// dropped, trailing block closer stripped. Keys on the format's fixed opener rather than a language
 /// delimiter, so it reads the SAME three-field line from a file whose grammar is unknown.
 pub fn extract_any_from(text: &str) -> Option<String> {
-    let (_, line) = first_meaningful_line(text)?;
+    let (_, line) = first_meaningful_line(text, true)?;
     let start = line.find(CONCERN_KEY)?;
     let mut annotation = line[start..].trim_end();
     for closer in BLOCK_CLOSERS {
@@ -88,8 +88,8 @@ const FRONTMATTER_FENCE: &str = "---";
 /// The first line carrying real content, with its 1-based number: line 1, else past a `#!` shebang,
 /// a closed YAML frontmatter block, or leading blanks. The ONE place that skip lives, so [`locate`]
 /// and [`extract_any_from`] cannot drift. Frontmatter is skipped for a shebang's reason — line 1 is
-/// spoken for by another contract, and requiring the annotation above it would exclude both.
-fn first_meaningful_line(text: &str) -> Option<(usize, &str)> {
+/// spoken for; under `frontmatter_prefix: false` it is not, and the fence is ordinary content.
+fn first_meaningful_line(text: &str, frontmatter_prefix: bool) -> Option<(usize, &str)> {
     let mut lines = text.lines();
     let mut line_no = 1usize;
     let mut current = lines.next()?;
@@ -97,7 +97,7 @@ fn first_meaningful_line(text: &str) -> Option<(usize, &str)> {
         current = lines.next()?;
         line_no += 1;
     }
-    if current.trim_end() == FRONTMATTER_FENCE {
+    if frontmatter_prefix && current.trim_end() == FRONTMATTER_FENCE {
         // Probe a clone: only a CLOSED block is a prefix, so a file merely opening with a horizontal rule is left where it was rather than swallowed to EOF.
         let mut probe = lines.clone();
         let mut probe_no = line_no;
@@ -182,7 +182,7 @@ fn locate(text: &str, lang: &Language) -> Located {
         };
     }
 
-    let Some((line_no, current)) = first_meaningful_line(text) else {
+    let Some((line_no, current)) = first_meaningful_line(text, lang.frontmatter_prefix) else {
         return Located::Empty;
     };
 
@@ -397,7 +397,7 @@ pub fn analyze_charter(text: &str, max_len: Option<usize>) -> Outcome {
 /// [`first_meaningful_line`], so a body opening with blank lines is conforming. The rule is
 /// "nothing but whitespace below that line", never "contains a newline" — every editor writes one.
 pub(crate) fn content_past_first_line(body: &str) -> Option<usize> {
-    let (annotation_line, _) = first_meaningful_line(body)?;
+    let (annotation_line, _) = first_meaningful_line(body, true)?;
     body.lines()
         .enumerate()
         .skip(annotation_line)
@@ -632,6 +632,8 @@ mod tests {
     fn lang(line: Option<&str>, block: Option<(&str, &str)>, docstring: &[&str]) -> Language {
         Language {
             name: "t".into(),
+            interpreters: Vec::new(),
+            frontmatter_prefix: true,
             line: line.map(String::from),
             block: block.map(|(a, b)| (a.to_string(), b.to_string())),
             docstring: docstring.iter().map(|s| s.to_string()).collect(),

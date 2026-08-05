@@ -74,10 +74,10 @@ pub struct Cli {
     #[arg(short = 'I', long = "ignore", value_name = "GLOB")]
     pub ignore: Vec<String>,
 
-    /// Also show files matching GLOB even when their extension maps to no known language
-    /// (repeatable; pipe-separated allowed). An included file's annotation is read
-    /// marker-agnostically. `--include '*'` shows every file. View only: --strict-check
-    /// never lints what this opts in.
+    /// Also show files matching GLOB that map to no known language at all (repeatable;
+    /// pipe-separated allowed). Such a file's annotation is read marker-agnostically, and
+    /// `--include '*'` shows every file. View only: --strict-check never lints what this opts
+    /// in — an extensionless script with a recognized `#!` is listed and checked without it.
     #[arg(long = "include", value_name = "GLOB")]
     pub include: Vec<String>,
 

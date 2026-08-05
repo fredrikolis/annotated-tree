@@ -12,15 +12,42 @@ to [Semantic Versioning](https://semver.org/).
   keeps its hooks, workflows and agent configuration behind a leading dot — `.githooks/`,
   `.github/`, `.claude/` — and every one of them was invisible to the tree AND to `--strict-check`,
   which reported all files passed for a tree it had never opened. What is then CHECKED under a
-  revealed directory is the ordinary rule, a file whose extension maps to a configured language: on
-  this repo the flag adds `.cargo-lint-extra.toml` and nothing else, because a `.yml` workflow and
-  an extensionless hook map to no language. Also settable as
+  revealed directory is the ordinary rule, a file that maps to a configured language: on this repo
+  the flag brings in `.cargo-lint-extra.toml` on its extension, plus — through the two entries
+  below — `.githooks/` and `.github/workflows/`. Also settable as
   `[display] hidden` in a config file. It is **off by default, so no existing invocation changes**;
   the three goldens are unchanged with a dot-directory added to `sample/`, which is the proof.
   Two boundaries: `.git` is never walked under any flag combination, and the switch is orthogonal
   to `.gitignore` — a path that is both hidden and ignored needs `--no-gitignore` too. The
   `--githook-guide` recipe and all three copies of this repo's own gate — `pre-commit`, CI, and the
   pre-tag release check — now pass it, for the same reason they already pass `--include-tests`.
+- **BREAKING (gate).** An EXTENSIONLESS file resolves its language from its `#!` line. A git hook,
+  a `bin/` script, a `configure` — the files that decide how a repo builds and gates itself — carry
+  their language in a shebang and nowhere else, so they were unlistable and unlintable, and
+  `--include` could not fix it: that flag widens the VIEW, and the gate never honours it. Each
+  language now declares `interpreters`; `sh bash zsh dash ksh` resolve to shell and
+  `python python3` to python, by the BASENAME of the shebang's first word, or of the next word
+  when the first is `env`. The probe fires only when a path has no extension at all, so a `.rs`
+  opening with `#!` is still rust and `Cargo.lock` is never opened. A file that opens with anything
+  but a literal `#!`, such as a `LICENSE`, resolves to nothing and stays out of scope exactly as
+  before. Expect an adopting repo's first run under `--hidden` to fail on hooks nothing had ever
+  checked — a `.githooks/pre-commit` whose annotation is missing, or a few characters over the 200
+  bound, has had nothing to tell it so. A `<script>.annotation` sidecar written before this goes
+  inert, as one beside any file
+  that maps to a comment marker does: move the line into the script itself, behind a `#`, and
+  delete the sidecar.
+- **BREAKING (gate).** `yaml` is a recognized language (`.yml`, `.yaml`), with `#` as its comment
+  marker. A workflow, a compose file and a Claude Code skill definition are where a repo's build,
+  release and agent behaviour actually lives, and every one of them was a file an agent could only
+  route by opening. A leading `#` comment is legal above any YAML document, so the annotation costs
+  the file nothing, and it goes on **line 1, above any `---`**: in YAML that marker starts a
+  document rather than the metadata block the scanner skips for a Markdown skill file, so without
+  the distinction a file opening `---` / `name: first` / `---` would certify as annotated off a
+  comment further down. Frontmatter handling is unchanged for every other language; a language
+  whose own comment marker is `--`, such as SQL, has the same shape and is untouched here.
+  Excluding a file is the ordinary `-I`/`.gitignore`, not a carve-out. A
+  `<name>.yml.annotation` sidecar written before this goes inert, as the `.toml` and shebang
+  entries describe: move the line into the YAML itself, behind a `#`, and delete the sidecar.
 - **BREAKING (gate).** `.toml` is a recognized language, with `#` as its comment marker (#19).
   A `.toml` file is listed in the tree and must carry a first-line annotation, at the same bar
   as a `.py` or a `.rs`. Config was the one place the tool told an agent to route by opening the

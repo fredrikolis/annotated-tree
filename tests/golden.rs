@@ -65,9 +65,9 @@ fn no_gitignore_reveals_gitignored_build_dir() {
 }
 
 /// `--hidden` is a single-delta view over the default, in the shape of the `--no-gitignore` case
-/// above: the fixture's `.ci/` is a dot-directory, so `notes.md` is what it adds. The three goldens
-/// staying byte-identical with `.ci/` present is itself the proof that the flag defaults OFF; this
-/// freezes that passing it does something.
+/// above: the fixture's `.ci/` is a dot-directory, so its contents are what the flag adds. The three
+/// goldens staying byte-identical with `.ci/` present is itself the proof that the flag defaults
+/// OFF; this freezes that passing it does something.
 #[test]
 fn hidden_reveals_the_dot_directory() {
     let (default_out, dcode) = run(&[]);
@@ -79,8 +79,9 @@ fn hidden_reveals_the_dot_directory() {
         "the default view skips the dot-directory .ci/:\n{default_out}"
     );
     assert!(
-        shown_out.contains("notes.md"),
-        "--hidden reveals .ci/notes.md:\n{shown_out}"
+        shown_out.contains("notes.md") && shown_out.contains("deploy"),
+        "--hidden reveals .ci/ whole — the doc, and the extensionless script its shebang \
+         resolves:\n{shown_out}"
     );
 }
 

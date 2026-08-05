@@ -9,9 +9,10 @@
 # All three fields are required and must be non-empty after trimming (`IO: none` is the
 # usual value for config, data, and docs). `--strict-check` checks presence, non-emptiness,
 # and the annotation's length against the bound below; it never checks what a field says.
-# This is enforced in code, not by a regex here, so the only per-LANGUAGE knob is the
-# comment MARKER (below). One knob constrains LENGTH rather than shape, globally rather
-# than per language: `[rules] max_annotation_length`.
+# This is enforced in code, not by a regex here, so the per-LANGUAGE knobs only say how to
+# FIND a file's first comment — its marker, and the `interpreters` that name the language of
+# a file with no extension (below). One knob constrains LENGTH rather than shape, globally
+# rather than per language: `[rules] max_annotation_length`.
 # The advertised `example` shown in `--help` and `--strict-check` is DERIVED from that
 # marker plus the fixed format, never configured.
 
@@ -49,6 +50,10 @@ max_per_node = 50       # cap entries shown per directory (subdirs and files eac
 
 # --- Languages -------------------------------------------------------------
 # Each entry maps file extensions to how the first-line annotation is found.
+# `interpreters` is the second way in, and the only one an EXTENSIONLESS file has:
+# a `#!` line naming one of them resolves the language, so a git hook or a bin/
+# script is listed and checked like any other file. The extension always wins, so
+# the probe only ever opens a file that has none.
 # The extraction engine always: skips a shebang, skips blank lines, then reads
 # the first comment using the tokens below. Set `pattern` to bypass the engine
 # with a capture-group regex: the annotation is taken from the capture group named
@@ -57,6 +62,7 @@ max_per_node = 50       # cap entries shown per directory (subdirs and files eac
 
 [languages.python]
 extensions = [".py"]
+interpreters = ["python", "python3"]
 comment = "#"
 docstring = ['"""', "'''"]
 
@@ -78,8 +84,10 @@ block = ["<!--", "-->"]
 
 [languages.shell]
 # Shell scripts must keep a `#!` shebang on line 1; the engine skips it and reads
-# the annotation from the first comment below (typically line 2).
+# the annotation from the first comment below (typically line 2). That same shebang
+# is what resolves an extensionless script, such as a hook under .githooks/.
 extensions = [".sh", ".bash"]
+interpreters = ["sh", "bash", "zsh", "dash", "ksh"]
 comment = "#"
 
 [languages.sql]
@@ -97,4 +105,10 @@ block = ["<!--", "-->"]
 # (`Cargo.toml`, `pyproject.toml`) is a `.toml` like any other: a row of its own, above the
 # dependency edges its directory states.
 extensions = [".toml"]
+comment = "#"
+
+[languages.yaml]
+# Workflows, compose files and Claude Code skill/agent definitions. A leading `#`
+# comment is legal above any YAML document, so the annotation costs the file nothing.
+extensions = [".yml", ".yaml"]
 comment = "#"

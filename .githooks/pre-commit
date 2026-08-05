@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mechanical gates 1 and 2 of 3; gate 3 is the review attested in the commit message.
+# Concern: the mechanical gates every commit clears locally — annotations, then comment budget | Non-concern: the semantic review, attested in the commit message | IO: (working tree) -> pass/fail
 # Enable per clone: git config core.hooksPath .githooks   Bypass: git commit --no-verify
 set -euo pipefail
 

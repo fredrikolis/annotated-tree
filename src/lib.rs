@@ -199,8 +199,14 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
                     }
                 };
                 if config.language_for_path(target).is_none() {
+                    // An extension always wins, so the shebang is consulted only for a path with none: naming it for a file that HAS one would point the fix at a line the resolver never read.
+                    let reason = if target.extension().is_some() {
+                        "its extension maps to no configured language"
+                    } else {
+                        "it opens with no recognized `#!` interpreter"
+                    };
                     return Failure::precondition(format!(
-                        "not a lintable code file: {} — its extension maps to no configured language",
+                        "not a lintable code file: {} — {reason}",
                         target.display()
                     ))
                     .dispatch(out, cli.format);

@@ -92,6 +92,43 @@ fn temp_tree_hidden(tag: &str) -> PathBuf {
     dir
 }
 
+/// A temp tree with an annotated extensionless `deploy` script, a `NOTICE` that opens with no
+/// shebang, and an ordinary `keep.rs`. The three exercise shebang resolution.
+fn temp_tree_script(tag: &str) -> PathBuf {
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("at-shebang-{}-{tag}-{n}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("deploy"),
+        "#!/usr/bin/env bash\n# Concern: an extensionless script for the shebang fixture | Non-concern: real behavior (a test stub) | IO: none\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("NOTICE"), "Copyright the fixture\n").unwrap();
+    std::fs::write(dir.join("keep.rs"), "// Concern: a file that stays for the filter fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
+    dir
+}
+
+#[test]
+fn an_extensionless_script_is_listed_without_include() {
+    // A hook or a bin/ script carries its language in its shebang and nowhere else, and `--include` widens the VIEW only, so it could never be the way such a file enters the gate.
+    let dir = temp_tree_script("listed");
+    let out = run(&dir, &[]);
+    assert!(
+        out.contains("deploy"),
+        "a `#!/usr/bin/env bash` script is listed with no flag at all:\n{out}"
+    );
+    assert!(
+        out.contains("Concern: an extensionless script"),
+        "and its annotation is read through the shell marker:\n{out}"
+    );
+    assert!(
+        !out.contains("NOTICE"),
+        "while an extensionless file with no shebang stays unlisted:\n{out}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn hidden_dir_invisible_by_default_and_revealed_by_flag() {
     let dir = temp_tree_hidden("toggle");

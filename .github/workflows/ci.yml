@@ -1,3 +1,4 @@
+# Concern: the checks every push and pull request must clear — fmt, clippy, tests, the annotation gate | Non-concern: cutting a release | IO: (push, PR) -> pass/fail
 name: ci
 
 on:

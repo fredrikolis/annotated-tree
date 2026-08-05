@@ -440,9 +440,10 @@ Three gates under `.githooks/` (enable with `git config core.hooksPath .githooks
 Config layers built-in defaults < `~/.config/annotated-tree/config.toml` < repo
 `./.annotated-tree.toml` < CLI flags; the repo file owns the language table and
 dependency rules, so enforcement is a property of the repo, not each contributor's
-machine. The annotation format is invariant; the only per-language knob is the comment
-marker. Teaching it a new language is a few lines of TOML (an extension list + comment
-marker, or a regex for exotic comment syntax), no code change. See the shipped
+machine. The annotation format is invariant; a language only configures how a file is
+recognized and where its first comment is. Teaching it a new one is a few lines of TOML: an
+extension list, plus a comment marker or a regex for exotic syntax. A language whose scripts
+carry no extension also lists the `interpreters` its `#!` line may name. See the shipped
 [default_config.toml](src/default_config.toml) for the exact keys.
 
 The crate also exposes its walk, annotation and render primitives as a library. That surface

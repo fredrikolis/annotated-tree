@@ -158,7 +158,7 @@ pub(crate) fn collect_tree(
         {
             continue;
         }
-        // `annotates` stats the sidecar path, so it is tested LAST: a recognized or include-matched file is already kept and never pays for it.
+        // `known_for_path` answers from the extension alone wherever there is one, so only an extensionless path reaches its shebang probe. `annotates` is tested LAST because it re-resolves the path AND stats a second one, which a recognized or include-matched file never pays for.
         let keep = is_file
             && (config.known_for_path(path)
                 || include_match(path, root, include)

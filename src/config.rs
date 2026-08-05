@@ -1,4 +1,4 @@
-// Concern: resolves the layered configuration into a language table, display settings, and lint rules | Non-concern: walking or rendering | IO: (paths, CLI overrides) -> Config
+// Concern: resolves the layered configuration, and answers which language a path is | Non-concern: walking or rendering | IO: (config paths, CLI overrides, shebang heads) -> Config, Language
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -60,6 +60,7 @@ struct RawDisplay {
 #[serde(deny_unknown_fields)]
 struct RawLanguage {
     extensions: Vec<String>,
+    interpreters: Option<Vec<String>>,
     comment: Option<String>,
     block: Option<[String; 2]>,
     docstring: Option<Vec<String>>,
@@ -129,6 +130,14 @@ pub struct Limits {
 #[derive(Debug, Clone)]
 pub struct Language {
     pub name: String,
+    /// Interpreter basenames this language claims on a `#!` line, the only way an EXTENSIONLESS
+    /// file resolves. A git hook or a `bin/` script carries its language in its shebang and
+    /// nowhere else, so without this it is unlistable and unlintable.
+    pub interpreters: Vec<String>,
+    /// Whether a closed `---` block at the very start is a metadata PREFIX to scan past. True
+    /// wherever line 1 is spoken for by such a block, false where `---` is the file's own content —
+    /// there the annotation sits on line 1, above it, like everywhere else.
+    pub frontmatter_prefix: bool,
     pub line: Option<String>,
     pub block: Option<(String, String)>,
     pub docstring: Vec<String>,
@@ -169,6 +178,7 @@ pub struct Config {
     pub(crate) rules: Rules,
     languages: Vec<Language>,
     ext_to_lang: HashMap<String, usize>,
+    interp_to_lang: HashMap<String, usize>,
 }
 
 impl Config {
@@ -193,26 +203,72 @@ impl Config {
         resolve(raw, cli)
     }
 
-    /// The language matching `path`'s extension, or `None` for an extensionless or
-    /// unknown-extension file. Owns the dotted-lowercase key normalization in ONE
-    /// place, so walk/model/strict never re-derive `format!(".{}", ext.to_lowercase())`.
+    /// The language for `path`: its extension, else — for an extensionless path only — the
+    /// interpreter its `#!` line names. `None` when neither resolves. Owns the dotted-lowercase
+    /// key normalization in ONE place, so walk/model/strict never re-derive
+    /// `format!(".{}", ext.to_lowercase())`, and every caller gets the shebang fallback for free.
     pub fn language_for_path(&self, path: &Path) -> Option<&Language> {
-        let key = ext_key(path)?;
-        self.language_for_extension(&key)
+        match ext_key(path) {
+            Some(key) => self.language_for_extension(&key),
+            // An extension always WINS, so a `.rs` opening with `#!` stays rust and `Cargo.lock` is never opened: the probe fires only where there is no extension to consult.
+            None => self.language_for_shebang(path),
+        }
     }
 
-    /// Whether `path`'s extension maps to a known language (the walk's file filter).
+    /// Whether `path` maps to a known language (the walk's file filter). Reads the head of an
+    /// EXTENSIONLESS path, exactly as [`language_for_path`](Self::language_for_path) does.
     pub fn known_for_path(&self, path: &Path) -> bool {
-        ext_key(path).is_some_and(|key| self.is_known_extension(&key))
+        self.language_for_path(path).is_some()
     }
 
     fn language_for_extension(&self, ext: &str) -> Option<&Language> {
         self.ext_to_lang.get(ext).map(|&i| &self.languages[i])
     }
 
-    fn is_known_extension(&self, ext: &str) -> bool {
-        self.ext_to_lang.contains_key(ext)
+    /// The language claiming the interpreter on `path`'s shebang, or `None` when the file has
+    /// none, cannot be read, or names an interpreter no language claims.
+    fn language_for_shebang(&self, path: &Path) -> Option<&Language> {
+        let word = interpreter_word(&read_shebang(path)?)?;
+        self.interp_to_lang
+            .get(&interp_key(&word))
+            .map(|&i| &self.languages[i])
     }
+}
+
+/// The most a shebang line can need. A file with no extension may be an arbitrary binary, so the
+/// probe reads a bounded head and nothing more.
+const SHEBANG_BYTES: usize = 256;
+
+/// `path`'s first line when it opens with a literal `#!` at offset 0, else `None`. Offset 0 and
+/// nothing else counts: a `#!` further down is a comment, and treating it as a shebang would give
+/// a data file a language.
+fn read_shebang(path: &Path) -> Option<String> {
+    use std::io::Read;
+    let mut buf = [0u8; SHEBANG_BYTES];
+    let read = std::fs::File::open(path).ok()?.read(&mut buf).ok()?;
+    let head = String::from_utf8_lossy(&buf[..read]);
+    let line = head.strip_prefix("#!")?.lines().next()?;
+    Some(line.to_string())
+}
+
+/// The word a shebang names its interpreter with: its first, or — when that word is `env` — its
+/// next, so `#!/usr/bin/env python3` resolves exactly as `#!/usr/bin/python3` does.
+fn interpreter_word(shebang: &str) -> Option<String> {
+    let mut words = shebang.split_whitespace();
+    let first = words.next()?;
+    if interp_key(first) != "env" {
+        return Some(first.to_string());
+    }
+    words.next().map(str::to_string)
+}
+
+/// The canonical interpreter lookup key: the word's basename, lowercased (`/usr/bin/Python3` ->
+/// `python3`). The `interpreters` twin of [`ext_key`], so the table build and the shebang probe
+/// cannot normalize a name two different ways.
+fn interp_key(word: &str) -> String {
+    word.rsplit_once('/')
+        .map_or(word, |(_, base)| base)
+        .to_lowercase()
 }
 
 /// The canonical extension lookup key for a path: the extension lowercased and
@@ -221,6 +277,12 @@ fn ext_key(path: &Path) -> Option<String> {
     path.extension()
         .and_then(|e| e.to_str())
         .map(|e| format!(".{}", e.to_lowercase()))
+}
+
+/// A CONFIGURED extension in that same key form, written with or without its dot (`YML` and `.yml`
+/// both give `.yml`), so the lookup table and every rule keyed on an extension agree on one spelling.
+fn ext_table_key(ext: &str) -> String {
+    format!(".{}", ext.strip_prefix('.').unwrap_or(ext).to_lowercase())
 }
 
 fn read_layer(path: &Path) -> Result<RawConfig> {
@@ -283,6 +345,7 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
 
     let mut languages = Vec::new();
     let mut ext_to_lang = HashMap::new();
+    let mut interp_to_lang = HashMap::new();
     // Deterministic order so diagnostics and any future listing are stable.
     let mut entries: Vec<(String, RawLanguage)> = raw.languages.into_iter().collect();
     entries.sort_by(|a, b| a.0.cmp(&b.0));
@@ -290,10 +353,13 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     for (name, lang) in entries {
         let idx = languages.len();
         for ext in &lang.extensions {
-            let key = ext.strip_prefix('.').unwrap_or(ext).to_lowercase();
-            ext_to_lang.insert(format!(".{key}"), idx);
+            ext_to_lang.insert(ext_table_key(ext), idx);
         }
-        languages.push(to_language(name, lang)?);
+        let language = to_language(name, lang)?;
+        for interp in &language.interpreters {
+            interp_to_lang.insert(interp_key(interp), idx);
+        }
+        languages.push(language);
     }
 
     Ok(Config {
@@ -302,8 +368,15 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
         rules,
         languages,
         ext_to_lang,
+        interp_to_lang,
     })
 }
+
+/// The extensions whose files OPEN with `---` as their own syntax: in YAML that marker starts a
+/// DOCUMENT, not the metadata block the scanner skips for a Markdown skill file, so such a file
+/// would otherwise certify as annotated off a comment below the block. Keyed on the EXTENSION,
+/// which is the file's syntax, never on the table key a repo chose.
+const DOCUMENT_SEPARATOR_EXTENSIONS: &[&str] = &[".yml", ".yaml"];
 
 /// One `[languages.*]` entry resolved into a [`Language`]. Its own function so the raw shape is
 /// turned into the resolved one in ONE place, whether the entry arrives from a merged layer through
@@ -316,8 +389,14 @@ fn to_language(name: String, raw: RawLanguage) -> Result<Language> {
         ),
         None => None,
     };
+    let frontmatter_prefix = !raw
+        .extensions
+        .iter()
+        .any(|ext| DOCUMENT_SEPARATOR_EXTENSIONS.contains(&ext_table_key(ext).as_str()));
     Ok(Language {
+        frontmatter_prefix,
         name,
+        interpreters: raw.interpreters.unwrap_or_default(),
         line: raw.comment,
         block: raw.block.map(|[open, close]| (open, close)),
         docstring: raw.docstring.unwrap_or_default(),
@@ -449,6 +528,38 @@ mod tests {
                 example,
             );
         }
+    }
+
+    /// The whole resolution rule as one table, over real files, because the probe reads bytes.
+    /// The `.rs`-with-a-shebang row is the load-bearing one: an extension always wins, which is
+    /// what keeps the probe off every file that already has an answer.
+    #[test]
+    fn a_shebang_resolves_only_an_extensionless_file() {
+        let raw: RawConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");
+        let config = resolve(raw, &CliOverrides::default()).expect("default config resolves");
+        let dir = std::env::temp_dir().join(format!("at-shebang-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+        let cases: &[(&str, &str, Option<&str>)] = &[
+            ("env-bash", "#!/usr/bin/env bash\n", Some("shell")),
+            ("bin-sh", "#!/bin/sh\n", Some("shell")),
+            ("env-python", "#!/usr/bin/env python3\n", Some("python")),
+            ("env-node", "#!/usr/bin/env node\n", None),
+            ("plain", "just text\n", None),
+            ("late", "text\n#!/bin/sh\n", None),
+            ("script.rs", "#!/bin/sh\nfn main() {}\n", Some("rust")),
+        ];
+        for (name, body, expected) in cases {
+            let path = dir.join(name);
+            std::fs::write(&path, body).expect("write fixture");
+            assert_eq!(
+                config.language_for_path(&path).map(|l| l.name.as_str()),
+                *expected,
+                "{name}",
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -464,3 +464,120 @@ fn strict_check_misses_a_hidden_dir_without_the_flag() {
         "and names it as the offender:\n{out}"
     );
 }
+
+/// Which extensionless files the gate reaches, as a delta: the one with a recognized `#!` is
+/// checked under its interpreter's language, the one without stays out of scope. A `LICENSE` that
+/// were suddenly demanded an annotation would be the failure mode of resolving by anything looser.
+#[test]
+fn an_extensionless_script_is_checked_and_a_plain_file_is_not() {
+    let (json, code) = check(
+        "shebang-scope",
+        &["--format", "json"],
+        &[
+            ("hook", "#!/usr/bin/env bash\necho hi\n"),
+            ("NOTICE", "Copyright the fixture\n"),
+            ("ok.rs", "// Concern: a | Non-concern: b | IO: none\n"),
+        ],
+    );
+    assert_eq!(code, 1, "the unannotated script fails the check:\n{json}");
+    let doc: serde_json::Value = serde_json::from_str(&json).expect("json parses");
+    assert_eq!(
+        doc["files_checked"],
+        serde_json::json!(2),
+        "the script and the .rs, never the NOTICE: {doc}"
+    );
+    let violations = doc["violations"].as_array().expect("violations array");
+    assert_eq!(violations.len(), 1, "one offender: {doc}");
+    assert_eq!(violations[0]["path"], serde_json::json!("hook"));
+    assert_eq!(
+        violations[0]["language"],
+        serde_json::json!("shell"),
+        "the shebang's interpreter is what named the language: {doc}"
+    );
+}
+
+#[test]
+fn a_yaml_is_held_to_the_same_bar_as_code() {
+    // A workflow file is where a repo's build, test and release behaviour actually lives, so it is checked like any other file rather than waived for being configuration.
+    let (out, code) = check(
+        "yaml",
+        &["--no-guide"],
+        &[
+            (
+                "annotated.yml",
+                "# Concern: the checks every push must clear | Non-concern: cutting a release | IO: (push) -> pass/fail\nname: ci\n",
+            ),
+            ("bare.yaml", "name: bare\n"),
+        ],
+    );
+    assert_eq!(code, 1, "an unannotated `.yaml` fails the check:\n{out}");
+    assert!(
+        out.contains("bare.yaml:1: missing annotation [yaml]"),
+        "reported under the yaml language:\n{out}"
+    );
+    assert!(
+        out.contains("1 of 2 files annotated"),
+        "and both extensions of the one language are checked:\n{out}"
+    );
+}
+
+/// In YAML `---` starts a DOCUMENT, not the metadata prefix the scanner skips for a Markdown skill
+/// file: without the distinction a file whose line 1 is `---` certifies as annotated off a comment
+/// three lines down. So a `.yml` annotation sits on line 1, above any marker. (A language whose own
+/// comment marker is `--`, such as SQL, has the same shape and is untouched here.)
+#[test]
+fn a_yaml_document_marker_is_content_not_frontmatter() {
+    let (out, code) = check(
+        "yaml-doc-marker",
+        &["--no-guide"],
+        &[
+            (
+                "above.yml",
+                "# Concern: the annotation above the marker | Non-concern: b | IO: none\n---\nname: ci\n",
+            ),
+            (
+                "multidoc.yml",
+                "---\nname: first\n---\n# Concern: buried in document two | Non-concern: b | IO: none\nname: second\n",
+            ),
+            (
+                "docstart.yml",
+                "---\n# Concern: under the marker | Non-concern: b | IO: none\nname: ci\n",
+            ),
+        ],
+    );
+    assert_eq!(code, 1, "two of the three fail:\n{out}");
+    assert!(
+        !out.contains("above.yml"),
+        "a line-1 annotation above the marker passes:\n{out}"
+    );
+    assert!(
+        out.contains("multidoc.yml:1: missing annotation [yaml]"),
+        "a comment past a closed `---` block is NOT this file's annotation:\n{out}"
+    );
+    assert!(
+        out.contains("docstart.yml:1: missing annotation [yaml]"),
+        "and neither is one under an opening document marker:\n{out}"
+    );
+    assert!(
+        out.contains("1 of 3 files annotated"),
+        "only the line-1 file counts:\n{out}"
+    );
+}
+
+/// The frontmatter prefix is untouched for every language whose files do not open with `---` as
+/// their own syntax: a Markdown skill file still carries its annotation under a closed block.
+#[test]
+fn frontmatter_still_prefixes_a_markdown_file() {
+    let (out, code) = check(
+        "frontmatter-md",
+        &["--no-guide"],
+        &[(
+            "SKILL.md",
+            "---\ndescription: reviews code\n---\n<!-- Concern: the review brief | Non-concern: running it | IO: none -->\n",
+        )],
+    );
+    assert_eq!(
+        code, 0,
+        "an annotation under frontmatter still passes:\n{out}"
+    );
+}

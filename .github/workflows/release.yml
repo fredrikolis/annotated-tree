@@ -1,3 +1,4 @@
+# Concern: ships one tag to every channel — GitHub assets, crates.io, npm | Non-concern: the pre-merge checks | IO: (tag) -> published artifacts
 name: release
 
 on:
