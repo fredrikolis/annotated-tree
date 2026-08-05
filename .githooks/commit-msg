@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Concern: the gate declarations for this repo | Non-concern: how a gate is checked (git-agent-verdict owns that) or what a reviewer judges | IO: (message file, installed version) -> exit status
+# Concern: the gate declarations for this repo | Non-concern: how a gate is checked (git-agent-verdict owns that) or what a reviewer judges | IO: (message, tool version) -> status, edited message
 # Line order IS review order: `set -e` stops at the first unattested gate, so a later gate is never
 # judged against content an earlier one is still changing.
 # Enable per clone: git config core.hooksPath .githooks
@@ -7,10 +7,11 @@ set -euo pipefail
 
 # Fail loud and name the remedy. Without this the hook dies on `git: 'agent-verdict' is not a git
 # command`, which names neither the dependency nor how to get it, and blocks every commit.
-# PIN the version. The trailer format and the reviewer brief are this gate's contract, so an
-# unpinned install changes what a commit must carry, and what every reviewer is handed, without
-# anyone choosing that. Bump deliberately, in a commit that also clears whatever the new one finds.
-GAV_VERSION=0.1.2
+# PIN the version. The trailer format, the reviewer brief, and what the tool rewrites in the message
+# are this gate's contract, so an unpinned install changes what a commit must carry, what every
+# reviewer is handed, and what is edited, without anyone choosing that. Bump deliberately, in a
+# commit that also clears whatever the new one finds.
+GAV_VERSION=0.1.3
 command -v git-agent-verdict >/dev/null 2>&1 || {
 	echo "commit-msg: git-agent-verdict is not installed, so no review gate can run." >&2
 	echo "  install: cargo install git-agent-verdict --version $GAV_VERSION" >&2

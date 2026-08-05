@@ -89,7 +89,7 @@ Nothing can drift, because the requirement is printed by the file that defines i
 
 **Gate.** Presence and form, never truth. Coverage is the product: partial coverage keeps little of the benefit, because the slow read-the-source path stays alive for whatever is missing.
 
-**Review.** How many reviews, and what each judges, follows what the repo has to protect; ours runs three. The commit hook runs none of them. It calls [git-agent-verdict](https://github.com/fredrikolis/git-agent-verdict), which checks that each review's verdict trailer is present and well formed and blocks on any MAJOR or MODERATE it declares. That tool owns the severity ladder, the trailer shape and the trust model, and the case for all three.
+**Review.** How many reviews, and what each judges, follows what the repo has to protect; ours runs three. The commit hook runs none of them. It calls [git-agent-verdict](https://github.com/fredrikolis/git-agent-verdict), which checks that each review's verdict trailer is present and well formed, blocks on any MAJOR or MODERATE it declares, and strips the agent co-author trailer from the message. That tool owns the severity ladder, the trailer shape and the trust model, and the case for all three.
 
 See `annotated-tree --githook-guide` for how to wire the hooks up.
 
