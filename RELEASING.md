@@ -74,8 +74,11 @@ require pushing.
 
 ## Cut a release
 
-1. Bump `version` in `Cargo.toml`; move the `CHANGELOG.md` `[Unreleased]` section
-   under the new version heading.
+1. Bump `version` in `Cargo.toml` (then `cargo update -p annotated-tree` for the lock);
+   move the `CHANGELOG.md` `[Unreleased]` section under the new version heading, add
+   that version's link definition at the foot of the file and repoint `[Unreleased]`
+   at it; if the release breaks the library surface, say so in `README.md`'s
+   stability paragraph, which names the release that last did.
 2. `./distribution/local-release-check.sh` — must pass.
 3. Commit, then tag and push **that tag only**:
    ```sh

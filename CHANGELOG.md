@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.0] - 2026-08-04
 
 ### Added
 - `--hidden` walks dot-files and dot-directories, which were pruned unconditionally before. A repo
@@ -33,9 +33,8 @@ to [Semantic Versioning](https://semver.org/).
   before. Expect an adopting repo's first run under `--hidden` to fail on hooks nothing had ever
   checked — a `.githooks/pre-commit` whose annotation is missing, or a few characters over the 200
   bound, has had nothing to tell it so. A `<script>.annotation` sidecar written before this goes
-  inert, as one beside any file
-  that maps to a comment marker does: move the line into the script itself, behind a `#`, and
-  delete the sidecar.
+  inert, as one beside any file that maps to a comment marker does: move the line into the script
+  itself, behind a `#`, and delete the sidecar.
 - **BREAKING (gate).** `yaml` is a recognized language (`.yml`, `.yaml`), with `#` as its comment
   marker. A workflow, a compose file and a Claude Code skill definition are where a repo's build,
   release and agent behaviour actually lives, and every one of them was a file an agent could only
@@ -64,6 +63,9 @@ to [Semantic Versioning](https://semver.org/).
   positional `gitignore`, `include_tests` and `excludes` arguments. Four filtering choices, three of
   them `bool`, is a signature a caller transposes silently, and the struct is what lets one walk's
   policy be handed to another rather than restated.
+- **BREAKING (library).** Four public structs gain fields, for a consumer that builds one by
+  struct literal: `config::Language` gains `interpreters` and `frontmatter_prefix`, and
+  `config::Display`, `config::CliOverrides` and the crate-root `Cli` each gain `hidden`.
 
 ## [0.6.0] - 2026-08-02
 
@@ -432,7 +434,8 @@ Initial release.
   installer.
 - Golden-file and integration test suite; CI across Linux, macOS and Windows.
 
-[Unreleased]: https://github.com/fredrikolis/annotated-tree/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/fredrikolis/annotated-tree/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fredrikolis/annotated-tree/compare/v0.3.0...v0.4.0

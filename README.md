@@ -448,7 +448,7 @@ carry no extension also lists the `interpreters` its `#!` line may name. See the
 
 The crate also exposes its walk, annotation and render primitives as a library. That surface
 carries no stability promise: no semver policy, no deprecation cycle, and a breaking change
-arrives as a compile error. 0.6.0 is such a change.
+arrives as a compile error. 0.7.0 is such a change.
 
 ## Beyond the codebase
 
