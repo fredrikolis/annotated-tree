@@ -1,4 +1,4 @@
-<!-- Concern: the canonical guide to reproducing the repo's local enforcement git hooks | Non-concern: running the hooks (.githooks/ owns that) or the annotation format | IO: none -->
+<!-- Concern: the canonical guide to reproducing the repo's local enforcement git hooks | Non-concern: what a gate checks (git-agent-verdict owns that) or the annotation format | IO: none -->
 GITHOOK GUIDE — reproduce the two local hooks that keep the map from rotting.
 
 Enforce at COMMIT, in a LOCAL hook, never CI: the hook blocks the bad commit while the agent
@@ -22,53 +22,35 @@ PRE-COMMIT — mechanical, deterministic (presence + form only)
   that it is true.
 
 COMMIT-MSG — semantic, attestation-based (quality + staleness)
-  The hook runs NO reviewer, and skips auto-generated messages (`Merge`/`Revert`/`fixup!`/`squash!`).
-  The dev agent runs a neutral review ITSELF — a reviewer distinct from the author — and writes the
-  verdict into the commit message; the hook only verifies that attestation is present and clean.
+  The hook runs NO reviewer. The dev agent runs each neutral review ITSELF — a reviewer distinct
+  from the author — and writes the verdict into the commit message as a git trailer.
 
-  Trust model: the gate verifies that an attestation is PRESENT and WELL-FORMED; it cannot verify
-  that a review happened. What it buys is ATTRIBUTION, not enforcement — a false attestation
-  passes, but it is then a claim on the record with a name on it.
+  This repo does not implement that check. `git-agent-verdict` owns it, and its README owns the
+  trailer format, the severity ladder, the trust model, and the scoping flags:
 
-  Circular-rubric guard. A diff that edits any rubric a review is judged against — your standards
-  doc, your annotation guide, your prose-style doc, the review prompt itself — is blocked: it lands
-  alone via `--no-verify`. Judging a yardstick against itself is circular.
+      https://github.com/fredrikolis/git-agent-verdict
 
-  ONE SHAPE, three gates. Each requires a named reviewer, one `- <item>: ` line per checklist item
-  whose payload is `none`, `N/A — reason`, or a severity plus the finding, and `MAJOR`/`MODERATE`/
-  `MINOR` counts, each read from the LAST match so body prose cannot shadow the trailer. A missing
-  line, a blocker above 0, or a line whose severity contradicts a declared 0, fails. Iterate fix ->
-  re-review until no MAJOR and no MODERATE remains. `MINOR` is required and NEVER gated, so a real
-  nit has a home instead of being inflated into a blocker. A severity, not a score: it drives the
-  weak dimension to zero directly, where a number lets it hide behind strong ones and invites
-  argument that cannot change the outcome.
+  Adopters install it once (`cargo install git-agent-verdict --version <pin>`), and the hook checks that exact version is present
+  before any gate runs: without that check the failure names neither the dependency nor the remedy.
 
-  Grade the three rungs by what the FIX costs, not by how bad the finding sounds — that is what
-  makes the loop converge. MODERATE means the fix produces something the reviewer has not seen, so
-  the review runs again; anything an agent can apply verbatim without a second look is MINOR and
-  never blocks. MAJOR is the one rung graded by wrongness instead: it is re-planned by a neutral
-  task agent, not patched in place, so a cheap fix that changes behaviour cannot land as a nit.
+  What stays here is only what is repo-specific. First, the gate declarations — one call per
+  review, in review order, and nothing else:
 
-  The prompt each reviewer is handed, and what the three severities mean under it, live in ONE
-  place — `docs/review-prompt.md`, which the hook prints on failure, section by gate.
+      git agent-verdict "$1" standards --doc <your standards doc> --path .
+      git agent-verdict "$1" annotations --per-file --doc <your annotation guide> --path .
+      git agent-verdict "$1" prose --doc <your prose-style doc> --path README.md
 
-  Gate A — standards review. `Reviewer:` + one line per principle in your standards doc, then
-  `MAJOR: <n>`, `MODERATE: <n>`, `MINOR: <n>`.
+  Substitute your own paths. Every `--doc` must exist in the repo the hook runs in, and every
+  literal `--path` must name something git tracks, or the gate exits 2 rather than passing.
 
-  Gate B — annotation review. `Annotation-Reviewer:` + one line per file in the diff, then
-  `Annotation-MAJOR: <n>`, `Annotation-MODERATE: <n>`, `Annotation-MINOR: <n>`. The reviewer
-  confirms every file carries an APPROPRIATE annotation and that the diff did not make it STALE —
-  the truth + staleness check a linter cannot make. The hook derives the file list from git, never
-  from the author: an author-supplied list decides what gets looked at, and that is where a missed
-  file hides.
+  Line order IS review order, and `set -e` stops at the first unattested gate on purpose: a later
+  gate must never be judged against content an earlier one is still changing.
 
-  Gate C — conditional style review. Only when a human-facing doc is in the diff:
-  `Style-Reviewer:` + one line per rule in your prose-style doc, then `Style-MAJOR: <n>`,
-  `Style-MODERATE: <n>`, `Style-MINOR: <n>`, from a fresh-context reviewer that did not write the
-  change. A reminder gate: a hook cannot stop a determined agent from rubber-stamping, so make it
-  print the exact reviewer prompt.
+  The circular-rubric guard is automatic: staging one of a gate's own `--doc` files refuses the
+  commit and tells you to land it alone via `--no-verify`. The tool owns it because the list of
+  rubrics IS the list of `--doc` paths, and a copy in bash would be free to drift from it.
 
 WHY THIS SHAPE
   Render, don't reason: presence/form is deterministic, so it is HARD-GATED by the tool; truth and
   quality are judgment, so they are ATTESTED by a reviewer — the hook verifies the attestation, it
-  never makes the semantic call itself. Attestation keys are an API — grep them, don't read prose.
+  never makes the semantic call itself.

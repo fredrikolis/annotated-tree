@@ -1,267 +1,36 @@
 #!/usr/bin/env bash
-# commit-msg gate: the commit message must carry a neutral-review attestation per gate.
-# This hook does NOT run a reviewer — the dev agent runs each neutral review ITSELF (a reviewer
-# distinct from the author, in a fresh context, handed one block from docs/review-prompt.md) and
-# writes the verdict into the commit message. The hook only verifies that report: a reviewer is
-# named, every checklist item carries a SEVERITY (MAJOR/MODERATE/MINOR + the finding), `none`, or
-# `N/A — reason`, the three counts are present, and no MAJOR or MODERATE remains.
-# The rule the gate states: iterate fix -> re-review until no MAJOR and no MODERATE is left.
-# MINOR never blocks — it is the author's discretion, fixed or consciously left.
-# Bypass a genuinely trivial, non-code commit: git commit --no-verify.
+# Concern: the gate declarations for this repo | Non-concern: how a gate is checked (git-agent-verdict owns that) or what a reviewer judges | IO: (message file, installed version) -> exit status
+# Line order IS review order: `set -e` stops at the first unattested gate, so a later gate is never
+# judged against content an earlier one is still changing.
 # Enable per clone: git config core.hooksPath .githooks
 set -euo pipefail
 
-msg_file="$1"
-subject=$(sed -n '1p' "$msg_file")
-staged=$(git diff --cached --name-only)
-
-# Auto-generated messages carry no review and must not be blocked.
-case "$subject" in
-	Merge\ * | Revert\ * | fixup!\ * | squash!\ *) exit 0 ;;
-esac
-
-# Circular-standards guard: each file below is a rubric some gate's review is judged against, and
-# docs/review-prompt.md defines the reviews themselves. Judging a commit that CHANGES a yardstick
-# against that same yardstick is circular — the very measure is in flux — so a rubric change must
-# land on its own, unreviewed, via an explicit bypass. Fail loud and tell the author exactly how.
-for rubric in docs/repo-standards.md docs/review-prompt.md docs/communication-style.md src/annotation-guide.md; do
-	printf '%s\n' "$staged" | grep -qxF "$rubric" || continue
-	echo "" >&2
-	echo "commit-msg: RUBRIC-DOC GATE FAILED" >&2
-	echo "  - this commit changes ${rubric} — a rubric a review is judged against. Judging" >&2
-	echo "    a change to the yardstick against itself is circular." >&2
-	echo "" >&2
-	echo "  Commit the rubric change on its OWN, bypassing the neutral-review gate:" >&2
-	echo "      git commit --no-verify" >&2
-	echo "  Keep it in a SEPARATE commit from any other change (which still needs its review)." >&2
-	echo "" >&2
+# Fail loud and name the remedy. Without this the hook dies on `git: 'agent-verdict' is not a git
+# command`, which names neither the dependency nor how to get it, and blocks every commit.
+# PIN the version. The trailer format and the reviewer brief are this gate's contract, so an
+# unpinned install changes what a commit must carry, and what every reviewer is handed, without
+# anyone choosing that. Bump deliberately, in a commit that also clears whatever the new one finds.
+GAV_VERSION=0.1.2
+command -v git-agent-verdict >/dev/null 2>&1 || {
+	echo "commit-msg: git-agent-verdict is not installed, so no review gate can run." >&2
+	echo "  install: cargo install git-agent-verdict --version $GAV_VERSION" >&2
 	exit 1
-done
-
-# Print the shared preamble plus the one gate block the failing review needs, straight from the
-# canonical doc. Reproducing either here would give the prompt a second home to drift in.
-print_prompt() {
-	awk -v want="$1" '
-		NR == 1 { next }
-		/^== GATE / { in_gate = 1; on = ($3 == want) }
-		!in_gate || on { print }
-	' docs/review-prompt.md >&2
 }
-
-fail() {
-	local gate="$1" title="$2"
-	shift 2
-	echo "" >&2
-	echo "commit-msg: ${title}" >&2
-	printf '  - %s\n' "$@" >&2
-	echo "" >&2
-	print_prompt "$gate"
-	echo "" >&2
-	echo "  Then attest the final round:" >&2
-	case "$gate" in
-		A)
-			echo "      Reviewer: <name of the neutral reviewer>" >&2
-			echo "      - KISS: none" >&2
-			echo "      - SoC: MODERATE — <the finding, one line>" >&2
-			echo "      - DbC: N/A — <why this principle does not apply to this change>" >&2
-			echo "      MAJOR: 0" >&2
-			echo "      MODERATE: 0" >&2
-			echo "      MINOR: <n>" >&2
-			;;
-		B)
-			echo "      Annotation-Reviewer: <name of the neutral reviewer>" >&2
-			echo "      - src/foo.rs: none" >&2
-			echo "      - src/bar.rs: MINOR — <the finding, one line>" >&2
-			echo "      - data.json: N/A — cannot carry a comment" >&2
-			echo "      Annotation-MAJOR: 0" >&2
-			echo "      Annotation-MODERATE: 0" >&2
-			echo "      Annotation-MINOR: <n>" >&2
-			;;
-		C)
-			echo "      Style-Reviewer: <name of the fresh-context reviewer>" >&2
-			echo "      - Tight: none" >&2
-			echo "      - No em-dashes: MINOR — README.md:42, <the finding>" >&2
-			echo "      Style-MAJOR: 0" >&2
-			echo "      Style-MODERATE: 0" >&2
-			echo "      Style-MINOR: <n>" >&2
-			;;
-	esac
-	echo "  One line per checklist item, plus all three counts, spelled exactly as above." >&2
-	echo "  The retired numeric payload and the retired *-Issues keys are not accepted." >&2
+installed="$(git-agent-verdict --version 2>/dev/null | awk '{print $NF}' || true)"
+[ "$installed" = "$GAV_VERSION" ] || {
+	echo "commit-msg: git-agent-verdict ${installed:-unknown} is installed, but this repo's gates are written against $GAV_VERSION." >&2
+	echo "  install: cargo install git-agent-verdict --version $GAV_VERSION" >&2
 	exit 1
 }
 
-# Is there any substance left in a payload once its leading separators are gone? Deletes spaces,
-# tabs, colons and hyphens outright — this only ever answers "empty or not", never echoes the
-# result back. `tr` is byte-oriented and would mangle the multibyte em-dash the recipe uses, so
-# that one is swapped for a space by bash first.
-substance() {
-	local s=${1//—/ }
-	printf '%s' "$s" | tr -d ' \t:-'
-}
+git agent-verdict "$1" standards \
+	--doc docs/repo-standards.md \
+	--path .
 
-# One review's verdict, checked: a line per checklist item, the three counts, and the two halves
-# agreeing. Every gate runs this same algorithm over its own keys, so the shape a reviewer must
-# produce is identical wherever it is demanded. Reports through `check_problems`.
-check_problems=()
-check_review() {
-	local count_prefix="$1"
-	shift
-	local cat prefix rest found line sev finding reason
-	local line_major=0 line_moderate=0 major moderate minor
-	check_problems=()
+git agent-verdict "$1" annotations --per-file \
+	--doc src/annotation-guide.md \
+	--path .
 
-	for cat in "$@"; do
-		prefix="- ${cat}: "
-		rest=""
-		found=0
-		# Read to EOF and keep the LAST match — do NOT add a `break`. A body line at column 0
-		# reading `- KISS: none` would otherwise shadow the real trailer line below it, and the
-		# cross-check tallies below would inherit that hole instead of catching it. Symmetric
-		# with the `tail -n1` count greps: the trailer is authoritative, so it wins.
-		while IFS= read -r line; do
-			if [ "${line#"$prefix"}" != "$line" ]; then
-				rest="${line#"$prefix"}"
-				found=1
-			fi
-		done < "$msg_file"
-
-		if [ "$found" -ne 1 ]; then
-			check_problems+=("missing item: '- ${cat}: none | N/A — … | MAJOR|MODERATE|MINOR — …'")
-			continue
-		fi
-
-		# The payload is a SEVERITY or an explicit absence, never a number: `none` where the item
-		# is clean, `N/A — <reason>` where it does not apply, else one of MAJOR/MODERATE/MINOR
-		# plus the finding on the same line. Anything else — a retired numeric payload included —
-		# falls through to the else and fails loudly, so an old-format message cannot pass.
-		sev=""
-		case "$rest" in
-			MAJOR | MAJOR[![:alnum:]]*) sev="MAJOR" ;;
-			MODERATE | MODERATE[![:alnum:]]*) sev="MODERATE" ;;
-			MINOR | MINOR[![:alnum:]]*) sev="MINOR" ;;
-		esac
-
-		if [ -z "$(substance "$rest")" ]; then
-			check_problems+=("${cat}: empty payload — say 'none', 'N/A — reason', or a severity + finding")
-		elif printf '%s' "$rest" | grep -Eqi '^none([[:space:]]|$)'; then
-			: # clean on this item; nothing further to state and nothing to cross-check
-		elif printf '%s' "$rest" | grep -Eqi '^n\/?a([[:space:]]|$)'; then
-			reason=$(substance "$(printf '%s' "$rest" | sed -E 's/^[Nn]\/?[Aa]//')")
-			[ -n "$reason" ] || check_problems+=("${cat}: N/A needs a reason (why it does not apply)")
-		elif [ -n "$sev" ]; then
-			finding=$(substance "${rest#"$sev"}")
-			if [ -z "$finding" ]; then
-				check_problems+=("${cat}: ${sev} needs the finding on the same line")
-			elif [ "$sev" = "MAJOR" ]; then
-				line_major=$((line_major + 1))
-			elif [ "$sev" = "MODERATE" ]; then
-				line_moderate=$((line_moderate + 1))
-			fi
-		else
-			check_problems+=("${cat}: expected 'none', 'N/A — reason', or 'MAJOR|MODERATE|MINOR — finding' (got: ${rest})")
-		fi
-	done
-
-	# Take the LAST match, not the first: a body line at column 0 reading `MAJOR: 0 blockers
-	# remained after the fix` would otherwise shadow the real trailer below it, and the gate
-	# would read a 0 the reviewer never attested. The trailer is authoritative, so it wins.
-	major=$(grep -E "^${count_prefix}MAJOR:[[:space:]]*[0-9]+" "$msg_file" | tail -n1 | grep -Eo '[0-9]+' | head -n1 || true)
-	moderate=$(grep -E "^${count_prefix}MODERATE:[[:space:]]*[0-9]+" "$msg_file" | tail -n1 | grep -Eo '[0-9]+' | head -n1 || true)
-	minor=$(grep -E "^${count_prefix}MINOR:[[:space:]]*[0-9]+" "$msg_file" | tail -n1 | grep -Eo '[0-9]+' | head -n1 || true)
-
-	# PRESENCE FIRST, COMPARISON ONLY AFTER — do not invert this. An absent or non-numeric count
-	# leaves the variable empty, and `[ "" -gt 0 ]` exits with status 2 (a `test` usage error, not
-	# a verdict). Inside an `if` condition `set -e` does not fire, so status 2 reads as "false"
-	# and a malformed count would sail through as "no blockers". Every comparison below is
-	# therefore guarded on the count being present at all.
-	[ -n "$major" ] || check_problems+=("missing '${count_prefix}MAJOR: <n>' blocker count")
-	[ -n "$moderate" ] || check_problems+=("missing '${count_prefix}MODERATE: <n>' blocker count")
-	[ -n "$minor" ] || check_problems+=("missing '${count_prefix}MINOR: <n>' count (never blocks; it is where a real nit goes instead of being inflated)")
-
-	if [ -n "$major" ] && [ "$major" -gt 0 ]; then
-		check_problems+=("reviewer raised $major MAJOR blocker(s) — the resolution is re-planned by a neutral task agent, not patched here")
-	fi
-	if [ -n "$moderate" ] && [ "$moderate" -gt 0 ]; then
-		check_problems+=("reviewer raised $moderate MODERATE blocker(s) — fix and re-review before committing")
-	fi
-
-	# Cross-check the two halves against each other. The per-item lines and the counts are one
-	# verdict written twice; a disagreement means one half was filled in without reading the
-	# other, and taking the counts on faith would let a declared 0 bury a stated finding. This is
-	# what makes keeping both halves safe rather than redundant. `MINOR` is not cross-checked: it
-	# gates nothing, so the two halves cannot disagree about an outcome.
-	if [ "$line_major" -gt 0 ] && [ "${major:-1}" -eq 0 ]; then
-		check_problems+=("$line_major line(s) carry MAJOR but '${count_prefix}MAJOR: 0' is declared — the lines and the counts disagree")
-	fi
-	if [ "$line_moderate" -gt 0 ] && [ "${moderate:-1}" -eq 0 ]; then
-		check_problems+=("$line_moderate line(s) carry MODERATE but '${count_prefix}MODERATE: 0' is declared — the lines and the counts disagree")
-	fi
-}
-
-named_reviewer() {
-	grep -E "^${1}:" "$msg_file" | tail -n1 | sed -E "s/^${1}:[[:space:]]*//" || true
-}
-
-# --- Gate A: standards review ------------------------------------------------
-# Every principle in docs/repo-standards.md's summary table. A subset would decide in advance
-# which principles a change could possibly breach, and the one most likely to matter for a given
-# diff is the one a narrower list drops. `N/A — reason` is the answer where one does not apply.
-reviewer=$(named_reviewer "Reviewer")
-check_review "" \
-	"Evidence-Based" \
-	"KISS" \
-	"YAGNI" \
-	"SoC" \
-	"Dependency Inversion" \
-	"Minimal API" \
-	"Agent UX" \
-	"Remove-then-Replace" \
-	"File Size" \
-	"DbC" \
-	"Canonical Representation" \
-	"Fail Fast" \
-	"DRY"
-problems=("${check_problems[@]}")
-[ -n "${reviewer// /}" ] || problems=("no non-empty 'Reviewer:' line naming the neutral reviewer" "${problems[@]}")
-[ "${#problems[@]}" -eq 0 ] || fail A "NEUTRAL-REVIEW GATE FAILED" "${problems[@]}"
-
-# --- Gate B: first-line annotation review (semantic: quality + staleness) -----
-# Conceptually runs AFTER the standards review above, so the reviewer judges each annotation
-# against FINAL content. One line per file the diff touches — deletions excluded, since a removed
-# file has no annotation left to judge. The list comes from git, not from the author: an
-# author-supplied list decides what gets looked at, and that is where a missed file hides.
-mapfile -t touched < <(git diff --cached --name-only --diff-filter=d)
-ann_reviewer=$(named_reviewer "Annotation-Reviewer")
-if [ "${#touched[@]}" -gt 0 ]; then
-	check_review "Annotation-" "${touched[@]}"
-else
-	check_problems=()
-fi
-ann_problems=("${check_problems[@]}")
-[ -n "${ann_reviewer// /}" ] || ann_problems=("no non-empty 'Annotation-Reviewer:' line" "${ann_problems[@]}")
-[ "${#ann_problems[@]}" -eq 0 ] || fail B "ANNOTATION-REVIEW GATE FAILED" "${ann_problems[@]}"
-
-# --- Gate C (conditional): communication-style review of human-facing prose ---
-# Fires only when a human-facing doc is in the diff. A reminder to run a neutral, fresh-context
-# review against docs/communication-style.md and attest; the hook cannot stop a determined agent
-# from rubber-stamping, so this is a nudge, not a guarantee. The keys are that doc's rule names.
-if printf '%s\n' "$staged" | grep -qE '^(README\.md|README_APPENDIX\.md|CONTRIBUTING\.md)$'; then
-	style_reviewer=$(named_reviewer "Style-Reviewer")
-	check_review "Style-" \
-		"Matter-of-fact" \
-		"Don't announce the point" \
-		"Scannable" \
-		"Reader-first" \
-		"Tight" \
-		"No em-dashes" \
-		"Plain, not hyped" \
-		"Claims match the code" \
-		"Examples lint clean" \
-		"Links resolve"
-	style_problems=("${check_problems[@]}")
-	[ -n "${style_reviewer// /}" ] || style_problems=("no non-empty 'Style-Reviewer:' line" "${style_problems[@]}")
-	[ "${#style_problems[@]}" -eq 0 ] || fail C "COMMUNICATION-STYLE REVIEW REMINDER" "${style_problems[@]}"
-fi
-
-echo "commit-msg: OK (every demanded review attested, 0 blockers)"
+git agent-verdict "$1" prose \
+	--doc docs/communication-style.md \
+	--path README.md --path README_APPENDIX.md --path CONTRIBUTING.md

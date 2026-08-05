@@ -430,35 +430,39 @@ fn annotation_guide_flag_prints_the_guide_alone() {
     );
 }
 
-/// `--githook-guide` ships the commit-message ATTESTATION KEYS to adopters who wire the example
-/// hook into their own repo, so those keys are an external contract with consumers we cannot
-/// coordinate. Pin the keys — never the prose around them — and pin the absence of the retired
-/// vocabulary, so a half-migrated guide (new hook, old recipe) cannot land.
+/// `--githook-guide` ships the commit-msg WIRING to adopters who reproduce the hook in their own
+/// repo: the tool that checks the attestation, and the declarations that invoke it. Pin those —
+/// never the prose around them — and pin the absence of the vocabulary git-agent-verdict now owns,
+/// so a half-migrated guide (new hook, old recipe) cannot land.
 #[test]
-fn githook_guide_ships_the_attestation_keys() {
+fn githook_guide_ships_the_commit_msg_wiring() {
     // The flag short-circuits before any traversal, so the appended sample path is unused.
     let (out, code) = run(&["--githook-guide"]);
     assert_eq!(
         code, 0,
         "--githook-guide is an info flag: print and exit clean"
     );
-    for key in [
-        "MAJOR:",
-        "MODERATE:",
-        "MINOR:",
-        "Annotation-MAJOR:",
-        "Annotation-MODERATE:",
-        "Annotation-MINOR:",
-        "Style-MAJOR:",
-        "Style-MODERATE:",
-        "Style-MINOR:",
+    for wiring in [
+        "git-agent-verdict",
+        r#"git agent-verdict "$1" standards"#,
+        r#"git agent-verdict "$1" annotations --per-file"#,
+        r#"git agent-verdict "$1" prose"#,
+        "--doc ",
+        "--path ",
     ] {
         assert!(
-            out.contains(key),
-            "the guide must ship the `{key}` attestation key, got: {out}"
+            out.contains(wiring),
+            "the guide must ship `{wiring}` in the commit-msg wiring, got: {out}"
         );
     }
-    for retired in ["MEDIUM", "/10", "Annotation-Issues:", "Style-Issues:"] {
+    for retired in [
+        "MEDIUM",
+        "/10",
+        "Annotation-Issues:",
+        "Style-Issues:",
+        "Annotation-MAJOR:",
+        "Style-MAJOR:",
+    ] {
         assert!(
             !out.contains(retired),
             "the guide must not name the retired `{retired}` payload, got: {out}"

@@ -83,50 +83,25 @@ That thread cannot be delegated. An agent under a commit-and-self-verify brief o
 
 - A failing annotation check prints the annotation guide inline.
 - The comment-budget gate prints the comment standard.
-- `commit-msg` prints the section of the reviewer prompt the failing gate needs, plus the attestation shape.
+- `commit-msg` prints the missing trailer, then the reviewer prompt that earns it.
 
 Nothing can drift, because the requirement is printed by the file that defines it rather than copied into a briefing. And until a gate asks, MAINTAINER's context goes on the work rather than on process it has not reached. If the plan was written against the standards to begin with, the delta the gates ask for is small.
 
 **Gate.** Presence and form, never truth. Coverage is the product: partial coverage keeps little of the benefit, because the slow read-the-source path stays alive for whatever is missing.
 
-**Review.** How many reviews, and what each judges, follows what the repo has to protect; ours runs three. The commit hook runs none of them. It checks the report's form and blocks on any MAJOR or MODERATE the report declares, but it cannot check that a review happened at all, which buys attribution rather than enforcement: a false attestation passes, and is then a claim with a name on it. Form is deterministic so the machine owns it; truth is judgment so a REVIEWER owns it.
+**Review.** How many reviews, and what each judges, follows what the repo has to protect; ours runs three. The commit hook runs none of them. It calls [git-agent-verdict](https://github.com/fredrikolis/git-agent-verdict), which checks that each review's verdict trailer is present and well formed and blocks on any MAJOR or MODERATE it declares. That tool owns the severity ladder, the trailer shape and the trust model, and the case for all three.
 
-See `annotated-tree --githook-guide` for what each hook demands and the exact attestation shape.
+See `annotated-tree --githook-guide` for how to wire the hooks up.
 
 - **A, standards.** Every principle answered, `N/A — reason` included. Self-selecting which ones a change could plausibly breach is how the one that mattered gets dropped.
 - **B, annotations.** The linter proves existence, a reader proves truth, and a wrong annotation does more damage than a missing one. Its file list comes from git, never from MAINTAINER.
 - **C, prose.** Every claim checked against the built artifact. Conditional: it fires only when a human-facing doc is in the diff.
 
-In order, not parallel: B judges annotations against content A may still be changing. Fresh context and no hints, because naming what changed tells a REVIEWER what counts and it stops looking. To re-review, say only `re-review`.
+In order, not parallel: B judges annotations against content A may still be changing. Each REVIEWER gets a fresh context and no hints; git-agent-verdict prints the rest of the brief, and how to re-review.
 
-**Scope is not a reviewer's question.** It was settled before a plan existed, and a reviewer sees neither the issue nor the case for the change; an observation goes back as one MINOR line to the product manager, never as grounds to re-plan.
+**The brief carries intent, and scope is not a REVIEWER's question.** Both rules belong to git-agent-verdict. Here a scope observation comes back to the product manager as one MINOR line, never as grounds to re-plan.
 
-**The brief carries one thing: INTENT.** What the change set out to do, stated flatly, as a spec would state it: no reason it is worth doing, no defence of the approach, no account of what it replaces. This is most of what stands between a review and a rubber stamp: a reviewer handed a case for the change grades the case. A stricter regime exists, escrowing the intent before the work starts, but writing it at review time has held up well enough here that the extra ceremony has not earned its place.
-
-**Commit.** A commit editing a rubric it is judged against lands alone, unreviewed, by explicit bypass. Judging a yardstick against itself is circular.
-
-## Tuning the review loop
-
-A review-and-fix loop has to be *tuned*. It commonly fails in two directions, and the band between them is narrow.
-
-- **Too loose and nothing is caught.** The reviewer rubber-stamps. Prevented by handing it a flat statement of what the change set out to do and no case for why it is any good, leaving nothing to nod along with.
-- **Too tight and nothing ever settles.** Every nit blocks, so the loop never converges. Prevented by a severity that is recorded but never blocks.
-
-We found the balance by having the reviewer sort every finding it reports into three buckets:
-
-- **MAJOR** — the work is wrong, or carries a severe flaw. An incremental fix is unlikely to reach the right answer. Graded by wrongness rather than by the size of the fix, so a one-line change to behaviour cannot land here as a nit.
-- **MODERATE** — the outcome is right, the execution is not. Usually a standards violation, and it needs rework.
-- **MINOR** — fixable without another look.
-
-**The rule is one line: iterate until MAJOR and MODERATE are both zero.** 
-That terminates cleanly because both blocking buckets mean the same thing: there is work the reviewer has not judged yet. When there is none left, the loop is over. MINOR is what makes it reachable, because a finding can be recorded without restarting the review. Nothing is suppressed and no reviewer is asked to pretend the code is clean; findings are declassified, never hidden, so the pressure stays on the code instead of on the report. The loop ends when the reviewer has seen everything that matters, not when it runs out of things to say.
-
-**Two approaches we tried that failed**, both by never settling:
-
-| What we asked for | What we got |
-|---|---|
-| "Report any issues you can find." | It always found one, however minuscule. No round came back empty. |
-| "Stop when every criterion scores above 9/10." | Driving DbC past 9 pushed KISS under it, and the next round traded back. A score also lets a weak dimension hide behind strong ones. |
+**Commit.** A commit editing a rubric it is judged against is refused by the gate, and lands alone via `--no-verify`.
 
 ## Why the limits are tight
 
@@ -171,7 +146,7 @@ my-project-pm/          # the PM's workspace, private, never published
 
 Add a `SPEC.md` to the repo at this point, not to the workspace, and keep it [intentionally under-specified](SPEC.md). Triage reads it from the workspace, but it lives with the code it constrains, so every checkout carries the invariants.
 
-Writing it is the same balancing act as tuning the review loop. Under-specify and anything goes; over-specify and agents begin rejecting good requests by citing a clause that was never meant to carry the weight. We keep it deliberately under-specified, so that anything no clause forbids is admissible, for the same reason a comment restating the code earns nothing. Two things earn a clause and nothing else does:
+Writing it is the same balancing act as tuning a review loop. Under-specify and anything goes; over-specify and agents begin rejecting good requests by citing a clause that was never meant to carry the weight. We keep it deliberately under-specified, so that anything no clause forbids is admissible, for the same reason a comment restating the code earns nothing. Two things earn a clause and nothing else does:
 
 - Something certain and permanent. "No x86-only dependency" in a library that has to run on ARM.
 - Something you have had to correct an agent on more than once. Usually that is where the repo does something unusual, like deliberately not testing a component whose shape is still in flux.

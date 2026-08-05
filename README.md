@@ -414,10 +414,12 @@ Three gates under `.githooks/` (enable with `git config core.hooksPath .githooks
    *true*. Gate the commit on a neutral reviewer (not the author) who checks, per changed
    file, that the annotation still holds after the diff: `Concern` names what the file now
    does, `Non-concern` still excludes a real boundary the file does not own (not a truism),
-   `IO` still matches. Grade each finding by what the fix costs, and block only on the ones
-   that need rework: a gate demanding zero findings never converges, because a reviewer with
-   nothing at stake always finds one more. `--githook-guide` ships the exact attestation
-   shape. [`.githooks/commit-msg`](.githooks/commit-msg) is a working example.
+   `IO` still matches. Grade each finding by what is WRONG, not by what the fix costs: block on
+   MAJOR and MODERATE, which both mean there is work the reviewer has not judged yet, and record
+   MINOR, which never blocks. A gate demanding zero findings never converges, because a reviewer
+   with nothing at stake always finds one more. `--githook-guide` ships the wiring and names the
+   tool that defines the attestation shape. [`.githooks/commit-msg`](.githooks/commit-msg) is
+   a working example.
 
 3. **Standards enforcement (optional, recommended, workspace-dependent).** Layer your
    repo's architectural and anti-litter rules on top. Lint-checkable ones go in a repo
