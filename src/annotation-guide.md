@@ -39,12 +39,13 @@ HOW TO FIND THE NON-CONCERN
   If the exclusion is true of every file, it is a truism, not a boundary. Sharpen it.
   Honesty over tidiness: a truthful line exposing a messy boundary beats a tidy one that hides it.
   Read a folder's annotations together — they should partition the work, no two claiming one job.
-  Marker varies by language: # Python/shell/TOML, // Rust/Go/TS, <!-- --> HTML/Markdown, -- SQL.
+  Marker varies by language: # Python/shell/TOML/YAML, // Rust/Go/TS, <!-- --> HTML/Markdown, -- SQL.
   A file with NO comment syntax (CSV, data, binaries) takes a `<name>.annotation` sidecar
   beside it holding the line BARE, with no marker — the same shape a folder's `.annotation`
   holds. One line there too. Writing one is what lists the file at all. A file that can hold a
   comment must.
   YAML frontmatter, like a shebang, keeps line 1: put the annotation on the line after it.
+  An extensionless script is its shebang's language, so a git hook takes a `#` line, not a sidecar.
 
 REWRITING MANY AT ONCE — strip them first: `strip -R -y <dir>`. Shown an existing line, you
   will edit it instead of reading the code, and a sweep returns reworded versions of the old
