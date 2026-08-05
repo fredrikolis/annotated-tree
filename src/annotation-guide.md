@@ -45,6 +45,7 @@ HOW TO FIND THE NON-CONCERN
   holds. One line there too. Writing one is what lists the file at all. A file that can hold a
   comment must.
   YAML frontmatter, like a shebang, keeps line 1: put the annotation on the line after it.
+  In a YAML file itself, `---` starts a document, not frontmatter: the annotation goes on line 1, above it.
   An extensionless script is its shebang's language, so a git hook takes a `#` line, not a sidecar.
 
 REWRITING MANY AT ONCE — strip them first: `strip -R -y <dir>`. Shown an existing line, you
