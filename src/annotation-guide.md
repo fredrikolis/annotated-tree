@@ -39,7 +39,7 @@ HOW TO FIND THE NON-CONCERN
   If the exclusion is true of every file, it is a truism, not a boundary. Sharpen it.
   Honesty over tidiness: a truthful line exposing a messy boundary beats a tidy one that hides it.
   Read a folder's annotations together — they should partition the work, no two claiming one job.
-  Marker varies by language: # Python/shell, // Rust/Go/TS, <!-- --> HTML/Markdown, -- SQL.
+  Marker varies by language: # Python/shell/TOML, // Rust/Go/TS, <!-- --> HTML/Markdown, -- SQL.
   A file with NO comment syntax (CSV, data, binaries) takes a `<name>.annotation` sidecar
   beside it holding the line BARE, with no marker — the same shape a folder's `.annotation`
   holds. One line there too. Writing one is what lists the file at all. A file that can hold a
