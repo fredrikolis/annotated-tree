@@ -439,3 +439,28 @@ fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
         "the CSV's contract does not conform, so it is not counted as annotated:\n{out}"
     );
 }
+
+/// The gate's blind spot, frozen: a dot-directory is pruned, so every hook and workflow file under
+/// one is unchecked and the run reports all files passed — a green gate vouching for what it never
+/// opened. `--hidden` is what makes the check reach them.
+#[test]
+fn strict_check_misses_a_hidden_dir_without_the_flag() {
+    let files: &[(&str, &str)] = &[
+        ("ok.rs", "// Concern: a | Non-concern: b | IO: none\n"),
+        (".githooks/gate.sh", "#!/usr/bin/env bash\necho hi\n"),
+    ];
+
+    let (out, code) = check("hidden-missed", &["--no-guide"], files);
+    assert_eq!(code, 0, "the unannotated hook is never walked:\n{out}");
+    assert!(
+        out.contains("All 1 files passed"),
+        "and the report says everything passed:\n{out}"
+    );
+
+    let (out, code) = check("hidden-caught", &["--no-guide", "--hidden"], files);
+    assert_eq!(code, 1, "--hidden puts the hook in scope:\n{out}");
+    assert!(
+        out.contains(".githooks/gate.sh") && out.contains("missing annotation"),
+        "and names it as the offender:\n{out}"
+    );
+}

@@ -8,6 +8,19 @@ to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `--hidden` walks dot-files and dot-directories, which were pruned unconditionally before. A repo
+  keeps its hooks, workflows and agent configuration behind a leading dot — `.githooks/`,
+  `.github/`, `.claude/` — and every one of them was invisible to the tree AND to `--strict-check`,
+  which reported all files passed for a tree it had never opened. What is then CHECKED under a
+  revealed directory is the ordinary rule, a file whose extension maps to a configured language: on
+  this repo the flag adds `.cargo-lint-extra.toml` and nothing else, because a `.yml` workflow and
+  an extensionless hook map to no language. Also settable as
+  `[display] hidden` in a config file. It is **off by default, so no existing invocation changes**;
+  the three goldens are unchanged with a dot-directory added to `sample/`, which is the proof.
+  Two boundaries: `.git` is never walked under any flag combination, and the switch is orthogonal
+  to `.gitignore` — a path that is both hidden and ignored needs `--no-gitignore` too. The
+  `--githook-guide` recipe and all three copies of this repo's own gate — `pre-commit`, CI, and the
+  pre-tag release check — now pass it, for the same reason they already pass `--include-tests`.
 - **BREAKING (gate).** `.toml` is a recognized language, with `#` as its comment marker (#19).
   A `.toml` file is listed in the tree and must carry a first-line annotation, at the same bar
   as a `.py` or a `.rs`. Config was the one place the tool told an agent to route by opening the
@@ -18,6 +31,12 @@ to [Semantic Versioning](https://semver.org/).
   A `<name>.toml.annotation` sidecar written before this goes inert, as a sidecar beside any
   file that maps to a comment marker does: move the line into the `.toml` itself, behind a `#`,
   and delete the sidecar.
+
+### Changed
+- **BREAKING (library).** `walk::configured_walk` takes a `WalkFilter` params struct in place of its
+  positional `gitignore`, `include_tests` and `excludes` arguments. Four filtering choices, three of
+  them `bool`, is a signature a caller transposes silently, and the struct is what lets one walk's
+  policy be handed to another rather than restated.
 
 ## [0.6.0] - 2026-08-02
 

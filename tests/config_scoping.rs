@@ -1,4 +1,4 @@
-// Concern: freezes that --config replaces discovery, and that each root of a multi-root run uses its own config | Non-concern: what any setting controls | IO: (temp trees) -> asserted stdout
+// Concern: freezes which config layer a run resolves — --config over discovery, a discovered repo file, and one per root | Non-concern: what any setting controls | IO: (temp trees) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -118,4 +118,37 @@ fn multi_root_run_scopes_config_per_root() {
 
     let _ = std::fs::remove_dir_all(&root_a);
     let _ = std::fs::remove_dir_all(&root_b);
+}
+
+/// A discovered repo file is a full peer of the command line: `[display] hidden = true` in one makes
+/// every run in that tree see the dot-directory, so a repo whose hooks and workflows live behind a
+/// dot states it once instead of on every invocation.
+#[test]
+fn repo_config_hidden_reveals_a_dot_directory_without_the_flag() {
+    let dir = temp_dir("hidden-config");
+    std::fs::create_dir_all(dir.join(".ci")).unwrap();
+    std::fs::write(
+        dir.join(".ci/deploy.sh"),
+        "#!/usr/bin/env bash\n# Concern: a dot-directory script for the config fixture | Non-concern: real behavior (a test stub) | IO: none\n",
+    )
+    .unwrap();
+
+    let base = run(&[&dir], &[]);
+    assert!(
+        !base.contains("deploy.sh"),
+        "with no config the dot-directory is pruned:\n{base}"
+    );
+
+    std::fs::write(
+        dir.join(".annotated-tree.toml"),
+        "[display]\nhidden = true\n",
+    )
+    .unwrap();
+    let out = run(&[&dir], &[]);
+    assert!(
+        out.contains("deploy.sh"),
+        "the repo config reveals it with no flag on the command line:\n{out}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

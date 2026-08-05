@@ -10,12 +10,17 @@ because gate 2's review is wasted on a file that has no annotation at all.
 PRE-COMMIT — mechanical, deterministic (presence + form only)
   Run BOTH invocations over the repo, and fail on either:
 
-      annotated-tree --strict-check . --max-length 200
-      annotated-tree --strict-check . --include-tests -I 'tests/fixtures' --max-length 200
+      annotated-tree --strict-check . --hidden --max-length 200
+      annotated-tree --strict-check . --hidden --include-tests -I 'tests/fixtures' --max-length 200
 
   The second exists because a directory named `tests` is pruned unless `--include-tests`, so
   without it `tests/` is invisible to the check and a bare test file still reports all files
-  passed. `--max-length 200` bounds the whole annotation; `-I`/`--ignore` any fixture dir whose
+  passed. `--hidden` is there for exactly that reason at the other end of the tree: a
+  dot-directory — `.github`, `.githooks`, `.claude` — is pruned without it, so nothing beneath one
+  is walked at all. What is then checked under a revealed directory is the ordinary rule, a file
+  whose extension maps to a configured language, so a `.yml` or an extensionless hook needs a
+  language before the gate reaches it. `.git` is never walked either way.
+  `--max-length 200` bounds the whole annotation; `-I`/`--ignore` any fixture dir whose
   annotations are deliberately loose. Prefer a built binary (`target/release`, then
   `target/debug`), fall back to `cargo run --quiet --` so a fresh clone still gates. On a nonzero
   exit, print what failed and exit 1. This checks that an annotation EXISTS and PARSES, never

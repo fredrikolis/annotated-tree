@@ -32,9 +32,10 @@ say "self-check (dogfood the convention)"
 # Whole repo except sample/ (its loose annotations are pinned by tests/golden.rs), matching
 # .githooks/pre-commit and CI. Two invocations: `walk::keep_entry` prunes any directory named
 # `tests` unless `--include-tests` (default off), so the first cannot see tests/ at all.
-# tests/fixtures stays excluded — charter_malformed is deliberately malformed.
-cargo run --release --quiet -- --strict-check . --ignore sample --max-length 200
-cargo run --release --quiet -- --strict-check . --ignore sample --include-tests -I 'tests/fixtures' --max-length 200
+# tests/fixtures stays excluded — charter_malformed is deliberately malformed. `--hidden` is
+# that prune at the other end: without it nothing under .githooks/ or .github/ is walked.
+cargo run --release --quiet -- --strict-check . --hidden --ignore sample --max-length 200
+cargo run --release --quiet -- --strict-check . --hidden --ignore sample --include-tests -I 'tests/fixtures' --max-length 200
 
 say "crate is publishable"
 cargo package --list --allow-dirty >/dev/null

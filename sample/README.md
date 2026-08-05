@@ -4,6 +4,8 @@
 A deliberately mixed-ecosystem tree used to exercise every `annotated-tree`
 feature: multi-language first-line annotations, the cross-ecosystem dependency
 graph (Python / npm / Cargo / Go), reverse "used by" edges, `.gitignore`
-handling, strict-check pass/fail cases, and depth limiting.
+handling, strict-check pass/fail cases, and depth limiting. `.ci/` is the
+dot-directory `--hidden` reveals; its absence from every golden is what proves
+the flag defaults off.
 
 Content is stubbed — only structure, manifests, and first-line annotations matter.

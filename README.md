@@ -344,6 +344,7 @@ to disk:
 | Only what changed, plus blast radius | `--changed`, `--since <ref>` |
 | Lint annotations + architectural rules (git hook or CI) | `--strict-check` |
 | Bound the whole annotation's length *(200 by default)* | `--max-length <N>`, `0` to disable |
+| Show dot-files and dot-directories, such as `.github` | `--hidden` |
 | Cap entries shown per directory (big corpora) | `--max-per-node <N>`, `--full` |
 | Runaway-scope guard | `--max-files <N>` |
 | Remove first-line annotations in bulk | `strip [-R] [-y] <PATH>...` |
@@ -355,7 +356,7 @@ them.
 - It lists the files it would change, and **writes nothing until you pass `-y`**.
 - A directory needs `-R`. Without it, `strip` exits 2.
 - Under `-R`, `strip` skips what the tree render skips: gitignored paths, `tests/`, and
-  `node_modules`.
+  `node_modules`. Dot-directories too, unless you pass `--hidden`.
 - `-I` narrows `strip` on files you name as well as files it walks.
 - It deletes a line only when the whole line is a conforming annotation.
 - `strip` takes the blank line under the annotation with it.

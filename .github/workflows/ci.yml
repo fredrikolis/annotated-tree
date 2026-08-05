@@ -40,9 +40,12 @@ jobs:
       # Two invocations: `walk::keep_entry` prunes any directory named `tests` unless
       # `--include-tests` (default off), so the first cannot see tests/ at all and most of
       # the repo's annotations would go unenforced. tests/fixtures stays excluded —
-      # charter_malformed is deliberately malformed.
-      - run: cargo run --release -- --strict-check . --ignore sample --max-length 200
-      - run: cargo run --release -- --strict-check . --ignore sample --include-tests -I 'tests/fixtures' --max-length 200
+      # charter_malformed is deliberately malformed. `--hidden` is the same prune at the
+      # other end: without it nothing under .githooks/ or .github/ is walked at all. Both
+      # lines must match .githooks/pre-commit and distribution/local-release-check.sh, or a
+      # commit the local hook blocks merges green here.
+      - run: cargo run --release -- --strict-check . --hidden --ignore sample --max-length 200
+      - run: cargo run --release -- --strict-check . --hidden --ignore sample --include-tests -I 'tests/fixtures' --max-length 200
 
   # Lint the distribution shell scripts.
   shellcheck:

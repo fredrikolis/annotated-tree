@@ -432,9 +432,7 @@ pub(crate) fn check_structured(
         // Same filter as the file walk but UNCAPPED by depth: `--strict-check` is a gate over the whole tree, not a rendered view, so `-L` never shrinks what it evaluates.
         let graph = graph::build(
             &[root.to_path_buf()],
-            config.display.gitignore,
-            config.display.include_tests,
-            excludes,
+            crate::walk::WalkFilter::from_config(config, excludes),
             None,
         );
         // `PackageEdges::dir` is absolute, so the root is canonicalized once to relativize into the same unix path shape annotation `path`s use.

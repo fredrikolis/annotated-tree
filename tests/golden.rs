@@ -64,6 +64,26 @@ fn no_gitignore_reveals_gitignored_build_dir() {
     );
 }
 
+/// `--hidden` is a single-delta view over the default, in the shape of the `--no-gitignore` case
+/// above: the fixture's `.ci/` is a dot-directory, so `notes.md` is what it adds. The three goldens
+/// staying byte-identical with `.ci/` present is itself the proof that the flag defaults OFF; this
+/// freezes that passing it does something.
+#[test]
+fn hidden_reveals_the_dot_directory() {
+    let (default_out, dcode) = run(&[]);
+    let (shown_out, scode) = run(&["--hidden"]);
+    assert_eq!(dcode, 0, "default exit code");
+    assert_eq!(scode, 0, "--hidden exit code");
+    assert!(
+        !default_out.contains("notes.md"),
+        "the default view skips the dot-directory .ci/:\n{default_out}"
+    );
+    assert!(
+        shown_out.contains("notes.md"),
+        "--hidden reveals .ci/notes.md:\n{shown_out}"
+    );
+}
+
 /// `--ascii` is a pure glyph swap of the default view, so freeze exactly THAT
 /// relationship rather than re-freezing the whole fixture a second time: run both
 /// and assert the ascii output equals the default with the box glyphs substituted

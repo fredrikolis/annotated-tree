@@ -325,3 +325,34 @@ fn a_sidecar_with_prose_below_its_line_gives_the_row_no_contract_and_fails() {
         "never echoed into the report:\n{strict}"
     );
 }
+
+/// SPEC CORE2 with every switch that could expose a `.annotation` row on at once: `--hidden` walks
+/// into the dot-file a charter is, `--include '*'` selects every path whatever its extension. So the
+/// suppression must hold by NAME, not as a by-product of the hidden prune — a charter listed as its
+/// own row is an Annotation somewhere other than the path it annotates.
+#[test]
+fn hidden_and_include_still_suppress_the_charter_row() {
+    let mut files = tree_files();
+    files.push((
+        "runs/.annotation",
+        "Concern: the recorded runs | Non-concern: real behavior (a test stub) | IO: none\n",
+    ));
+    files.push((
+        "runs/inner.rs",
+        "// Concern: an inner file | Non-concern: parsing | IO: none\n",
+    ));
+    let (out, _err, code) = run("charter-hidden", &["--hidden", "--include", "*"], &files);
+    assert_eq!(code, 0, "rendering a tree exits 0:\n{out}");
+    assert!(
+        !out.contains(".annotation"),
+        "neither the directory charter nor the file sidecar takes a row:\n{out}"
+    );
+    assert!(
+        out.contains("runs/  # Concern: the recorded runs"),
+        "the charter still renders on the directory's own row:\n{out}"
+    );
+    assert!(
+        out.contains(CONTRACT),
+        "and the sidecar still renders on the row of the file it annotates:\n{out}"
+    );
+}

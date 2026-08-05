@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Concern: ships the built artifact to the staging host | Non-concern: building it (the build step owns that) | IO: (artifact) -> exit_code
+echo "deploying"

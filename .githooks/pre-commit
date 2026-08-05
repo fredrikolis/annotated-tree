@@ -12,14 +12,18 @@ else
 fi
 
 # Gate 1: annotations. Twice, because the walk prunes `tests` unless --include-tests, and most
-# annotations live there. `sample/` holds deliberately-loose fixtures pinned by tests/golden.rs.
+# annotations live there. --hidden is the same prune at the other end: without it nothing under
+# .githooks/ or .github/ is walked. `sample/` holds deliberately-loose fixtures pinned by
+# tests/golden.rs. Both lines must match .github/workflows/ci.yml and
+# distribution/local-release-check.sh, or a commit this hook blocks merges green in CI.
 fail_1() {
 	echo "" >&2
 	echo "pre-commit: ANNOTATION GATE FAILED — $1 (see above)" >&2
 	exit 1
 }
-"${run[@]}" --strict-check . --ignore sample --max-length 200 || fail_1 "a code file lacks one"
-"${run[@]}" --strict-check . --ignore sample --include-tests -I 'tests/fixtures' --max-length 200 ||
+"${run[@]}" --strict-check . --hidden --ignore sample --max-length 200 ||
+	fail_1 "a code file lacks one"
+"${run[@]}" --strict-check . --hidden --ignore sample --include-tests -I 'tests/fixtures' --max-length 200 ||
 	fail_1 "a file under tests/ lacks one"
 
 # Gate 2: comment budget. Blocking comes from `level = "deny"` in the config, never from `-W`,

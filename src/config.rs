@@ -50,6 +50,7 @@ struct RawDisplay {
     show_age: Option<bool>,
     ascii: Option<bool>,
     gitignore: Option<bool>,
+    hidden: Option<bool>,
     include_tests: Option<bool>,
     max_per_node: Option<usize>,
     include: Option<Vec<String>>,
@@ -71,6 +72,7 @@ pub struct CliOverrides {
     pub show_age: Option<bool>,
     pub ascii: Option<bool>,
     pub gitignore: Option<bool>,
+    pub hidden: Option<bool>,
     pub include_tests: Option<bool>,
     /// Additional `--include` glob selectors from the CLI (each may pipe-bundle several,
     /// tree-style). ADDITIVE to any config `[display] include`: the resolved selector set is
@@ -98,6 +100,9 @@ pub struct Display {
     pub show_age: bool,
     pub ascii: bool,
     pub gitignore: bool,
+    /// Descend into dot-directories and list dot-files. Independent of `gitignore` — a hidden path
+    /// `.gitignore` also names needs both switched to appear — and `.git` is walked under neither.
+    pub hidden: bool,
     pub include_tests: bool,
     /// Show at most this many subdirectories AND files per directory, replacing the overflow with a
     /// `[+N folders and F files]` marker; `None` means no cap. A display concern, so it lives here
@@ -231,6 +236,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
         dd.show_age = sd.show_age.or(dd.show_age);
         dd.ascii = sd.ascii.or(dd.ascii);
         dd.gitignore = sd.gitignore.or(dd.gitignore);
+        dd.hidden = sd.hidden.or(dd.hidden);
         dd.include_tests = sd.include_tests.or(dd.include_tests);
         dd.max_per_node = sd.max_per_node.or(dd.max_per_node);
         // `include` is a whole list, so a layer that sets it REPLACES (not appends) — the same precedence `[rules] deny` uses, so a repo file can fully re-state the selectors rather than inherit a user file's. CLI selectors are folded in additively later, in `resolve`.
@@ -263,6 +269,7 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
         show_age: cli.show_age.or(disp.show_age).unwrap_or(false),
         ascii: cli.ascii.or(disp.ascii).unwrap_or(false),
         gitignore: cli.gitignore.or(disp.gitignore).unwrap_or(true),
+        hidden: cli.hidden.or(disp.hidden).unwrap_or(false),
         include_tests: cli.include_tests.or(disp.include_tests).unwrap_or(false),
         max_per_node: resolve_max_per_node(cli, disp.max_per_node),
         include,

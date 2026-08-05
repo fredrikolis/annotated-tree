@@ -1,4 +1,4 @@
-// Concern: freezes which files the -I/--ignore globs, --include-tests and the --include selector make visible | Non-concern: how a visible file renders | IO: (temp tree) -> asserted stdout
+// Concern: freezes which files the -I/--ignore globs, --include-tests, --hidden and the --include selector make visible | Non-concern: how a visible file renders | IO: (temp tree) -> asserted stdout
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -66,6 +66,89 @@ fn temp_tree_mixed(tag: &str) -> PathBuf {
     .unwrap();
     std::fs::write(dir.join("data.bin"), "raw bytes, no annotation\n").unwrap();
     dir
+}
+
+/// A temp tree whose every interesting file is behind a leading dot: an annotated `.ci/deploy.sh`,
+/// an annotated `.git/config.rs` (the invariant's bait — a real repo never holds one, so a hit
+/// proves the walk descended), and a `.secret/hush.rs` the tree's own `.gitignore` names.
+fn temp_tree_hidden(tag: &str) -> PathBuf {
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("at-hidden-{}-{tag}-{n}", std::process::id()));
+    let annotated = |what: &str| {
+        format!("// Concern: {what} for the hidden-walk fixture | Non-concern: real behavior (a test stub) | IO: none\n")
+    };
+    for sub in [".ci", ".git", ".secret"] {
+        std::fs::create_dir_all(dir.join(sub)).unwrap();
+    }
+    std::fs::write(dir.join("plain.rs"), annotated("a visible file")).unwrap();
+    std::fs::write(
+        dir.join(".ci/deploy.sh"),
+        "#!/usr/bin/env bash\n# Concern: a dot-directory script for the hidden-walk fixture | Non-concern: real behavior (a test stub) | IO: none\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join(".git/config.rs"), annotated("a file in .git")).unwrap();
+    std::fs::write(dir.join(".secret/hush.rs"), annotated("a gitignored file")).unwrap();
+    std::fs::write(dir.join(".gitignore"), ".secret/\n").unwrap();
+    dir
+}
+
+#[test]
+fn hidden_dir_invisible_by_default_and_revealed_by_flag() {
+    let dir = temp_tree_hidden("toggle");
+    let default = run(&dir, &[]);
+    assert!(
+        default.contains("plain.rs"),
+        "baseline lists the visible file:\n{default}"
+    );
+    assert!(
+        !default.contains("deploy.sh"),
+        "a dot-directory is pruned by default:\n{default}"
+    );
+
+    let shown = run(&dir, &["--hidden"]);
+    assert!(
+        shown.contains("deploy.sh"),
+        "--hidden reveals .ci/deploy.sh:\n{shown}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn hidden_never_descends_into_dot_git() {
+    // The invariant `--hidden` makes load-bearing: `.git` was reachable only because every dot-directory was pruned, so the name prune must hold with the prune switched off — under `--no-gitignore` too, since a repo's `.gitignore` could otherwise be the only thing covering it.
+    let dir = temp_tree_hidden("dot-git");
+    for args in [
+        &["--hidden"][..],
+        &["--hidden", "--no-gitignore"][..],
+        &["--hidden", "--include", "*"][..],
+    ] {
+        let out = run(&dir, args);
+        assert!(
+            !out.contains("config.rs"),
+            "{args:?} must never reach .git/config.rs:\n{out}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn hidden_respects_gitignore() {
+    // The two switches are orthogonal: `--hidden` reveals a dot-directory, it does not overrule .gitignore, so a path both hidden and ignored needs both flags.
+    let dir = temp_tree_hidden("gitignored");
+    let hidden_only = run(&dir, &["--hidden"]);
+    assert!(
+        !hidden_only.contains("hush.rs"),
+        "--hidden alone leaves a gitignored dot-directory pruned:\n{hidden_only}"
+    );
+
+    let both = run(&dir, &["--hidden", "--no-gitignore"]);
+    assert!(
+        both.contains("hush.rs"),
+        "--hidden --no-gitignore reveals .secret/hush.rs:\n{both}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

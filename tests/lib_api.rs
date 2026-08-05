@@ -73,7 +73,14 @@ fn public_primitives_compose_config_walk_and_extraction() {
 fn configured_walk_is_directly_usable() {
     // The raw `ignore`-based walker is exposed too, so a consumer can apply its OWN keep policy (e.g. for extensionless files or symlinks) instead of `collect_code_files`'s.
     let dir = temp_tree("raw-walk");
-    let names: Vec<String> = walk::configured_walk(&dir, true, false, &GlobSet::empty())
+    let empty = GlobSet::empty();
+    let filter = walk::WalkFilter {
+        gitignore: true,
+        hidden: false,
+        include_tests: false,
+        excludes: &empty,
+    };
+    let names: Vec<String> = walk::configured_walk(&dir, filter)
         .build()
         .flatten()
         .filter(|e| e.file_type().is_some_and(|t| t.is_file()))

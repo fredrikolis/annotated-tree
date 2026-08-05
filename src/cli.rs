@@ -53,6 +53,11 @@ pub struct Cli {
     #[arg(long)]
     pub no_gitignore: bool,
 
+    /// Show dot-files and dot-directories such as .github (skipped by default). .git is never
+    /// walked, and a hidden path that .gitignore also names needs --no-gitignore too.
+    #[arg(long)]
+    pub hidden: bool,
+
     /// Append each file's modification time.
     #[arg(long)]
     pub age: bool,
@@ -250,6 +255,7 @@ impl Cli {
             show_age: self.age.then_some(true),
             ascii: self.ascii.then_some(true),
             gitignore: self.no_gitignore.then_some(false),
+            hidden: self.hidden.then_some(true),
             include_tests: self.include_tests.then_some(true),
             include: self.include.clone(),
             config_file: self.config.clone(),

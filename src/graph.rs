@@ -3,10 +3,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use globset::GlobSet;
 use serde::Serialize;
 
 use crate::manifest::{canonicalize, Ecosystem, ManifestParser};
+use crate::walk::WalkFilter;
 
 /// An internal (same-tree) dependency. `resolved` is false when the dep was
 /// *declared* internal (npm `workspace:*`, Cargo `path=`) but no package with
@@ -69,23 +69,12 @@ struct Package {
 /// canonical absolute path. The manifest walk applies the SAME filter as the code-file walk, and
 /// `max_depth` bounds it one level below the deepest displayed row, so "what's graphed" is exactly
 /// "what's shown". `None` scans every depth; a multi-root run drives both from the PRIMARY root.
-pub fn build(
-    roots: &[PathBuf],
-    gitignore: bool,
-    include_tests: bool,
-    excludes: &GlobSet,
-    max_depth: Option<usize>,
-) -> Graph {
+pub fn build(roots: &[PathBuf], filter: WalkFilter<'_>, max_depth: Option<usize>) -> Graph {
     let parsers = crate::manifest::parsers();
     let mut raw: Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
-    let scope = WalkScope {
-        gitignore,
-        include_tests,
-        excludes,
-        max_depth,
-    };
+    let scope = WalkScope { filter, max_depth };
     for root in roots {
         collect_manifests(root, &scope, &parsers, &mut raw, &mut warnings);
     }
@@ -236,14 +225,12 @@ impl Graph {
     }
 }
 
-/// How a manifest walk is shaped: the code-file walk's exact filter, plus the render's
+/// How a manifest walk is shaped: the code-file walk's exact [`WalkFilter`], plus the render's
 /// `-L LEVEL` (which this walk bounds one level DEEPER than the rows — see
 /// [`crate::walk::cap_manifest_depth`]), carried as one value so the two travel together
 /// and cannot drift apart between roots.
 struct WalkScope<'a> {
-    gitignore: bool,
-    include_tests: bool,
-    excludes: &'a GlobSet,
+    filter: WalkFilter<'a>,
     max_depth: Option<usize>,
 }
 
@@ -255,8 +242,7 @@ fn collect_manifests(
     warnings: &mut Vec<Warning>,
 ) {
     // Shares the code-file walk's exact directory filter, so an invisible manifest raises no "could not parse" warning and leaks no package into the name set from a dir the tree never shows.
-    let mut builder =
-        crate::walk::configured_walk(root, scope.gitignore, scope.include_tests, scope.excludes);
+    let mut builder = crate::walk::configured_walk(root, scope.filter);
     crate::walk::cap_manifest_depth(&mut builder, scope.max_depth);
     let walker = builder.build();
     for entry in walker.flatten() {

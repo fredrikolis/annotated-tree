@@ -315,27 +315,21 @@ pub(crate) fn build_codebase_map(
     for root in roots {
         let config = Config::load(root, overrides).map_err(BuildError::Other)?;
         let include = util::build_globset(&config.display.include).map_err(BuildError::Other)?;
+        let filter = walk::WalkFilter::from_config(&config, excludes);
         // `max_depth` bounds the WALK, not just the render: below the cutoff nothing is visited, stat'd, read, or counted against `--max-files`.
-        match walk::collect_tree(root, &config, excludes, &include, max_depth) {
-            Ok(walked) => walked_roots.push((root, config, walked)),
+        match walk::collect_tree(root, &config, filter, &include, max_depth) {
+            Ok(walked) => walked_roots.push((root, config, walked, filter)),
             Err(e) => return Err(BuildError::Limit(e)),
         }
     }
 
-    // The manifest walk uses the PRIMARY root's gitignore + include_tests, as the shared `ascii`/rules choices already do.
-    let primary_config = &walked_roots[0].1;
-    let graph = graph::build(
-        roots,
-        primary_config.display.gitignore,
-        primary_config.display.include_tests,
-        excludes,
-        max_depth,
-    );
+    // The manifest walk takes the PRIMARY root's filter — the very value that root's own walk ran on, so a graphed path cannot have been reached under a different policy than a shown one — as the shared `ascii`/rules choices already come from it.
+    let graph = graph::build(roots, walked_roots[0].3, max_depth);
 
     // A FILTER over the existing walk and graph, not a second traversal. Absent the ref, every downstream step stays byte-identical.
     if let Some(since) = since {
         let mut changed = std::collections::HashSet::new();
-        for (root, _, _) in &walked_roots {
+        for (root, _, _, _) in &walked_roots {
             changed.extend(changed::changed_files(root, since).map_err(BuildError::Git)?);
         }
         // Blast radius: the reverse closure over `used_by` edges, mapped back to directories to keep wholesale.
@@ -345,7 +339,7 @@ pub(crate) fn build_codebase_map(
             changed.contains(&canon) || blast.iter().any(|dir| canon.starts_with(dir))
         };
         // Directories take the SAME predicate as files, so `--since` means the change set rather than the whole skeleton with a few files in it.
-        for (_, _, walked) in &mut walked_roots {
+        for (_, _, walked, _) in &mut walked_roots {
             walked.files.retain(&in_change_set);
             walked.dirs.retain(&in_change_set);
         }
@@ -356,7 +350,7 @@ pub(crate) fn build_codebase_map(
     let map = model::CodebaseMap {
         roots: walked_roots
             .iter()
-            .map(|(root, config, walked)| {
+            .map(|(root, config, walked, _)| {
                 model::build(
                     root,
                     &walked.files,
