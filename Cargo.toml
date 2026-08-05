@@ -1,3 +1,4 @@
+# Concern: declares the annotated-tree crate — its targets, dependencies and release profile | Non-concern: what the tool does or how it ships (src/ and distribution/ own those) | IO: none
 [package]
 name = "annotated-tree"
 version = "0.6.0"

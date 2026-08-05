@@ -353,6 +353,31 @@ fn yaml_frontmatter_keeps_line_one_and_the_annotation_still_counts() {
 }
 
 #[test]
+fn a_toml_is_held_to_the_same_bar_as_code() {
+    // A manifest is a `.toml` like any other: it is checked, not waived because a directory row already states its dependency edges.
+    let (out, code) = check(
+        "toml",
+        &["--no-guide"],
+        &[
+            (
+                "annotated.toml",
+                "# Concern: the release profile | Non-concern: the code it builds | IO: none\n[profile.release]\nlto = true\n",
+            ),
+            ("Cargo.toml", "[package]\nname = \"demo\"\n"),
+        ],
+    );
+    assert_eq!(code, 1, "an unannotated `.toml` fails the check:\n{out}");
+    assert!(
+        out.contains("Cargo.toml:1: missing annotation [toml]"),
+        "the manifest is reported under the toml language:\n{out}"
+    );
+    assert!(
+        out.contains("1 of 2 files annotated"),
+        "an annotated `.toml` counts toward coverage:\n{out}"
+    );
+}
+
+#[test]
 fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
     // An `.annotation`'s stray lines reach no report surface, on any of the three shapes that produce them — and the malformed-first-line cases prove the precedence rule: without it, `found:` and `suggestion:` echo the stray line and ONE finding prints as THREE lines.
     let files = &[

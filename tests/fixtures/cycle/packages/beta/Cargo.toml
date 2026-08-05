@@ -1,3 +1,4 @@
+# Concern: names the beta crate and its path dependency on alpha, the other half of the cycle | Non-concern: the rule that flags it (.annotated-tree.toml owns it) | IO: none
 [package]
 name = "beta"
 version = "0.0.0"

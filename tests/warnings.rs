@@ -34,7 +34,12 @@ fn run_capture(dir: &Path, extra: &[&str]) -> (String, String, i32) {
 #[test]
 fn corrupt_manifest_warns_and_continues() {
     let dir = temp_dir("corrupt");
-    std::fs::write(dir.join("pyproject.toml"), "[project\nname = \"oops\n").unwrap();
+    // Annotated, so the only thing on stderr can be the parse warning under test: a `.toml` is a listed file like any other, and an unannotated one would add the coverage note.
+    std::fs::write(
+        dir.join("pyproject.toml"),
+        "# Concern: the corrupt manifest the parse warning fires on | Non-concern: the warning text (the graph owns it) | IO: none\n[project\nname = \"oops\n",
+    )
+    .unwrap();
     std::fs::write(dir.join("src/x.py"), "# Concern: does x for the warnings fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
 
     let (out, err, code) = run_capture(&dir, &[]);
@@ -60,7 +65,7 @@ fn valid_manifest_without_package_is_silent() {
     // Valid TOML, just no [project] table — not an error worth warning about.
     std::fs::write(
         dir.join("pyproject.toml"),
-        "[tool.black]\nline-length = 88\n",
+        "# Concern: the fixture's tool settings, in a manifest that parses | Non-concern: package metadata (deliberately absent) | IO: none\n[tool.black]\nline-length = 88\n",
     )
     .unwrap();
     std::fs::write(dir.join("src/y.py"), "# Concern: does y for the warnings fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();

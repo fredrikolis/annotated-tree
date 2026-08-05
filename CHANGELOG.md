@@ -5,6 +5,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **BREAKING (gate).** `.toml` is a recognized language, with `#` as its comment marker (#19).
+  A `.toml` file is listed in the tree and must carry a first-line annotation, at the same bar
+  as a `.py` or a `.rs`. Config was the one place the tool told an agent to route by opening the
+  file. A manifest is a `.toml` like any other and gets no waiver: `Cargo.toml` and
+  `pyproject.toml` now render as rows of their own, above the dependency edges their directory
+  already states. A repo that does not want a given file held to this excludes it with `-I`
+  or `.gitignore`, as it would any other file — the check gained no carve-out to configure.
+  A `<name>.toml.annotation` sidecar written before this goes inert, as a sidecar beside any
+  file that maps to a comment marker does: move the line into the `.toml` itself, behind a `#`,
+  and delete the sidecar.
+
 ## [0.6.0] - 2026-08-02
 
 ### Added

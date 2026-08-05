@@ -1,3 +1,4 @@
+# Concern: declares the acme-worker package and the packages it depends on | Non-concern: the jobs themselves (acme_worker/ owns it) | IO: none
 [project]
 name = "acme-worker"
 version = "0.1.0"

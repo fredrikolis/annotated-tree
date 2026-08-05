@@ -1,3 +1,4 @@
+# Concern: names the core crate, the far end of the forbidden edge | Non-concern: the edge itself (the web crate declares it) | IO: none
 [package]
 name = "core"
 version = "0.0.0"

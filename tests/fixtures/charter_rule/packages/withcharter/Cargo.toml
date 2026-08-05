@@ -1,3 +1,4 @@
+# Concern: makes this directory a package require_package_charter judges | Non-concern: the charter it resolves (src/lib.rs owns that) | IO: none
 [package]
 name = "withcharter"
 version = "0.0.0"

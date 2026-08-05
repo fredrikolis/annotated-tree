@@ -1,3 +1,4 @@
+# Concern: makes this directory a package with no entry file to promote a charter from | Non-concern: the rule that then fails it (.annotated-tree.toml owns it) | IO: none
 [package]
 name = "nocharter"
 version = "0.0.0"

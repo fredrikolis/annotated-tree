@@ -1,3 +1,4 @@
+# Concern: declares the acme-core package and the packages it depends on | Non-concern: the computation itself (acme_core/ owns it) | IO: none
 [project]
 name = "acme-core"
 version = "0.1.0"

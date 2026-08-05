@@ -11,11 +11,13 @@ cross-ecosystem dependency graph.
 
 ```
 $ annotated-tree
-├── web/           # Concern: the HTTP API | Non-concern: business rules | IO: (Request) -> Response · <- depends on [core]
-│   └── routes.py  # Concern: map URLs to Core calls | Non-concern: what the calls do | IO: (Request) -> Response
-└── core/          # Concern: the business rules | Non-concern: transport or storage | IO: (Command) -> Result · used by: [web]
-    ├── rules.py   # Concern: pricing and discount logic | Non-concern: where orders come from | IO: (Order) -> Priced
-    └── store.py   # Concern: read/write orders | Non-concern: the rules that shape them | IO: (Order) <-> Postgres
+├── web/                # Concern: the HTTP API | Non-concern: business rules | IO: (Request) -> Response · <- depends on [core]
+│   ├── pyproject.toml  # Concern: names the web package and its dependency on core | Non-concern: the routes themselves | IO: none
+│   └── routes.py       # Concern: map URLs to Core calls | Non-concern: what the calls do | IO: (Request) -> Response
+└── core/               # Concern: the business rules | Non-concern: transport or storage | IO: (Command) -> Result · used by: [web]
+    ├── pyproject.toml  # Concern: names the core package | Non-concern: the rules it holds | IO: none
+    ├── rules.py        # Concern: pricing and discount logic | Non-concern: where orders come from | IO: (Order) -> Priced
+    └── store.py        # Concern: read/write orders | Non-concern: the rules that shape them | IO: (Order) <-> Postgres
 ```
 
 **Install** via [curl one-liner](#install), [npx](https://www.npmjs.com/package/annotated-tree), or [cargo](https://crates.io/crates/annotated-tree).

@@ -1,3 +1,4 @@
+# Concern: declares the gateway crate and the crates it depends on | Non-concern: the gateway's behaviour (src/ owns it) | IO: none
 [package]
 name = "gateway"
 version = "0.1.0"

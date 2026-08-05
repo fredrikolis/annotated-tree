@@ -1,3 +1,4 @@
+# Concern: names the web crate and its path dependency on core, the forbidden edge | Non-concern: the deny rule itself (.annotated-tree.toml owns it) | IO: none
 [package]
 name = "web"
 version = "0.0.0"

@@ -1,3 +1,4 @@
+# Concern: declares the shared crate and the crates it depends on | Non-concern: the wire contracts themselves (src/lib.rs owns them) | IO: none
 [package]
 name = "shared"
 version = "0.1.0"

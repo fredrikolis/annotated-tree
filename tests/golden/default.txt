@@ -15,27 +15,32 @@
 │           └── index.ts  # Concern: mounts the React root into the DOM | Non-concern: routing (App owns it) | IO: (HTMLElement) -> void
 ├── packages/
 │   ├── api/  # <- depends on [acme-core]
-│   │   └── acme_api/  # Concern: exposes the HTTP application factory as the package's public entry | Non-concern: request handling (routes.py owns it) | IO: none
-│   │       ├── __init__.py  # Concern: exposes the HTTP application factory as the package's public entry | Non-concern: request handling (routes.py owns it) | IO: none
-│   │       ├── main.py  # Concern: builds and configures the ASGI application, wiring routes and middleware | Non-concern: business logic (the core package owns it) | IO: (Settings) -> ASGIApp
-│   │       ├── models.py  # Concern: Pydantic request/response models for boundary validation | Non-concern: storage (db/schema.sql owns it) | IO: (dict) -> Model
-│   │       └── routes.py  # Concern: declares HTTP endpoints and dispatches request handlers | Non-concern: computation (delegates to acme_core) | IO: (Request) -> Response
+│   │   ├── acme_api/  # Concern: exposes the HTTP application factory as the package's public entry | Non-concern: request handling (routes.py owns it) | IO: none
+│   │   │   ├── __init__.py  # Concern: exposes the HTTP application factory as the package's public entry | Non-concern: request handling (routes.py owns it) | IO: none
+│   │   │   ├── main.py  # Concern: builds and configures the ASGI application, wiring routes and middleware | Non-concern: business logic (the core package owns it) | IO: (Settings) -> ASGIApp
+│   │   │   ├── models.py  # Concern: Pydantic request/response models for boundary validation | Non-concern: storage (db/schema.sql owns it) | IO: (dict) -> Model
+│   │   │   └── routes.py  # Concern: declares HTTP endpoints and dispatches request handlers | Non-concern: computation (delegates to acme_core) | IO: (Request) -> Response
+│   │   └── pyproject.toml  # Concern: declares the acme-api package and the packages it depends on | Non-concern: the HTTP surface itself (acme_api/ owns it) | IO: none
 │   ├── core/  # used by: [acme-api, acme-worker]
-│   │   └── acme_core/  # Concern: re-exports the core package's public API | Non-concern: implementing the engine (engine.py owns it) | IO: none
-│   │       ├── __init__.py  # Concern: re-exports the core package's public API | Non-concern: implementing the engine (engine.py owns it) | IO: none
-│   │       ├── engine.py  # Concern: runs the core computation loop, scheduling work units | Non-concern: transport or persistence (api and db own those) | IO: (Job) -> Result
-│   │       └── utils.py  # small helpers used across the engine
+│   │   ├── acme_core/  # Concern: re-exports the core package's public API | Non-concern: implementing the engine (engine.py owns it) | IO: none
+│   │   │   ├── __init__.py  # Concern: re-exports the core package's public API | Non-concern: implementing the engine (engine.py owns it) | IO: none
+│   │   │   ├── engine.py  # Concern: runs the core computation loop, scheduling work units | Non-concern: transport or persistence (api and db own those) | IO: (Job) -> Result
+│   │   │   └── utils.py  # small helpers used across the engine
+│   │   └── pyproject.toml  # Concern: declares the acme-core package and the packages it depends on | Non-concern: the computation itself (acme_core/ owns it) | IO: none
 │   └── worker/  # <- depends on [acme-core]
-│       └── acme_worker/
-│           └── tasks.py  # Concern: defines background jobs run off the queue with retry and idempotency | Non-concern: HTTP transport (the api package owns it) | IO: (Message) -> void
+│       ├── acme_worker/
+│       │   └── tasks.py  # Concern: defines background jobs run off the queue with retry and idempotency | Non-concern: HTTP transport (the api package owns it) | IO: (Message) -> void
+│       └── pyproject.toml  # Concern: declares the acme-worker package and the packages it depends on | Non-concern: the jobs themselves (acme_worker/ owns it) | IO: none
 ├── scripts/
 │   └── deploy.sh  # Concern: ships the built artifact to the release host | Non-concern: building the artifact (the build step owns that) | IO: (artifact) -> exit_code
 ├── services/
 │   ├── gateway/  # Concern: routes and proxies requests to backend services with auth | Non-concern: business rules (the backend services own them) | IO: (Request) -> Response  ·  <- depends on [shared]
-│   │   └── src/
-│   │       ├── lib.rs  # Concern: routes and proxies requests to backend services with auth | Non-concern: business rules (the backend services own them) | IO: (Request) -> Response
-│   │       └── main.rs  # Concern: boots the gateway server and owns process lifecycle | Non-concern: routing logic (lib.rs owns it) | IO: (env) -> exit_code
+│   │   ├── src/
+│   │   │   ├── lib.rs  # Concern: routes and proxies requests to backend services with auth | Non-concern: business rules (the backend services own them) | IO: (Request) -> Response
+│   │   │   └── main.rs  # Concern: boots the gateway server and owns process lifecycle | Non-concern: routing logic (lib.rs owns it) | IO: (env) -> exit_code
+│   │   └── Cargo.toml  # Concern: declares the gateway crate and the crates it depends on | Non-concern: the gateway's behaviour (src/ owns it) | IO: none
 │   └── shared/  # Concern: defines the wire structs and serde contracts shared by every service | Non-concern: transport (the gateway owns it) | IO: (bytes) -> Struct  ·  used by: [gateway]
-│       └── src/
-│           └── lib.rs  # Concern: defines the wire structs and serde contracts shared by every service | Non-concern: transport (the gateway owns it) | IO: (bytes) -> Struct
+│       ├── src/
+│       │   └── lib.rs  # Concern: defines the wire structs and serde contracts shared by every service | Non-concern: transport (the gateway owns it) | IO: (bytes) -> Struct
+│       └── Cargo.toml  # Concern: declares the shared crate and the crates it depends on | Non-concern: the wire contracts themselves (src/lib.rs owns them) | IO: none
 └── README.md  # Concern: documents what the sample tree demonstrates and how to read it | Non-concern: real product docs (this is a test fixture) | IO: none

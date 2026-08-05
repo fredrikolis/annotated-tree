@@ -167,11 +167,11 @@ fn strict_check_json_emits_structured_violations() {
         serde_json::json!(1),
         "one annotation gap (only the intentionally-malformed utils.py)"
     );
-    assert_eq!(doc["files_checked"], serde_json::json!(20), "files checked");
-    // The convergence numerator: 19 of the 20 files carry a conforming annotation; only the one malformed file does not.
+    assert_eq!(doc["files_checked"], serde_json::json!(25), "files checked");
+    // The convergence numerator: 24 of the 25 files carry a conforming annotation; only the one malformed file does not.
     assert_eq!(
         doc["annotated_count"],
-        serde_json::json!(19),
+        serde_json::json!(24),
         "annotated progress numerator"
     );
 

@@ -87,3 +87,10 @@ comment = "--"
 # where a doc has no callable contract (no per-language dialect / carve-out).
 extensions = [".md"]
 block = ["<!--", "-->"]
+
+[languages.toml]
+# Config carries the same three fields as code, with `IO: none` the usual value. A manifest
+# (`Cargo.toml`, `pyproject.toml`) is a `.toml` like any other: a row of its own, above the
+# dependency edges its directory states.
+extensions = [".toml"]
+comment = "#"
