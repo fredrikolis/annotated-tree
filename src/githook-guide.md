@@ -35,8 +35,10 @@ COMMIT-MSG — semantic, attestation-based (quality + staleness)
 
       https://github.com/fredrikolis/git-agent-verdict
 
-  Adopters install it once (`cargo install git-agent-verdict --version <pin>`), and the hook checks that exact version is present
-  before any gate runs: without that check the failure names neither the dependency nor the remedy.
+  Adopters install it once (`cargo install git-agent-verdict`), and the hook checks a MINIMUM
+  version is present before any gate runs: without that check the failure names neither the
+  dependency nor the remedy. Otherwise a routine upgrade blocks every commit, including one that
+  changes no reviewer brief.
 
   What stays here is only what is repo-specific. First, the gate declarations — one call per
   review, in review order, and nothing else:
