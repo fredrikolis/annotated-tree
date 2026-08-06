@@ -5,16 +5,7 @@
 # Enable per clone: git config core.hooksPath .githooks
 set -euo pipefail
 
-# PIN a FLOOR, not an exact version: what must not arrive silently is a different reviewer brief,
-# and that only happens when the floor is raised deliberately. An additive release passes.
-GAV_MIN=0.2.0
-# `|| true` so a MISSING tool reaches the check below: under `set -e` with `pipefail` the failed
-# pipeline is the assignment's own status, and the hook would exit 127 saying nothing at all.
-gav="$(git-agent-verdict --version 2>/dev/null | awk '{print $NF}' || true)"
-[ -n "$gav" ] && [ "$(printf '%s\n%s\n' "$GAV_MIN" "$gav" | sort -V | head -1)" = "$GAV_MIN" ] || {
-	echo "commit-msg: need git-agent-verdict >= $GAV_MIN (have ${gav:-none}): cargo install git-agent-verdict" >&2
-	exit 1
-}
+git agent-verdict --check-min-version 0.3.0
 
 git agent-verdict "$1" standards --doc docs/repo-standards.md --path .
 git agent-verdict "$1" annotations --per-file --simple --doc src/annotation-guide.md --path .
