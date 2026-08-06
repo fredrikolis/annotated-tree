@@ -7,7 +7,7 @@ set -euo pipefail
 
 # PIN a FLOOR, not an exact version: what must not arrive silently is a different reviewer brief,
 # and that only happens when the floor is raised deliberately. An additive release passes.
-GAV_MIN=0.1.6
+GAV_MIN=0.2.0
 # `|| true` so a MISSING tool reaches the check below: under `set -e` with `pipefail` the failed
 # pipeline is the assignment's own status, and the hook would exit 127 saying nothing at all.
 gav="$(git-agent-verdict --version 2>/dev/null | awk '{print $NF}' || true)"
@@ -17,6 +17,6 @@ gav="$(git-agent-verdict --version 2>/dev/null | awk '{print $NF}' || true)"
 }
 
 git agent-verdict "$1" standards --doc docs/repo-standards.md --path .
-git agent-verdict "$1" annotations --per-file --doc src/annotation-guide.md --path .
-git agent-verdict "$1" prose --doc docs/communication-style.md \
+git agent-verdict "$1" annotations --per-file --simple --doc src/annotation-guide.md --path .
+git agent-verdict "$1" prose --simple --doc docs/communication-style.md \
 	--path README.md --path README_APPENDIX.md --path CONTRIBUTING.md
