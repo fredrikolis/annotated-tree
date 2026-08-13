@@ -8,13 +8,12 @@ to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
-- `--githook-guide` now ships the `git-agent-verdict` 1.0 wiring: the commit is
-  `git agent-verdict attest --intent "<the aim>"`, which dispatches each gate's reviewer through the
-  host's `agent-verdict.runner`; `--require-version` replaces a hand-rolled version check;
-  `--rubric-guard` is declared rather than automatic; and `--per-file` is gone. The recipe the guide
-  shipped before exits 2 under 1.0, so an adopter on 0.1.x must `cargo install git-agent-verdict`,
-  set `agent-verdict.runner` once per machine, and re-copy the commit-msg recipe. Without the
-  runner every commit fails at the first gate.
+- `--githook-guide` no longer reproduces the commit-msg wiring. It names `git-agent-verdict` once
+  and defers to `git-agent-verdict --repo-setup-guide`, which ships with the tool and stays current
+  with it; what remains here is the one repo-specific fact, which reviews a repo declares and in
+  what order. The recipe the guide shipped before is gone, and no flag of the tool's is restated.
+  An adopter needs `git-agent-verdict` 1.1 installed and an `agent-verdict.runner` configured once
+  per machine; the setup guide covers both.
 
 ## [0.7.0] - 2026-08-04
 

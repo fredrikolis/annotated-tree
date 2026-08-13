@@ -64,7 +64,7 @@ Then:
 - Install it.
 - Annotate the workspace in batches, busiest areas first. Editorial guidance:
   `annotated-tree --annotation-guide`.
-- Add the commit-time git hooks. Setup guide: `annotated-tree --githook-guide`.
+- Add the commit-time git hooks. Start at `annotated-tree --githook-guide`.
 - Put annotations in tool results:
   `annotated-tree bash-annotator --install-claude-hook .claude/settings.json`.
   Naming the file keeps it to this workspace; the default is my global
@@ -407,7 +407,8 @@ The mechanics are still shifting; we default to the system prompt.
 ### Enforce it
 
 Enforce at commit in a **local git hook, not CI**: the hook blocks the bad commit while
-the agent can still fix it. `annotated-tree --githook-guide` prints the full setup guide.
+the agent can still fix it. `annotated-tree --githook-guide` prints the whole pre-commit gate
+and points at `git-agent-verdict --repo-setup-guide` for the commit-msg half.
 Three gates under `.githooks/` (enable with `git config core.hooksPath .githooks`):
 
 1. **Lint enforcement (pre-commit).** `annotated-tree --strict-check .` rejects a missing
@@ -420,8 +421,8 @@ Three gates under `.githooks/` (enable with `git config core.hooksPath .githooks
    `IO` still matches. Grade each finding by what is WRONG, not by what the fix costs, and
    leave which grade blocks the commit to `git-agent-verdict`, which defines the ladder and
    applies it. A gate demanding zero findings never converges, because a reviewer with
-   nothing at stake always finds one more. `--githook-guide` ships the wiring and names the
-   tool that defines the attestation shape. [`.githooks/commit-msg`](.githooks/commit-msg) is
+   nothing at stake always finds one more. `--githook-guide` names the tool that defines the
+   attestation shape. [`.githooks/commit-msg`](.githooks/commit-msg) is
    a working example.
 
 3. **Standards enforcement (optional, recommended, workspace-dependent).** Layer your

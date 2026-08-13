@@ -1,4 +1,4 @@
-<!-- Concern: the canonical guide to reproducing the repo's local enforcement git hooks | Non-concern: what a gate checks (git-agent-verdict owns that) or the annotation format | IO: none -->
+<!-- Concern: reproduces this repo's pre-commit annotation gate and points at git-agent-verdict for the commit-msg half | Non-concern: the commit-msg wiring itself, or the annotation format | IO: none -->
 GITHOOK GUIDE — reproduce the two local hooks that keep the map from rotting.
 
 Enforce at COMMIT, in a LOCAL hook, never CI: the hook blocks the bad commit while the agent
@@ -27,50 +27,21 @@ PRE-COMMIT — mechanical, deterministic (presence + form only)
   that it is true.
 
 COMMIT-MSG — semantic, attestation-based (quality + staleness)
-  The hook runs NO reviewer, and neither does the dev agent. The commit is:
+  The hook runs NO reviewer, and neither does the dev agent. `git-agent-verdict` dispatches each
+  gate's reviewer, records what it reported, and makes the commit.
 
-      git agent-verdict attest --intent "<the aim, one flat line>"
+  One pointer, and this file carries no other. Install it once:
 
-  That runs each gate's reviewer through the host's configured runner, one gate per run in
-  declaration order, and commits once every gate is attested. Nothing is handed back to paste.
+      cargo install git-agent-verdict
 
-  The runner is HOST configuration, not the repo's — maintainers share neither a machine, a budget,
-  nor a preferred agent:
+  then read the wiring from the tool itself, which is where it stays current:
 
-      git config --global agent-verdict.runner "<command reading a brief on stdin>"
+      git-agent-verdict --repo-setup-guide
 
-  This repo implements none of that. `git-agent-verdict` owns it, and its README owns the
-  trailer format, the severity ladder, the trust model, and the scoping flags:
+  Reproducing any of it here would give the measure a second copy, free to drift.
 
-      https://github.com/fredrikolis/git-agent-verdict
-
-  Adopters install it once (`cargo install git-agent-verdict`) and name their runner once per
-  machine. The hook then pins the LINE its flags are written against, which replaces any
-  hand-rolled version check:
-
-      git agent-verdict --require-version <major.minor>
-
-  What stays here is only what is repo-specific. First, the circular-rubric guard, DECLARED and
-  not automatic: judging a change to a rubric against that same rubric is circular, so staging one
-  of these docs refuses the commit and it lands alone via `--no-verify`. Name in-repo docs only — a
-  rubric outside the worktree can never be staged, so it never needs guarding:
-
-      git agent-verdict --rubric-guard --doc <your standards doc> --doc <your annotation guide>
-
-  Second, the gate declarations — one call per review, in review order, and nothing else:
-
-      git agent-verdict "$1" standards --doc <your standards doc> --path .
-      git agent-verdict "$1" annotations --doc <your annotation guide> --path .
-      git agent-verdict "$1" prose --doc <your prose-style doc> --path README.md
-
-  Substitute your own paths. Every `--doc` must resolve and every literal `--path` must name
-  something git tracks, or the gate exits 2 rather than passing. A `--doc` may sit OUTSIDE the
-  worktree — a rubric shared across repos from a knowledge base is the case this serves, and
-  copying it in to satisfy the gate would give the measure a second copy, free to drift. Add
-  `--simple` to a gate to make it advisory: it counts findings and never blocks.
-
-  Line order IS review order, and `set -e` stops at the first unattested gate on purpose: a later
-  gate must never be judged against content an earlier one is still changing.
+  What is repo-specific is which reviews you declare, and in what order. That is the whole of
+  what this repo contributes; the setup guide carries the shape.
 
 WHY THIS SHAPE
   Render, don't reason: presence/form is deterministic, so it is HARD-GATED by the tool; truth and

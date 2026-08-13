@@ -451,35 +451,35 @@ fn annotation_guide_flag_prints_the_guide_alone() {
     );
 }
 
-/// `--githook-guide` ships the commit-msg WIRING to adopters who reproduce the hook in their own
-/// repo: the tool, the version line its flags are written against, the rubric guard, and the gate
-/// declarations. Pin those — never the prose around them — and pin the absence of the vocabulary
-/// git-agent-verdict now owns, so a half-migrated guide (new hook, old recipe) cannot land.
+/// `--githook-guide` NAMES git-agent-verdict and defers to it, shipping no recipe of its own: one
+/// pointer at `--repo-setup-guide`, and nothing the tool already owns. Pin the pointer, and pin the
+/// absence of every flag, key and URL the tool documents itself, so the two cannot drift apart and
+/// a recipe cannot creep back in.
 #[test]
-fn githook_guide_ships_the_commit_msg_wiring() {
+fn githook_guide_defers_the_commit_msg_wiring_to_the_tool() {
     // The flag short-circuits before any traversal, so the appended sample path is unused.
     let (out, code) = run(&["--githook-guide"]);
     assert_eq!(
         code, 0,
         "--githook-guide is an info flag: print and exit clean"
     );
-    for wiring in [
-        "git-agent-verdict",
-        "git agent-verdict attest --intent",
-        r#"git agent-verdict "$1" standards"#,
-        r#"git agent-verdict "$1" annotations"#,
-        r#"git agent-verdict "$1" prose"#,
-        "--require-version",
-        "--rubric-guard",
-        "--doc ",
-        "--path ",
-    ] {
+    for wiring in ["git-agent-verdict", "--repo-setup-guide"] {
         assert!(
             out.contains(wiring),
-            "the guide must ship `{wiring}` in the commit-msg wiring, got: {out}"
+            "the guide must name `{wiring}` as where the commit-msg wiring lives, got: {out}"
         );
     }
     for retired in [
+        "--doc ",
+        "--path ",
+        "--require-version",
+        "--rubric-guard",
+        "--simple",
+        "attest --intent",
+        "--reviewer-prompt",
+        "--override-prompt",
+        "agent-verdict.runner",
+        "https://github.com/",
         "--per-file",
         "MEDIUM",
         "/10",
@@ -490,7 +490,7 @@ fn githook_guide_ships_the_commit_msg_wiring() {
     ] {
         assert!(
             !out.contains(retired),
-            "the guide must not name the retired `{retired}` payload, got: {out}"
+            "the guide must not restate `{retired}`, which git-agent-verdict owns, got: {out}"
         );
     }
 }
