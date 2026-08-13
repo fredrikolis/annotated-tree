@@ -452,9 +452,9 @@ fn annotation_guide_flag_prints_the_guide_alone() {
 }
 
 /// `--githook-guide` ships the commit-msg WIRING to adopters who reproduce the hook in their own
-/// repo: the tool that checks the attestation, and the declarations that invoke it. Pin those —
-/// never the prose around them — and pin the absence of the vocabulary git-agent-verdict now owns,
-/// so a half-migrated guide (new hook, old recipe) cannot land.
+/// repo: the tool, the version line its flags are written against, the rubric guard, and the gate
+/// declarations. Pin those — never the prose around them — and pin the absence of the vocabulary
+/// git-agent-verdict now owns, so a half-migrated guide (new hook, old recipe) cannot land.
 #[test]
 fn githook_guide_ships_the_commit_msg_wiring() {
     // The flag short-circuits before any traversal, so the appended sample path is unused.
@@ -465,9 +465,12 @@ fn githook_guide_ships_the_commit_msg_wiring() {
     );
     for wiring in [
         "git-agent-verdict",
+        "git agent-verdict attest --intent",
         r#"git agent-verdict "$1" standards"#,
-        r#"git agent-verdict "$1" annotations --per-file"#,
+        r#"git agent-verdict "$1" annotations"#,
         r#"git agent-verdict "$1" prose"#,
+        "--require-version",
+        "--rubric-guard",
         "--doc ",
         "--path ",
     ] {
@@ -477,6 +480,7 @@ fn githook_guide_ships_the_commit_msg_wiring() {
         );
     }
     for retired in [
+        "--per-file",
         "MEDIUM",
         "/10",
         "Annotation-Issues:",

@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- `--githook-guide` now ships the `git-agent-verdict` 1.0 wiring: the commit is
+  `git agent-verdict attest --intent "<the aim>"`, which dispatches each gate's reviewer through the
+  host's `agent-verdict.runner`; `--require-version` replaces a hand-rolled version check;
+  `--rubric-guard` is declared rather than automatic; and `--per-file` is gone. The recipe the guide
+  shipped before exits 2 under 1.0, so an adopter on 0.1.x must `cargo install git-agent-verdict`,
+  set `agent-verdict.runner` once per machine, and re-copy the commit-msg recipe. Without the
+  runner every commit fails at the first gate.
+
 ## [0.7.0] - 2026-08-04
 
 ### Added

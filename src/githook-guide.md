@@ -27,35 +27,50 @@ PRE-COMMIT — mechanical, deterministic (presence + form only)
   that it is true.
 
 COMMIT-MSG — semantic, attestation-based (quality + staleness)
-  The hook runs NO reviewer. The dev agent runs each neutral review ITSELF — a reviewer distinct
-  from the author — and writes the verdict into the commit message as a git trailer.
+  The hook runs NO reviewer, and neither does the dev agent. The commit is:
 
-  This repo does not implement that check. `git-agent-verdict` owns it, and its README owns the
+      git agent-verdict attest --intent "<the aim, one flat line>"
+
+  That runs each gate's reviewer through the host's configured runner, one gate per run in
+  declaration order, and commits once every gate is attested. Nothing is handed back to paste.
+
+  The runner is HOST configuration, not the repo's — maintainers share neither a machine, a budget,
+  nor a preferred agent:
+
+      git config --global agent-verdict.runner "<command reading a brief on stdin>"
+
+  This repo implements none of that. `git-agent-verdict` owns it, and its README owns the
   trailer format, the severity ladder, the trust model, and the scoping flags:
 
       https://github.com/fredrikolis/git-agent-verdict
 
-  Adopters install it once (`cargo install git-agent-verdict`), and the hook checks a MINIMUM
-  version is present before any gate runs: without that check the failure names neither the
-  dependency nor the remedy. Otherwise a routine upgrade blocks every commit, including one that
-  changes no reviewer brief.
+  Adopters install it once (`cargo install git-agent-verdict`) and name their runner once per
+  machine. The hook then pins the LINE its flags are written against, which replaces any
+  hand-rolled version check:
 
-  What stays here is only what is repo-specific. First, the gate declarations — one call per
-  review, in review order, and nothing else:
+      git agent-verdict --require-version <major.minor>
+
+  What stays here is only what is repo-specific. First, the circular-rubric guard, DECLARED and
+  not automatic: judging a change to a rubric against that same rubric is circular, so staging one
+  of these docs refuses the commit and it lands alone via `--no-verify`. Name in-repo docs only — a
+  rubric outside the worktree can never be staged, so it never needs guarding:
+
+      git agent-verdict --rubric-guard --doc <your standards doc> --doc <your annotation guide>
+
+  Second, the gate declarations — one call per review, in review order, and nothing else:
 
       git agent-verdict "$1" standards --doc <your standards doc> --path .
-      git agent-verdict "$1" annotations --per-file --doc <your annotation guide> --path .
+      git agent-verdict "$1" annotations --doc <your annotation guide> --path .
       git agent-verdict "$1" prose --doc <your prose-style doc> --path README.md
 
-  Substitute your own paths. Every `--doc` must exist in the repo the hook runs in, and every
-  literal `--path` must name something git tracks, or the gate exits 2 rather than passing.
+  Substitute your own paths. Every `--doc` must resolve and every literal `--path` must name
+  something git tracks, or the gate exits 2 rather than passing. A `--doc` may sit OUTSIDE the
+  worktree — a rubric shared across repos from a knowledge base is the case this serves, and
+  copying it in to satisfy the gate would give the measure a second copy, free to drift. Add
+  `--simple` to a gate to make it advisory: it counts findings and never blocks.
 
   Line order IS review order, and `set -e` stops at the first unattested gate on purpose: a later
   gate must never be judged against content an earlier one is still changing.
-
-  The circular-rubric guard is automatic: staging one of a gate's own `--doc` files refuses the
-  commit and tells you to land it alone via `--no-verify`. The tool owns it because the list of
-  rubrics IS the list of `--doc` paths, and a copy in bash would be free to drift from it.
 
 WHY THIS SHAPE
   Render, don't reason: presence/form is deterministic, so it is HARD-GATED by the tool; truth and

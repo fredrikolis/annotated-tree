@@ -417,10 +417,10 @@ Three gates under `.githooks/` (enable with `git config core.hooksPath .githooks
    *true*. Gate the commit on a neutral reviewer (not the author) who checks, per changed
    file, that the annotation still holds after the diff: `Concern` names what the file now
    does, `Non-concern` still excludes a real boundary the file does not own (not a truism),
-   `IO` still matches. Grade each finding by what is WRONG, not by what the fix costs: block on
-   MAJOR and MODERATE, which both mean there is work the reviewer has not judged yet, and record
-   MINOR, which never blocks. A gate demanding zero findings never converges, because a reviewer
-   with nothing at stake always finds one more. `--githook-guide` ships the wiring and names the
+   `IO` still matches. Grade each finding by what is WRONG, not by what the fix costs, and
+   leave which grade blocks the commit to `git-agent-verdict`, which defines the ladder and
+   applies it. A gate demanding zero findings never converges, because a reviewer with
+   nothing at stake always finds one more. `--githook-guide` ships the wiring and names the
    tool that defines the attestation shape. [`.githooks/commit-msg`](.githooks/commit-msg) is
    a working example.
 

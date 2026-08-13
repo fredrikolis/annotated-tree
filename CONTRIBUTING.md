@@ -1,4 +1,4 @@
-<!-- Concern: how this repo's automated development process works, and how to stand one up elsewhere | Non-concern: cutting a release, tool usage, or the annotation format | IO: none -->
+<!-- Concern: how this repo's automated development process works, and how to stand one up elsewhere | Non-concern: cutting a release, using annotated-tree itself, or the annotation format | IO: none -->
 # Contributing
 Contributions are welcome, and issues and ideas more so. For code contributions we ask that you follow the repo's standard automated process, or at a minimum the [maintainer agent workflow](#maintainer-agent-workflow).
 
@@ -46,13 +46,13 @@ a separate flow, many commits later, outside all of the above:
 
 ```
 MAINTAINER's loop. It runs inside PRODUCT MANAGER's scope (figure 2 is
-figure 1's black box); everything below is spawned BY MAINTAINER and
-reports back TO it.
+figure 1's black box); MAINTAINER spawns everything below it except the
+REVIEWERS, which the commit step dispatches.
 
 MAINTAINER ─ owns the change end to end, through commit and push.
 │
-├─ on MAJOR: spawns a NEW agent to re-plan the fix,           ◄──────┐
-│     then the work is implemented and reviewed afresh               │
+├─ on a blocking finding: spawns a NEW agent to re-plan the    ◄─────┐
+│     fix, then it is implemented and reviewed afresh                │
 │                                                                    │
 ├─ spawns, repeatedly, many, short-lived:                            │
 │  ├─ investigate ─ returns a conclusion, not a transcript           │
@@ -61,35 +61,37 @@ MAINTAINER ─ owns the change end to end, through commit and push.
 ├─ {{ pre-commit hook }} MACHINE, not an agent:        │             │
 │     presence · form · budget ── fail ────────────────┘             │
 │                                                                    │
-├─ spawns REVIEWERS, in strict sequence, never parallel;  ◄───┐      │
-│  fresh context each, none of them the author:               │      │
-│     1. A  standards                                         │      │
-│     2. B  annotations   judges what A may still change      │      │
-│     3. C  prose         conditional: only when a            │      │
-│                         human-facing doc is in the diff     │      │
-│                                                             │      │
-├─ verdict ┬─ MAJOR ─── not MAINTAINER's to fix; re-plan ─────┼──────┘
-│          ├─ MODERATE  MAINTAINER fixes, re-review ──────────┘
-│          └─ MINOR ─── never blocks; fixed, or left knowingly
+├─ commits with `git agent-verdict attest`. IT, not MAINTAINER,      │
+│     dispatches the REVIEWERS through the host's runner, one per    │
+│     run, in declaration order, never parallel; fresh context       │
+│     each, none of them the author:                                 │
+│        1. A  standards                                             │
+│        2. B  annotations   judges what A may still change          │
+│        3. C  prose         conditional: only when a                │
+│                            human-facing doc is in the diff         │
+│                                                                    │
+├─ verdict, back from that step ┬─ blocks ─── re-plan ───────────────┘
+│                               └─ does not ─ fixed or recorded, with
+│                                             no second review
 │
-└─ commit ─ commit-msg hook verifies the attestation ─► push to branch
+└─ every gate attested ─► the tool commits ─► push to branch
 ```
 
-**Dispatch.** MAINTAINER dispatches every unit of work, investigations included, and gets conclusions back rather than transcripts. Its own context goes on the one job nothing else can do, dispatching REVIEWERS and owning the change through push.
+**Dispatch.** MAINTAINER dispatches investigation and implementation, and gets conclusions back rather than transcripts. Its own context goes on owning the change through push.
 
-That thread cannot be delegated. An agent under a commit-and-self-verify brief once reported three reviews complete before any had run, invented the counts, and wrote them into the trailers; the gate passed, because a hook only checks that a trailer is well formed. **Whoever needs a verdict spawns the reviewer.** A subagent's summary of reviews it spawned itself is where a fabricated one hides.
+Reviews are the one thing it does not dispatch. An agent under a commit-and-self-verify brief once reported three reviews complete before any had run, invented the counts, and wrote them into the trailers; the gate passed, because a hook only checks that a trailer is well formed. **`git agent-verdict attest` spawns each reviewer itself and records what it reported.** No verdict passes through an agent's summary on its way to the gate.
 
 **Requirements arrive just in time.** MAINTAINER is never briefed on the review process. It is told to implement a plan, it does, and it attempts to commit. That commit fails by design, and each gate prints what it wants:
 
 - A failing annotation check prints the annotation guide inline.
 - The comment-budget gate prints the comment standard.
-- `commit-msg` prints the missing trailer, then the reviewer prompt that earns it.
+- `commit-msg` refuses a commit with no attestation and names the tool that produces one. `git agent-verdict --reviewer-prompt <gate>` prints that gate's brief for inspection.
 
 Nothing can drift, because the requirement is printed by the file that defines it rather than copied into a briefing. And until a gate asks, MAINTAINER's context goes on the work rather than on process it has not reached. If the plan was written against the standards to begin with, the delta the gates ask for is small.
 
 **Gate.** Presence and form, never truth. Coverage is the product: partial coverage keeps little of the benefit, because the slow read-the-source path stays alive for whatever is missing.
 
-**Review.** How many reviews, and what each judges, follows what the repo has to protect; ours runs three. The commit hook runs none of them. It calls [git-agent-verdict](https://github.com/fredrikolis/git-agent-verdict), which checks that each review's verdict trailer is present and well formed, blocks on any MAJOR or MODERATE it declares, and strips the agent co-author trailer from the message. That tool owns the severity ladder, the trailer shape and the trust model, and the case for all three.
+**Review.** How many reviews, and what each judges, follows what the repo has to protect; ours runs three. The commit hook runs none of them: `git agent-verdict attest` dispatches each reviewer and records the verdict, and the hook checks what was recorded. It calls [git-agent-verdict](https://github.com/fredrikolis/git-agent-verdict), which checks that each review's verdict trailer is present and well formed and applies its severity ladder to what the trailer declares. That tool owns the severity ladder, the trailer shape and the trust model, and the case for all three.
 
 See `annotated-tree --githook-guide` for how to wire the hooks up.
 
@@ -97,7 +99,7 @@ See `annotated-tree --githook-guide` for how to wire the hooks up.
 - **B, annotations.** The linter proves existence, a reader proves truth, and a wrong annotation does more damage than a missing one. Its file list comes from git, never from MAINTAINER.
 - **C, prose.** Every claim checked against the built artifact. Conditional: it fires only when a human-facing doc is in the diff.
 
-In order, not parallel: B judges annotations against content A may still be changing. Each REVIEWER gets a fresh context and no hints; git-agent-verdict prints the rest of the brief, and how to re-review.
+In order, not parallel: B judges annotations against content A may still be changing. Each REVIEWER gets a fresh context and no hints; git-agent-verdict composes the rest of the brief, and dispatches any re-review.
 
 **The brief carries intent, and scope is not a REVIEWER's question.** Both rules belong to git-agent-verdict. Here a scope observation comes back to the product manager as one MINOR line, never as grounds to re-plan.
 
@@ -128,7 +130,7 @@ False greens, all three seen here:
 - A cached build can link stale embedded content and assert against text you already changed.
 - `cmd | tail` returns `tail`'s exit code, not the command's.
 
-**Step 2: stand up the neutral reviewers.** Write a standards document, or borrow [ours](docs/repo-standards.md). Write the prompt each reviewer is handed. Install the hooks that block a commit with no attestation, which is also what teaches the maintainer the review process.
+**Step 2: stand up the neutral reviewers.** Write a standards document, or borrow [ours](docs/repo-standards.md). The rubric is what you author. The tool composes the brief around it, and `--override-prompt` takes over for a repo that outgrows the default. Install the hooks that block a commit with no attestation, which is also what teaches the maintainer the review process. Each maintainer sets `agent-verdict.runner` once per machine, naming the command that runs a review. Without it every commit fails at the first gate.
 
 Settle the standards before the hooks go on. A gate pointed at a rubric nobody has agreed with produces findings nobody acts on, and people stop reading the reviews.
 
