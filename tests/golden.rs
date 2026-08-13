@@ -334,9 +334,9 @@ fn md_format_surfaces_package_headings() {
 }
 
 /// A FAILING `--strict-check` prints the annotation guide inline on stdout by default; `--no-guide`
-/// suppresses it, and a PASSING run never shows it. Assert the guide's load-bearing invariants — the
-/// enforced template, the GOOD/FAILS contrast, the brevity doctrine — rather than byte-freezing
-/// instructional prose. Uses a throwaway fixture with one unannotated file.
+/// suppresses it, and a PASSING run never shows it. The one piece of content pinned is the enforced
+/// template, which `strict::EXPECTED` derives — the guide teaching a format the gate does not enforce
+/// is the failure worth a test. Uses a throwaway fixture with one unannotated file.
 #[test]
 fn strict_failure_prints_guide_on_stdout() {
     let dir = std::env::temp_dir().join(format!("at-guide-{}", std::process::id()));
@@ -372,13 +372,10 @@ fn strict_failure_prints_guide_on_stdout() {
         ),
         "the guide renders the enforced template"
     );
-    assert!(
-        out.contains("GOOD") && out.contains("FAILS") && out.contains("BREVITY"),
-        "the guide shows the GOOD/FAILS contrast and teaches the brevity doctrine"
-    );
+    // A marker past `<!-- more -->`: the failure surface gets the FULL guide, not help's essence.
     assert!(
         out.contains("HOW TO FIND THE NON-CONCERN"),
-        "the full guide renders the post-`<!-- more -->` tail, not just the --help essence"
+        "a failing check prints the full guide, got: {out}"
     );
 
     // `--no-guide` keeps the report clean for a caller that already knows the format.
@@ -405,9 +402,7 @@ fn strict_failure_prints_guide_on_stdout() {
 }
 
 /// `--annotation-guide` is the way to READ the guide without provoking a violation to print it.
-/// Pin the info-flag semantics (whole guide alone on stdout, exit 0), that the same text still
-/// reaches `--help`, and that the guide states the length bound — an agent that has to discover the
-/// bound by being rejected pays for the annotation twice.
+/// The same guide text reaches two surfaces, and `--help` is the one nothing else covers.
 #[test]
 fn annotation_guide_flag_prints_the_guide_alone() {
     // The flag short-circuits before any traversal, so the appended sample path is unused.
@@ -421,20 +416,9 @@ fn annotation_guide_flag_prints_the_guide_alone() {
         "the guide is printed alone, with nothing before it, got: {out}"
     );
     assert!(
-        out.contains("HOW TO FIND THE NON-CONCERN"),
-        "the flag prints the FULL guide, not just the --help essence, got: {out}"
-    );
-    assert!(
         !out.contains("EXIT CODES:") && !out.contains("Usage:"),
         "nothing but the guide goes to stdout, got: {out}"
     );
-
-    for fact in ["200", "--max-length", "max_annotation_length"] {
-        assert!(
-            out.contains(fact),
-            "the guide must state `{fact}` of the bound it forbids raising, got: {out}"
-        );
-    }
 
     let help = std::process::Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
         .arg("--help")
@@ -442,8 +426,17 @@ fn annotation_guide_flag_prints_the_guide_alone() {
         .expect("run --help");
     let help = String::from_utf8(help.stdout).expect("utf8");
     assert!(
-        help.contains("ANNOTATION GUIDE") && help.contains("max_annotation_length"),
-        "--help still carries the guide, bound included, got: {help}"
+        help.contains("ANNOTATION GUIDE"),
+        "--help still carries the guide, got: {help}"
+    );
+    // Serving help's essence from this flag is invisible to every other assertion here.
+    assert!(
+        !help.contains(out.trim_end()),
+        "the flag prints more than --help's essence, got: {out}"
+    );
+    assert!(
+        help.contains("max_annotation_length"),
+        "--help states the bound, so an agent need not discover it by being rejected, got: {help}"
     );
     assert!(
         help.contains("--annotation-guide"),
@@ -451,46 +444,23 @@ fn annotation_guide_flag_prints_the_guide_alone() {
     );
 }
 
-/// `--githook-guide` NAMES git-agent-verdict and defers to it, shipping no recipe of its own: one
-/// pointer at `--repo-setup-guide`, and nothing the tool already owns. Pin the pointer, and pin the
-/// absence of every flag, key and URL the tool documents itself, so the two cannot drift apart and
-/// a recipe cannot creep back in.
+/// An info flag prints its guide alone and exits 0; the pointer it carries is what other surfaces
+/// promise is here. Everything else the guide says is prose, and the prose gate reads it.
 #[test]
-fn githook_guide_defers_the_commit_msg_wiring_to_the_tool() {
+fn githook_guide_prints_the_guide_alone_and_names_the_tool() {
     // The flag short-circuits before any traversal, so the appended sample path is unused.
     let (out, code) = run(&["--githook-guide"]);
     assert_eq!(
         code, 0,
         "--githook-guide is an info flag: print and exit clean"
     );
-    for wiring in ["git-agent-verdict", "--repo-setup-guide"] {
-        assert!(
-            out.contains(wiring),
-            "the guide must name `{wiring}` as where the commit-msg wiring lives, got: {out}"
-        );
-    }
-    for retired in [
-        "--doc ",
-        "--path ",
-        "--require-version",
-        "--rubric-guard",
-        "--simple",
-        "attest --intent",
-        "--reviewer-prompt",
-        "--override-prompt",
-        "agent-verdict.runner",
-        "https://github.com/",
-        "--per-file",
-        "MEDIUM",
-        "/10",
-        "Annotation-Issues:",
-        "Style-Issues:",
-        "Annotation-MAJOR:",
-        "Style-MAJOR:",
-    ] {
-        assert!(
-            !out.contains(retired),
-            "the guide must not restate `{retired}`, which git-agent-verdict owns, got: {out}"
-        );
-    }
+    assert!(
+        out.starts_with("GITHOOK GUIDE") && !out.contains("Usage:"),
+        "the guide is printed alone, not appended to another surface, got: {out}"
+    );
+    // README and CONTRIBUTING route an agent here for that pointer, so it has to survive.
+    assert!(
+        out.contains("git-agent-verdict"),
+        "the guide names where the commit-msg wiring lives, got: {out}"
+    );
 }

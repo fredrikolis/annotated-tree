@@ -1,14 +1,14 @@
-<!-- Concern: reproduces this repo's pre-commit annotation gate and points at git-agent-verdict for the commit-msg half | Non-concern: the commit-msg wiring itself, or the annotation format | IO: none -->
+<!-- Concern: documents this repo's commit gates — what each checks and where its wiring lives | Non-concern: the flags, thresholds and rubrics themselves, held by the tools and their configs | IO: none -->
 GITHOOK GUIDE — reproduce the two local hooks that keep the map from rotting.
 
 Enforce at COMMIT, in a LOCAL hook, never CI: the hook blocks the bad commit while the agent
 still has the context to fix it; CI only flags it after the session is gone. Ship both hooks
 under `.githooks/`, enable per clone with `git config core.hooksPath .githooks`, and bypass a
-genuinely trivial, non-code commit with `git commit --no-verify`. Two gates: gate 1 runs first,
-because gate 2's review is wasted on a file that has no annotation at all.
+genuinely trivial, non-code commit with `git commit --no-verify`. Mechanical checks first, review
+last: a review is wasted on a file that has no annotation at all.
 
-PRE-COMMIT — mechanical, deterministic (presence + form only)
-  Run BOTH invocations over the repo, and fail on either:
+PRE-COMMIT — mechanical, deterministic (never a judgment about meaning)
+  Annotations. Run BOTH invocations over the repo, and fail on either:
 
       annotated-tree --strict-check . --hidden --max-length 200
       annotated-tree --strict-check . --hidden --include-tests -I 'tests/fixtures' --max-length 200
@@ -25,6 +25,11 @@ PRE-COMMIT — mechanical, deterministic (presence + form only)
   `target/debug`), fall back to `cargo run --quiet --` so a fresh clone still gates. On a nonzero
   exit, print what failed and exit 1. This checks that an annotation EXISTS and PARSES, never
   that it is true.
+
+  Comment budget, after the annotation check. A bound on comment VOLUME. Ours is
+  `cargo-lint-extra` from
+  https://github.com/fredrikolis/cargo-lint-extra, pinned to a rev and configured by
+  `.cargo-lint-extra.toml` — Rust-only, so substitute your own.
 
 COMMIT-MSG — semantic, attestation-based (quality + staleness)
   The hook runs NO reviewer, and neither does the dev agent. `git-agent-verdict` dispatches each
