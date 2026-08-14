@@ -8,12 +8,9 @@ to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
-- `--githook-guide` no longer reproduces the commit-msg wiring. It names `git-agent-verdict` once
-  and defers to `git-agent-verdict --repo-setup-guide`, which ships with the tool and stays current
-  with it. The recipe the guide shipped before is gone. An adopter needs `git-agent-verdict`
-  installed and an `agent-verdict.runner` configured once per machine; the setup guide covers both.
-- `--githook-guide` names the second mechanical gate the pre-commit hook runs, the comment budget,
-  which it never mentioned: `cargo-lint-extra`, its source, and the config file that drives it.
+- `--githook-guide` defers the commit-msg wiring to `git-agent-verdict --repo-setup-guide`. The
+  recipe it shipped is gone.
+- `--githook-guide` names the comment-budget gate: `cargo-lint-extra` and `.cargo-lint-extra.toml`.
 
 ## [0.7.0] - 2026-08-04
 
