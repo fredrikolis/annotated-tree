@@ -1,1 +1,1 @@
-Concern: the standards a change to this repo is judged against | Non-concern: anything compiled into the binary (src/ owns those) or how the tool is used | IO: none
+Concern: the review criteria this repo authors | Non-concern: the criteria it declares from git-agent-verdict's bundled standards, or anything compiled into the binary (src/ owns those) | IO: none

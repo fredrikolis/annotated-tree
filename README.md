@@ -120,8 +120,9 @@ we have caught is a separation-of-concerns mistake (the term is Dijkstra's, 1974
 in the wrong place, a boundary crossed, which is exactly what a concern map prevents.
 
 One boundary: `annotated-tree` annotates the thing being worked on, not the process of
-working on it (your review and coding standards are a sibling document;
-[docs/repo-standards.md](docs/repo-standards.md) holds ours).
+working on it. Your review and coding standards are a separate document; ours are
+`git-agent-verdict`'s bundled `programming`, `human-communication` and `terse-log`,
+plus [docs/agent-ux.md](docs/agent-ux.md) for what they do not cover.
 
 ### Why first-line annotations
 

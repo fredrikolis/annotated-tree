@@ -7,10 +7,18 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `docs/agent-ux.md`, this repo's own agent-UX criteria.
+
 ### Changed
 - `--githook-guide` defers the commit-msg wiring to `git-agent-verdict --repo-setup-guide`. The
   recipe it shipped is gone.
 - `--githook-guide` names the comment-budget gate: `cargo-lint-extra` and `.cargo-lint-extra.toml`.
+- Commit gates declare `git-agent-verdict` 2.0's bundled standards.
+
+### Removed
+- `docs/repo-standards.md` and `docs/communication-style.md`, now bundled standards.
+- `docs/comment-standards.md`, now inline in `.githooks/pre-commit`.
 
 ## [0.7.0] - 2026-08-04
 

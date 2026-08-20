@@ -1,4 +1,4 @@
-# Concern: the mechanical comment budget every commit is held to | Non-concern: what makes a comment worth keeping (docs/comment-standards.md owns that) | IO: none
+# Concern: the mechanical comment budget every commit is held to | Non-concern: what makes a comment worth keeping (`git-agent-verdict --standards programming` owns that) | IO: none
 
 [global]
 exclude = ["target", "sample"]

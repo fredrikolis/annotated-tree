@@ -21,7 +21,7 @@ PRODUCT MANAGER ─ owns the request end to end. Indentation is scope:
 │     does a clause forbid it?      SPEC.md
 │     any of these fails ──► answer on the issue, stop here
 │
-├─ spawns PLANNER ─ plans against the standards doc.        ◄─────┐
+├─ spawns PLANNER ─ plans against the declared standards.   ◄─────┐
 │     PM reviews that plan adversarially and returns it ──────────┘
 │     until it holds. It stays in context, never in this repo.
 │
@@ -84,7 +84,7 @@ Reviews are the one thing it does not dispatch. An agent under a commit-and-self
 **Requirements arrive just in time.** MAINTAINER is never briefed on the review process. It is told to implement a plan, it does, and it attempts to commit. That commit fails by design, and each gate prints what it wants:
 
 - A failing annotation check prints the annotation guide inline.
-- The comment-budget gate prints the comment standard.
+- The comment-budget gate prints what it can and cannot detect, and names the bar it serves.
 - `commit-msg` refuses a commit with no attestation and names the tool that produces one. `git agent-verdict --reviewer-prompt <gate>` prints that gate's brief for inspection.
 
 Nothing can drift, because the requirement is printed by the file that defines it rather than copied into a briefing. And until a gate asks, MAINTAINER's context goes on the work rather than on process it has not reached. If the plan was written against the standards to begin with, the delta the gates ask for is small.
@@ -130,7 +130,7 @@ False greens, all three seen here:
 - A cached build can link stale embedded content and assert against text you already changed.
 - `cmd | tail` returns `tail`'s exit code, not the command's.
 
-**Step 2: stand up the neutral reviewers.** Write a standards document, or borrow [ours](docs/repo-standards.md). The rubric is what you author. The tool composes the brief around it, and `--override-prompt` takes over for a repo that outgrows the default. Install the hooks that block a commit with no attestation, which is also what teaches the maintainer the review process. Each maintainer sets `agent-verdict.runner` once per machine, naming the command that runs a review. Without it every commit fails at the first gate.
+**Step 2: stand up the neutral reviewers.** Declare a standard the tool already ships (`git-agent-verdict --standards`), and author a document only for what none of them covers. The rubric is what you name. The tool composes the brief around it, and `--override-prompt` takes over for a repo that outgrows the default. Install the hooks that block a commit with no attestation, which is also what teaches the maintainer the review process. Each maintainer sets `agent-verdict.runner` once per machine, naming the command that runs a review. Without it every commit fails at the first gate.
 
 Settle the standards before the hooks go on. A gate pointed at a rubric nobody has agreed with produces findings nobody acts on, and people stop reading the reviews.
 

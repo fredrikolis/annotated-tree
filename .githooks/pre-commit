@@ -36,7 +36,20 @@ LINT=target/lint-tools/$REV/bin/cargo-lint-extra
 
 "$LINT" lint-extra --config .cargo-lint-extra.toml . 1>&2 || {
 	echo "" >&2
-	echo "pre-commit: COMMENT GATE FAILED — the standard it enforces measures volume, never quality:" >&2
-	cat docs/comment-standards.md >&2
+	echo "pre-commit: COMMENT GATE FAILED — what this gate does and does not measure:" >&2
+	cat >&2 <<'STANDARD'
+It measures size, never quality: a comment ratio and consecutive runs inside functions, the same
+per file including doc comments, plus a line-length and a file-length bound. It cannot tell a good
+comment from a bad one and does not try.
+
+Tripping it is NOT an instruction to delete comments until the number passes. It asks why this
+function needed a block of explanation, or why this line or file grew so long; the usual answer is
+that the code is wrong, not the comment. Fix the shape: extract it, rename it, split it.
+
+Never raise a threshold to make a file pass. The bound is the detector, and a bigger number only
+hides what it found.
+
+The bar a comment must clear to earn its space: git-agent-verdict --standards programming
+STANDARD
 	exit 1
 }
