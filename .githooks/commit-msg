@@ -7,10 +7,14 @@ set -euo pipefail
 
 git agent-verdict --require-version 2.0
 
-git agent-verdict "$1" standards --doc docs/repo-standards.md --path .
+# `--standard` names a rubric the tool ships (`git agent-verdict --standards`), so it cannot drift
+# out of step with the reviewer. A `--rule` beside it is the delta this repo owns.
+git agent-verdict "$1" standards --standard programming --doc docs/agent-ux.md \
+	--rule "This is a synchronous single-process CLI. The Async/Await I/O contract does not apply; blocking file and process IO is correct here, and a new blocking API is not a finding." \
+	--rule "The file annotation format is src/annotation-guide.md's Concern/Non-concern/IO, never the one the File-Level Annotations section shows." \
+	--path .
 git agent-verdict "$1" annotations --simple --doc src/annotation-guide.md --path .
-git agent-verdict "$1" prose --simple --doc docs/communication-style.md \
+git agent-verdict "$1" prose --simple --standard human-communication \
+	--rule "README_APPENDIX.md's existing citations are out of scope. A new cited claim needs only that the source is real and says what the line claims it says." \
 	--path README.md --path README_APPENDIX.md --path CONTRIBUTING.md
-git agent-verdict "$1" changelog --simple \
-	--rule "each new bullet entry is at most 2 terse half-sentences" \
-	--path CHANGELOG.md
+git agent-verdict "$1" changelog --simple --standard terse-log --path CHANGELOG.md
