@@ -51,30 +51,21 @@ REVIEWERS, which the commit step dispatches.
 
 MAINTAINER ─ owns the change end to end, through commit and push.
 │
-├─ on a blocking finding: spawns a NEW agent to re-plan the    ◄─────┐
-│     fix, then it is implemented and reviewed afresh                │
-│                                                                    │
-├─ spawns, repeatedly, many, short-lived:                            │
-│  ├─ investigate ─ returns a conclusion, not a transcript           │
-│  └─ implement ─── leaves work in the tree     ◄──────┐             │
-│                                                      │             │
-├─ {{ pre-commit hook }} MACHINE, not an agent:        │             │
-│     presence · form · budget ── fail ────────────────┘             │
-│                                                                    │
-├─ commits with `git agent-verdict attest`. IT, not MAINTAINER,      │
-│     dispatches the REVIEWERS through the host's runner, one per    │
-│     run, in declaration order, never parallel; fresh context       │
-│     each, none of them the author:                                 │
-│        1. A  standards                                             │
-│        2. B  annotations   judges what A may still change          │
-│        3. C  prose         conditional: only when a                │
-│                            human-facing doc is in the diff         │
-│                                                                    │
-├─ verdict, back from that step ┬─ blocks ─── re-plan ───────────────┘
-│                               └─ does not ─ fixed or recorded, with
-│                                             no second review
+├─ spawns, repeatedly, many, short-lived:
+│  ├─ investigate ─ returns a conclusion, not a transcript
+│  └─ implement ─── leaves work in the tree     ◄──────┐
+│                                                      │
+├─ {{ pre-commit hook }} MACHINE, not an agent:        │
+│     presence · form · budget ── fail ────────────────┘
 │
-└─ every gate attested ─► the tool commits ─► push to branch
+├─ commits through `git-agent-verdict`. IT, not MAINTAINER,
+│     dispatches the REVIEWERS through the host's runner; fresh
+│     context each, none of them the author
+│
+├─ on a MAJOR: a NEW agent re-plans the fix, which is implemented
+│     and reviewed afresh. MAINTAINER fixes lesser findings itself
+│
+└─ the tool commits ─► push to branch
 ```
 
 **Dispatch.** MAINTAINER dispatches investigation and implementation, and gets conclusions back rather than transcripts. Its own context goes on owning the change through push.
@@ -91,17 +82,13 @@ Nothing can drift, because the requirement is printed by the file that defines i
 
 **Gate.** Presence and form, never truth. Coverage is the product: partial coverage keeps little of the benefit, because the slow read-the-source path stays alive for whatever is missing.
 
-**Review.** How many reviews, and what each judges, follows what the repo has to protect; ours runs three. The commit hook runs none of them: `git agent-verdict attest` dispatches each reviewer and records the verdict, and the hook checks what was recorded. It calls [git-agent-verdict](https://github.com/fredrikolis/git-agent-verdict), which checks that each review's verdict trailer is present and well formed and applies its severity ladder to what the trailer declares. That tool owns the severity ladder, the trailer shape and the trust model, and the case for all three.
+**Review.** Use [git-agent-verdict](https://github.com/fredrikolis/git-agent-verdict). The commit hook runs no reviewer: the tool dispatches each one, records what came back, and makes the commit; the hook checks what was recorded. It owns the severity ladder, the trailer shape and the trust model, and the case for all three.
+
+[`.githooks/commit-msg`](.githooks/commit-msg) declares which reviews this repo runs, and in what order. Run `git agent-verdict --reviewer-prompt <gate>` for a gate's live brief. A second copy here would drift, and did.
 
 See `annotated-tree --githook-guide` for how to wire the hooks up.
 
-- **A, standards.** Every principle answered, `N/A — reason` included. Self-selecting which ones a change could plausibly breach is how the one that mattered gets dropped.
-- **B, annotations.** The linter proves existence, a reader proves truth, and a wrong annotation does more damage than a missing one. Its file list comes from git, never from MAINTAINER.
-- **C, prose.** Every claim checked against the built artifact. Conditional: it fires only when a human-facing doc is in the diff.
-
-In order, not parallel: B judges annotations against content A may still be changing. Each REVIEWER gets a fresh context and no hints; git-agent-verdict composes the rest of the brief, and dispatches any re-review.
-
-**The brief carries intent, and scope is not a REVIEWER's question.** Both rules belong to git-agent-verdict. Here a scope observation comes back to the product manager as one MINOR line, never as grounds to re-plan.
+**Scope is not a REVIEWER's question.** A scope observation comes back to the product manager as one MINOR line, never as grounds to re-plan.
 
 **Commit.** A commit editing a rubric it is judged against is refused by the gate, and lands alone via `--no-verify`.
 
