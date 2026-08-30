@@ -6,10 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::annotation;
 use crate::config::{CliOverrides, Config};
 
-/// Path-keyed contracts and charters, memoised for one process. Both lookups delegate to the
-/// `annotated-tree` library rather than re-deriving what a contract looks like: the grammar and the
-/// language table are the product's to define, and a wrapper that disagreed with the tool about a
-/// file's contract would be worse than one that showed none.
+/// Delegates to `annotated-tree` rather than re-deriving the contract grammar.
 pub struct Contracts {
     config: Option<Config>,
     files: HashMap<PathBuf, Option<String>>,
@@ -17,8 +14,6 @@ pub struct Contracts {
 }
 
 impl Contracts {
-    /// A config failure degrades to "no contracts" rather than aborting: the wrapped tool's
-    /// own output is still worth delivering, and swallowing it would lose the user's answer.
     pub fn new() -> Self {
         Contracts {
             config: Config::load(Path::new("."), &CliOverrides::default()).ok(),
@@ -27,10 +22,7 @@ impl Contracts {
         }
     }
 
-    /// What a path declares about itself: a directory's charter, a file's first line, or `None`
-    /// when it declares nothing. `None` rather than a placeholder is deliberate — output that
-    /// enumerates a directory carries every lockfile and build artifact, and a "(none)" beside
-    /// each would bury the entries that do speak.
+    /// `None` rather than a placeholder, so a "(none)" doesn't bury the entries that do speak.
     pub fn describe(&mut self, path: &Path) -> Option<String> {
         if path.is_dir() {
             self.charter(path)
@@ -43,7 +35,6 @@ impl Contracts {
         if let Some(hit) = self.files.get(path) {
             return hit.clone();
         }
-        // Marker-based first, then marker-agnostic, so an extensionless or unrecognised file still shows the line it declared.
         let found = self
             .config
             .as_ref()

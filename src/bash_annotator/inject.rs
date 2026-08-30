@@ -3,12 +3,8 @@
 use super::lex::{lex, Kind, Token};
 use super::map::shape_of;
 
-/// How to spell the annotator so the rewritten command can actually run: `current_exe()` plus the
-/// verb, since the annotator is this same binary. `None` is effectively unreachable — it needs
-/// `current_exe()` itself to fail — and the caller then treats it as "leave the command alone",
-/// which stays the correct answer for a process that cannot locate itself.
 fn wrapper_command() -> Option<String> {
-    // ALWAYS absolute: the command may itself have changed `PATH`, and since the annotator is the READER of the pipe, failing to start it gives the producer SIGPIPE — no output at all, exit 141.
+    // Absolute: `PATH` may have changed, and failing to start gives the producer SIGPIPE (exit 141).
     let found = std::env::current_exe().ok()?;
     let path = found.to_string_lossy().into_owned();
     Some(format!(
@@ -17,37 +13,23 @@ fn wrapper_command() -> Option<String> {
     ))
 }
 
-/// Downstream stages that leave the output still a list of path-bearing lines. The annotator is
-/// the LAST stage, so these see the tool's RAW output; each emits a subset, a reordering or a
-/// re-numbering of what it read. `wc` and `head -c` are excluded (a count, and a cut record),
-/// `sed` because it rewrites line TEXT, and `grep` is present only as a filter.
+/// Stages that leave the output still a list of path-bearing lines.
 const LINE_SAFE: &[&str] = &["head", "tail", "sort", "uniq", "cat", "nl", "tac", "grep"];
 
-/// The subset of `LINE_SAFE` that emits its input's lines IN ORDER, dropping only from the END.
-/// `ls -R` names entries relative to the last `<dir>:` header printed, so reordering or dropping
-/// detaches a header from its block. Order alone is not enough — the TEXT must survive too, which
-/// is why `nl` and `cat -n` are out: a numbered line stops looking like a header.
+/// `LINE_SAFE` stages that also preserve order, dropping only from the END.
 const ORDER_PRESERVING: &[&str] = &["cat", "head"];
 
-/// Stepped over when looking for the program a stage actually runs. `command`, `sudo` and `env` are
-/// deliberately NOT here — each changes how the program resolves, so rewriting one inverts the
-/// caller's intent or produces a command that exits 127. `exec` is absent too: it REPLACES the
-/// shell, so inside our subshell a following `echo` would start running.
+/// `command`/`sudo`/`env`/`exec` deliberately excluded: each changes how the program resolves.
 const WRAPPERS: &[&str] = &["nohup", "nice", "stdbuf"];
 /// Same, but consumes one argument of its own first.
 const ARGFUL_WRAPPERS: &[&str] = &["timeout"];
 
-/// The rewritten command, or `None` to leave it exactly as the agent wrote it.
-///
-/// Fail-closed throughout: a missed rewrite costs nothing, while a wrong one corrupts a pipeline
-/// the agent then debugs having never seen the command that actually ran.
 pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
     let lexed = lex(command);
     if lexed.unmodellable() {
         return None;
     }
 
-    // A compound command's redirect and pipe belong to the whole construct, but `split_stages` has no notion of nesting — so `done > out.txt` would rewrite the BODY and write contracts into the agent's file. Command position only: `grep -rn for src` stays a search.
     const COMPOUND: &[&str] = &[
         "{", "}", "for", "while", "until", "if", "then", "else", "elif", "fi", "do", "done",
         "case", "esac", "select", "function",
@@ -61,7 +43,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         return None;
     }
 
-    // A subshell makes the pipeline ONE command to the parent, so `${PIPESTATUS[i]}` would describe the subshell, not the stages. `$?` survives; the array cannot.
+    // A subshell makes the pipeline ONE command; `${PIPESTATUS[i]}` inside it can't describe the stages.
     if command.contains("PIPESTATUS") {
         return None;
     }
@@ -69,7 +51,6 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
     let annotator = wrapper_command()?;
     let stages = split_stages(&lexed.tokens);
 
-    // The pipeline, not the stage, is the unit: the annotator is appended to its END, so every stage inside it sees the tool's raw output.
     let mut pipelines: Vec<Vec<usize>> = Vec::new();
     for (i, st) in stages.iter().enumerate() {
         if st.piped_in {
@@ -94,21 +75,19 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         if shape_of(&prog).is_none() {
             continue;
         }
-        // The annotator frames records by NEWLINE, so NUL-delimited output arrives as one unbroken run with no lines to append to.
+        // NUL-delimited output arrives as one unbroken run: no lines to append to.
         if producer.words.iter().any(|t| match &t.kind {
             Kind::Word(w) => nul_delimited(&prog, w),
             _ => false,
         }) {
             continue;
         }
-        // The pipeline's stdout must be what the model reads, and appending the annotator BEFORE a redirect would write contracts into the agent's file.
         if pipe
             .iter()
             .any(|&i| stages[i].redirected || stages[i].consumes_args)
         {
             continue;
         }
-        // Every downstream stage must leave a list of path-bearing lines for us to annotate.
         if pipe[1..]
             .iter()
             .any(|&i| match program_of(&stages[i].words) {
@@ -118,7 +97,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         {
             continue;
         }
-        // Header-scoped output needs MORE than line safety downstream: drop or reorder a line and a `<dir>:` header detaches from the entries it scoped, which then resolve against the base.
+        // Dropping or reordering a line detaches a `<dir>:` header from the entries it scoped.
         if header_scoped(&prog, &producer.words)
             && pipe[1..]
                 .iter()
@@ -130,7 +109,6 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
             continue;
         }
 
-        // Taken from token offsets so the agent's own spacing, quoting and globs are reproduced byte for byte inside the parentheses.
         let (Some(from), Some(to)) = (
             pipe.iter().filter_map(|&i| stages[i].start).min(),
             pipe.iter().map(|&i| stages[i].end).max(),
@@ -138,7 +116,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
             continue;
         };
 
-        // From the program token onward (`timeout 5 grep …` describes a `grep` run) and forwarded as RAW SOURCE TEXT, so the shell expands it identically for the annotator — re-quoting turned `ls "$d"` into a literal `'$d'` that resolved to nothing and put a cwd file's contract on the line.
+        // Raw source text, not re-quoted: re-quoting once turned `ls "$d"` into literal `'$d'`.
         let argv: Vec<&str> = producer
             .words
             .iter()
@@ -147,7 +125,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
             .map(|t| &command[t.start..t.end])
             .collect();
 
-        // Re-raise the status the command would have had: `pipefail` may have been set by an earlier command in the agent's persistent shell, so it cannot be ruled out by reading this one. `PIPESTATUS` is captured FIRST because any later command replaces it.
+        // `PIPESTATUS` is captured FIRST because any later command replaces it.
         let n = pipe.len() - 1;
         edits.push((
             from,
@@ -176,10 +154,6 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
     Some((out, annotated))
 }
 
-/// Does this invocation print `<dir>:` block headers, making its output order load-bearing? `ls`
-/// does when recursing, and whenever given more than one operand. The operand count is approximated
-/// by counting non-flag words: an over-count only refuses a rewrite, which is free, while an
-/// under-count would let a wrong contract through.
 fn header_scoped(prog: &str, words: &[&Token]) -> bool {
     if prog != "ls" {
         return false;
@@ -192,27 +166,24 @@ fn header_scoped(prog: &str, words: &[&Token]) -> bool {
             _ => None,
         })
         .collect();
-    // `--recur` IS `--recursive` to getopt_long, so matching only the full spelling lets an abbreviation past the guard.
+    // `--recur` IS `--recursive` to getopt_long.
     let recursive = args.iter().any(|w| {
         *w == "--recursive"
             || (w.len() >= 5 && "--recursive".starts_with(*w))
             || (w.starts_with('-') && !w.starts_with("--") && w.contains('R'))
     });
     let operands: Vec<&&str> = args.iter().filter(|w| !w.starts_with('-')).collect();
-    // A glob or variable is ONE word here and many operands once the shell has run: `ls */ | sort` arrives as a multi-directory listing whose headers `sort` already hoisted.
     let may_expand = operands
         .iter()
         .any(|w| w.contains(['*', '?', '[', '{', '$', '~']));
     recursive || may_expand || operands.len() > 1
 }
 
-/// Does this argument make the producer emit NUL-delimited records rather than lines?
 fn nul_delimited(prog: &str, w: &str) -> bool {
     let long = matches!(
         w.split('=').next().unwrap_or(w),
         "--null" | "--null-data" | "--print0" | "--zero" | "--zero-terminated"
     );
-    // `find`'s output-shaping predicates are words, not clusters, and each stops its lines being plain paths — `-printf '%f'` prints BARE names, `-ls` a stat line, `-printx` escapes whitespace. `-Z`/`-z` hide inside a grep cluster.
     long || (prog == "find"
         && matches!(
             w,
@@ -230,18 +201,12 @@ fn nul_delimited(prog: &str, w: &str) -> bool {
 
 struct Stage<'a> {
     words: Vec<&'a Token>,
-    /// Byte offsets of this stage's FIRST and LAST tokens — redirects and their targets
-    /// included, which a scan over `words` alone cannot see. A leading `2>/dev/null` left outside
-    /// the parentheses is a bash syntax error; a trailing one silences the annotator too.
+    /// Includes redirects and their targets, which a scan over `words` alone cannot see.
     start: Option<usize>,
     end: usize,
-    /// This stage's stdout goes to the next one.
     piped_out: bool,
-    /// This stage reads another stage's stdout.
     piped_in: bool,
-    /// A `>`-family operator sends this stage's stdout somewhere other than the tool result.
     redirected: bool,
-    /// The stage's output is consumed as arguments rather than read.
     consumes_args: bool,
 }
 
@@ -264,17 +229,17 @@ fn split_stages<'a>(tokens: &'a [Token]) -> Vec<Stage<'a>> {
                 next.piped_in = true;
                 stages.push(next);
             }
-            // After `|`, `&&` or `||` bash treats a newline as a line CONTINUATION; splitting on it yields an empty stage and refuses every multi-line pipeline.
+            // After `|`/`&&`/`||`, bash treats a newline as a line continuation, not a separator.
             Kind::Op(op) if op == "\n" && continues => {}
             Kind::Op(op) if matches!(op.as_str(), ";" | "&&" | "||" | "&" | "\n") => {
                 stages.push(new_stage());
             }
             Kind::Op(op) => {
-                // `2>` and `2>&1` touch stderr only; everything else in the family takes stdout somewhere the model will not read.
+                // `2>`/`2>&1` touch stderr only; the rest of the `>` family divert stdout.
                 if !op.starts_with('2') && op.contains('>') {
                     stages.last_mut().unwrap().redirected = true;
                 }
-                // The word after ANY redirect names a destination, not an argument — `2>&1` included, whose `1` lexes separately and once made a directory named `1` the operand.
+                // `2>&1`'s `1` lexes separately and once made a directory named `1` the operand.
                 if op.contains('>') || op.contains('<') {
                     expect_target = true;
                     let s = stages.last_mut().unwrap();
@@ -290,7 +255,6 @@ fn split_stages<'a>(tokens: &'a [Token]) -> Vec<Stage<'a>> {
                     expect_target = false;
                     continue;
                 }
-                // All four spellings of find's run-a-program family.
                 if matches!(w.as_str(), "-exec" | "-execdir" | "-ok" | "-okdir") {
                     s.consumes_args = true;
                 }
@@ -325,13 +289,11 @@ fn line_safe(prog: &str, words: &[&Token]) -> bool {
             _ => None,
         })
         .collect();
-    // A short cluster like `-qc` hides its byte flag inside the cluster.
     let short_has = |c: char| {
         flags
             .iter()
             .any(|f| f.starts_with('-') && !f.starts_with("--") && f.contains(c))
     };
-    // A stage can divert stdout with a FLAG rather than `>`, or reframe the record as NUL-terminated — neither is program-specific, so both are refused before any per-program rule runs.
     let diverts_or_reframes = |f: &&str| -> bool {
         let name = f.split('=').next().unwrap_or(f);
         matches!(
@@ -344,11 +306,9 @@ fn line_safe(prog: &str, words: &[&Token]) -> bool {
     }
 
     match prog {
-        // A byte count can cut a record in half.
         "head" | "tail" => !short_has('c') && !flags.iter().any(|f| f.starts_with("--bytes")),
-        // `cat` is identity only without flags: `-n`/`-b` number the lines and `-A`/`-e`/`-t`/`-v`/`-E`/`-T` render invisible characters, each rewriting the text a path must be read out of.
         "cat" => flags.is_empty(),
-        // A filter may only DROP lines: `-c` emits a count, `-o` the matched fragment, and `-l`/`-L` over a STREAM emit the literal `(standard input)` rather than any path.
+        // `-l`/`-L` over a stream emit the literal `(standard input)`, not a path.
         "grep" => {
             !short_has('c')
                 && !short_has('o')
@@ -361,7 +321,6 @@ fn line_safe(prog: &str, words: &[&Token]) -> bool {
                         || f.starts_with("--files-without")
                 })
         }
-        // `tac -s` / `nl -s` redefine the record separator, so "the unit is a line" stops holding.
         "tac" | "nl" => !flags
             .iter()
             .any(|f| f.starts_with("-s") || f.starts_with("--separator")),
@@ -369,10 +328,6 @@ fn line_safe(prog: &str, words: &[&Token]) -> bool {
     }
 }
 
-/// The token that names the program a stage runs, and that name as written. Only `nohup`, `nice`,
-/// `stdbuf`, `exec` and `timeout` are stepped over, and leading `VAR=value` assignments skipped.
-/// `command`, `sudo` and `env` deliberately are NOT: each changes how the program resolves, and the
-/// caller who typed them is asking for that. The name is returned verbatim, no directory stripped.
 fn program_of<'a>(words: &[&'a Token]) -> Option<(&'a Token, String)> {
     let mut i = 0;
     while i < words.len() {

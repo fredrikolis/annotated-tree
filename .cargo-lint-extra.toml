@@ -19,11 +19,7 @@ level = "deny"
 max_ratio = 0.20
 max_consecutive = 1
 
-# Per FILE, where inline-comments cannot see: it inspects function bodies only and never counts
-# `///`, so module headers, item docs and impl blocks are unbounded without it. Doc comments are
-# counted and doc runs capped: a one-or-two-line doc per item clears both easily, and what does
-# not clear them is an essay. Fenced examples count as code, not prose, so a doctest costs
-# nothing.
+# Per FILE: catches `///` docs inline-comments misses.
 [rules.file-comments]
 level = "deny"
 max_ratio = 0.30
@@ -31,9 +27,7 @@ count_doc_comments = true
 max_consecutive = 1
 max_doc_consecutive = 4
 
-# Off deliberately, not by omission: these arrived with the pinned revision and are performance
-# and style opinions this repo has not adopted. Left on they would fail commits over choices
-# nobody made here.
+# Off: from the pinned revision, not adopted here.
 [rules.string-alloc-in-loop]
 level = "allow"
 

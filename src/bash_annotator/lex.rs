@@ -1,6 +1,5 @@
 // Concern: splits a Bash command into words and operators, resolving quoting and recording each token's byte span | Non-concern: what any token means | IO: (command) -> tokens + unmodellable constructs
 
-/// A token's role. Words carry their text with quoting resolved; operators carry it verbatim.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
     Word(String),
@@ -10,31 +9,21 @@ pub enum Kind {
 #[derive(Debug, Clone)]
 pub struct Token {
     pub kind: Kind,
-    /// Byte range in the ORIGINAL command. A rewrite splices over this, so quoting, globs and
-    /// spacing survive untouched.
+    /// Byte range in the original command: a rewrite splices over this, preserving quoting/globs.
     pub start: usize,
     pub end: usize,
 }
 
-/// The tokens, plus the three constructs that make a command unmodellable. Lexing rather than
-/// pattern-matching is not fastidiousness: string tests on shell syntax get three things wrong,
-/// each silently skipping eligible commands — `2>/dev/null` is a stderr redirect, a `|` inside
-/// `grep "a\|b"` is part of a quoted token, and `||` is "or else" rather than a pipe.
+/// A string test gets `2>/dev/null` and `grep "a\|b"` wrong; lexing does not.
 pub struct Lexed {
     pub tokens: Vec<Token>,
-    /// `$( )` or a backtick: a second command this does not model.
     pub substitution: bool,
-    /// `( … )`: legal, but its stdout can be redirected as a unit.
     pub subshell: bool,
-    /// Quoting never closed.
     pub unbalanced: bool,
-    /// A `<<` heredoc. Its body lines are DATA, not commands — rewriting one writes the rewrite
-    /// into whatever file the heredoc feeds.
     pub heredoc: bool,
 }
 
 impl Lexed {
-    /// Whether anything in the command puts it beyond what this can reason about.
     pub fn unmodellable(&self) -> bool {
         self.substitution || self.subshell || self.unbalanced || self.heredoc
     }
@@ -50,14 +39,13 @@ pub fn lex(src: &str) -> Lexed {
     let mut i = 0;
 
     while i < b.len() {
-        // A newline separates commands, so it must be classified before whitespace eats it.
         if b[i].is_ascii_whitespace() && b[i] != b'\n' {
             i += 1;
             continue;
         }
         let start = i;
 
-        // `#` opens a comment only at a token boundary; inside a word it is ordinary (`file#1`). Emitting no token splices the annotator BEFORE it, since appending after a `#` comments out the closing `)`.
+        // No token emitted: splices the annotator BEFORE `#`, not after where it'd comment out `)`.
         if b[i] == b'#' {
             while i < b.len() && b[i] != b'\n' {
                 i += 1;
@@ -65,7 +53,6 @@ pub fn lex(src: &str) -> Lexed {
             continue;
         }
 
-        // Redirection, with an optional leading file descriptor: `>`, `>>`, `2>`, `1>>`, `2>&1`. `<<` and `<<-` open a heredoc; everything after is data this cannot model.
         if src.get(i..i + 2) == Some("<<") {
             heredoc = true;
             tokens.push(op(src, i, i + 2));
@@ -88,7 +75,7 @@ pub fn lex(src: &str) -> Lexed {
             continue;
         }
 
-        // Two-character operators first, so `||` never lexes as two `|`. `get`, not `&src[i..i + 2]`: a byte index inside a multi-byte character panics.
+        // `get`, not `&src[i..i + 2]`: a byte index inside a multi-byte character panics.
         if matches!(
             src.get(i..i + 2),
             Some("||") | Some("&&") | Some(";;") | Some("|&")
@@ -104,7 +91,7 @@ pub fn lex(src: &str) -> Lexed {
             continue;
         }
 
-        // Accumulated as BYTES: `b[i] as char` decodes each byte as its own Latin-1 character, mangling every multi-byte one — harmless while the text is only compared, corrupting once it is forwarded.
+        // Accumulated as bytes: `b[i] as char` would decode each byte as Latin-1, mangling multi-byte text.
         let mut text: Vec<u8> = Vec::new();
         while i < b.len() {
             let c = b[i];

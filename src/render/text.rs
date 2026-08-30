@@ -85,16 +85,13 @@ fn render_node(node: &DirNode, prefix: &str, glyphs: &Glyphs, out: &mut String) 
         ));
     }
 
-    // The per-node overflow marker is always the directory's final child (it was counted into `child_count`), so it takes the elbow connector and folds both elided-dir and elided-file counts into one row.
+    // Always the final child (counted into `child_count`), so it takes the elbow connector.
     if let Some(summary) = marker {
         out.push_str(&format!("{prefix}{}[{summary}]\n", glyphs.elbow));
     }
 }
 
-/// The directory row's trailing `# …`: the authored charter first (when resolved), then the
-/// observed dep facts folded in behind a `·` separator — authored intent cross-checked against
-/// the graph. A charter-less directory is byte-for-byte unchanged (bare deps, or nothing). The
-/// separator is glyph-neutral (not ascii-swapped) so `--ascii` stays a pure box-glyph swap.
+/// The `·` separator is glyph-neutral (not ascii-swapped), so `--ascii` stays a pure box-glyph swap.
 fn dir_annotation(dir: &DirNode) -> String {
     let charter = dir.charter.as_ref().map(|c| c.line());
     let deps = dir.deps.as_ref().and_then(|d| d.annotation());
