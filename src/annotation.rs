@@ -318,7 +318,7 @@ pub fn analyze(text: &str, lang: &Language, max_len: Option<usize>) -> Outcome {
 fn check_found(text: String, line: usize, max_len: Option<usize>) -> Outcome {
     match parse_fields(&text) {
         Some(fields) => {
-            // A present-but-empty field is the same defect class as an absent one (CHECK1 admits both), so it is `Malformed` with that part named; `detail` carries the difference, since the key IS visible in `actual`.
+            // A present-but-empty field is the same defect class as an absent one, so it is `Malformed` with that part named; `detail` carries the difference, since the key IS visible in `actual`.
             let empty = empty_parts(&fields);
             if !empty.is_empty() {
                 let detail = Some(empty_detail(&empty));

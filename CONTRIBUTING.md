@@ -18,8 +18,7 @@ PRODUCT MANAGER ─ owns the request end to end. Indentation is scope:
 ├─ TRIAGE, PM's own work, upstream of this repo.
 │     reproduce it, or confirm the attribution
 │     does a unit already own it?   the map
-│     does a clause forbid it?      SPEC.md
-│     any of these fails ──► answer on the issue, stop here
+│     either fails ──► answer on the issue, stop here
 │
 ├─ spawns PLANNER ─ plans against the declared standards.   ◄─────┐
 │     PM reviews that plan adversarially and returns it ──────────┘
@@ -36,7 +35,7 @@ a separate flow, many commits later, outside all of the above:
    tag ──► CI ──► release
 ```
 
-**Triage.** The only place a request is turned down, and it happens before anything reaches this repo. Both questions are answered against something written rather than re-argued: a request a unit already owns is a routing answer, not a feature, and [`SPEC.md`](SPEC.md) forbids in one direction only, since a capability needs no clause admitting it. No gate reads it, so a clause is applied by judgment.
+**Triage.** The only place a request is turned down, and it happens before anything reaches this repo. The question is answered against something written rather than re-argued: a request a unit already owns is a routing answer, not a feature.
 
 **Plan.** Planning against the rubric you will be judged by makes the review a checklist already satisfied, not a late verdict. PLANNER is the worst judge of its own plan, so PM returns it until it holds, then approves it.
 
@@ -120,12 +119,5 @@ my-project-pm/          # the PM's workspace, private, never published
 ```
 
 Keeping plans out is the point. A plan states its premises as fact, some of them are wrong, and a reviewer who disproves one cannot stop the file asserting it to the next agent that reads it. Gitignoring does not help, because `ls`, `find` and `grep` surface it anyway.
-
-Add a `SPEC.md` to the repo at this point, not to the workspace, and keep it [intentionally under-specified](SPEC.md). It lives with the code it constrains, so every checkout carries the invariants. Under-specify and anything goes; over-specify and agents begin rejecting good requests by citing a clause that was never meant to carry the weight. Two things earn a clause and nothing else does:
-
-- Something certain and permanent. "No x86-only dependency" in a library that has to run on ARM.
-- Something you have had to correct an agent on more than once. Usually that is where the repo does something unusual, like deliberately not testing a component whose shape is still in flux.
-
-**Never let an agent derive the spec from the implementation.** It reads as free documentation. It is cement poured over whatever the code happens to do today, and every principled refactor afterwards gets fought on the grounds that it goes against spec.
 
 Commission the whole thing slowly, with the supervision dialled down only as evidence comes in. Read the early reviews yourself and check the verdicts against the diff. The tuning that makes the loop converge is repo-specific, so the first rounds are how you find yours. Once a stage keeps earning its verdict, let it run unattended.

@@ -176,7 +176,7 @@ fn the_trailing_whitespace_guard_cannot_be_silently_disarmed() {
 
 #[test]
 fn a_charter_with_prose_below_its_line_resolves_to_no_charter() {
-    // TREE1: a `.annotation` holding more than its one line resolves to NOTHING, rather than to a charter with a newline inside it.
+    // A `.annotation` holding more than its one line resolves to NOTHING, rather than to a charter with a newline inside it.
     let (out, code) = run(&[], "charter_noisy");
     assert_eq!(code, 0, "rendering still exits 0:\n{out}");
     let line = dir_line(&out, "noisy").expect("noisy/ dir row is present");

@@ -142,11 +142,11 @@ impl Failure {
 /// error envelope (code from [`exit::code`]) is written to `out` first, so an agent parsing stdout
 /// gets a dispatch key instead of empty output; other formats surface the failure as prose on `err`.
 pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
-    // A maintenance, which CORE4 exempts. It takes the same overrides and `-I` globs every other run does, on named files as well as walked ones: a destructive verb where the flag that narrows it went half-inert would be the worst of both.
+    // A maintenance, which edits its own Workspace rather than only reporting on it. It takes the same overrides and `-I` globs every other run does, on named files as well as walked ones: a destructive verb where the flag that narrows it went half-inert would be the worst of both.
     if let Some(cli::Command::Strip(args)) = &cli.command {
         return Ok(strip::dispatch(args, cli, out, err));
     }
-    // An accessory: it points at no Workspace and emits no Report, so nothing in SPEC.md governs it.
+    // An accessory: it points at no Workspace and emits no Report.
     if let Some(cli::Command::BashAnnotator(args)) = &cli.command {
         return bash_annotator::dispatch(args, out, err);
     }

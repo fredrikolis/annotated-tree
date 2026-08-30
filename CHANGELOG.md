@@ -18,6 +18,7 @@ to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 - `docs/repo-standards.md` and `docs/communication-style.md`, now bundled standards.
+- `SPEC.md`. The invariant register is gone; CONTRIBUTING no longer routes triage through it.
 - `docs/comment-standards.md`, now inline in `.githooks/pre-commit`.
 
 ## [0.7.0] - 2026-08-04

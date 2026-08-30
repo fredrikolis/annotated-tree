@@ -53,7 +53,7 @@ fn tree_files() -> Vec<(&'static str, &'static str)> {
 
 #[test]
 fn a_sidecar_lists_a_comment_less_file_and_takes_no_row_of_its_own() {
-    // Writing the sidecar IS the opt-in, so no `--include` is needed; the sidecar itself is not a row, and TREE2 requires the report state the criterion by which it is missing.
+    // Writing the sidecar IS the opt-in, so no `--include` is needed; the sidecar itself is not a row, and the report must state the criterion by which it is missing.
     let (out, err, code) = run("render", &[], &tree_files());
     assert_eq!(code, 0, "rendering a tree exits 0:\n{out}");
     let row = out
@@ -103,7 +103,7 @@ fn the_row_that_took_the_contract_says_so_in_json() {
 
 #[test]
 fn a_file_that_can_hold_a_comment_never_takes_a_sidecar() {
-    // CORE2 by construction: a sidecar is read ONLY for a file with no comment marker, so `main.rs.annotation` is an ordinary file and `main.rs` keeps its own first line.
+    // By construction: a sidecar is read ONLY for a file with no comment marker, so `main.rs.annotation` is an ordinary file and `main.rs` keeps its own first line.
     let mut files = tree_files();
     files.push((
         "main.rs.annotation",
@@ -326,7 +326,7 @@ fn a_sidecar_with_prose_below_its_line_gives_the_row_no_contract_and_fails() {
     );
 }
 
-/// SPEC CORE2 with every switch that could expose a `.annotation` row on at once: `--hidden` walks
+/// One location, with every switch that could expose a `.annotation` row on at once: `--hidden` walks
 /// into the dot-file a charter is, `--include '*'` selects every path whatever its extension. So the
 /// suppression must hold by NAME, not as a by-product of the hidden prune — a charter listed as its
 /// own row is an Annotation somewhere other than the path it annotates.
