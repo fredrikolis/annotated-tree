@@ -7,3 +7,11 @@ exclude = ["sample"]
 
 [rules.comment-ratio]
 header_free_chars = 200
+
+[rules.doc-length]
+max_lines = 150
+
+[[allow]]
+paths = ["CHANGELOG.md"]
+reason = "a changelog grows monotonically by design; a line budget measures age, not bloat"
+set = ["doc-length.max_lines=600"]
