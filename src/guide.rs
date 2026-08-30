@@ -4,16 +4,12 @@ use crate::config;
 use crate::embedded_doc;
 use crate::strict;
 
-/// The one canonical guide text, embedded at build time: one source, rendered onto every teaching
-/// surface.
 const GUIDE: &str = include_str!("annotation-guide.md");
 
-/// Splits the compact `--help` head from the deeper `--strict-check` tail.
 const MORE_MARKER: &str = "<!-- more -->\n";
 
-/// The guide body, annotation stripped and `{TEMPLATE}`/`{EXAMPLE}` filled from the ENFORCED
-/// contract, so guide and checker cannot advertise different shapes. An authored constant, so a
-/// malformed doc fails loudly (DbC) rather than degrading to a silently wrong render.
+/// `{TEMPLATE}`/`{EXAMPLE}` are filled from the ENFORCED contract, so guide and checker
+/// cannot advertise different shapes.
 fn substituted() -> String {
     let rest = embedded_doc::embedded_body(GUIDE, "annotation guide");
     assert!(
@@ -24,7 +20,6 @@ fn substituted() -> String {
         .replace("{EXAMPLE}", &config::builtin_example())
 }
 
-/// The compact form for `--help`: everything before the `<!-- more -->` marker.
 pub fn essence() -> String {
     let full = substituted();
     let head = full
@@ -34,9 +29,7 @@ pub fn essence() -> String {
     head.trim_end().to_string()
 }
 
-/// The full guide, printed on a failing `--strict-check` unless `--no-guide`.
 pub fn full() -> String {
-    // Keep a blank line where the section marker was, so the two halves stay visually split.
     let body = substituted().replace(MORE_MARKER, "\n");
     format!("{}\n", body.trim_end())
 }

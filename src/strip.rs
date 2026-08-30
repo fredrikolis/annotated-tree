@@ -21,7 +21,6 @@ enum Outcome {
 }
 
 impl Outcome {
-    /// The stable key an agent branches on, or `None` where the annotation went.
     const fn code(self) -> Option<&'static str> {
         match self {
             Self::Stripped | Self::AlreadyGone => None,
@@ -32,21 +31,18 @@ impl Outcome {
         }
     }
 
-    /// A skip is reported but is not a failure, so it must not colour the exit code.
     const fn is_failure(self) -> bool {
         matches!(self, Self::Unreadable | Self::Unwritable)
     }
 }
 
-/// A file to consider, carrying the spelling the caller used. The canonical form dedups `./x`
-/// against `x`; the given form is what the report echoes, so a caller can match a row to its input.
+/// The canonical form dedups `./x` against `x`; the given form is what the report echoes.
 struct Target {
     given: PathBuf,
     canonical: PathBuf,
-    /// Cached: link-ness is part of the dedup key, and cannot change mid-run.
     is_symlink: bool,
-    /// Which resolved config governs this file. Pooling every target under one config would let
-    /// argument order decide whether a language is recognized, and so whether a file is edited.
+    /// Each target keeps its own resolved config, so argument order never decides whether a
+    /// language is recognized.
     config: usize,
 }
 
@@ -63,9 +59,8 @@ impl Target {
     }
 }
 
-/// Strip conforming annotations from each named file, and from each named directory under `-R`.
-/// Nothing is written without `-y`: the default reports and stops. There is no prompt, because a
-/// Report that depended on a terminal would not be determined by its inputs.
+/// Nothing is written without `-y`: the default reports and stops. No prompt, since a report
+/// that depended on a terminal would not be determined by its inputs.
 pub fn dispatch(
     args: &cli::Strip,
     cli: &cli::Cli,
@@ -74,14 +69,12 @@ pub fn dispatch(
 ) -> i32 {
     let mut targets: Vec<Target> = Vec::new();
     let mut configs: Vec<Config> = Vec::new();
-    // `-I` is a property of the invocation, not of a target, so it is compiled once.
     let excludes = match crate::util::build_globset(&cli.ignore) {
         Ok(g) => g,
         Err(e) => return precondition(out, err, cli, &e),
     };
 
     for path in &args.paths {
-        // Each target resolves its OWN config, so a multi-target run never applies one tree's languages or ignore settings to another — the contract `--strict-check` already holds.
         let base = if path.is_dir() {
             path.clone()
         } else {
@@ -128,15 +121,12 @@ pub fn dispatch(
         configs.push(resolved);
     }
 
-    // Keyed on link-ness too: a symlink and its target share a canonical path, so collapsing them would drop whichever the caller named second and skip the file it points at.
     targets.sort_by(|a, b| (&a.canonical, a.is_symlink).cmp(&(&b.canonical, b.is_symlink)));
     targets.dedup_by(|a, b| a.canonical == b.canonical && a.is_symlink == b.is_symlink);
     run(args, cli, &targets, &configs, &excludes, out, err)
 }
 
-/// Report only after the write pass, so a run that half-succeeded says so on the surface an agent
-/// parses. Reporting the intended list up front would hand a JSON caller a success-shaped payload
-/// whose exit code contradicts it.
+/// Report only after the write pass, so a run that half-succeeded says so on the surface parsed.
 fn run(
     args: &cli::Strip,
     cli: &cli::Cli,
@@ -159,7 +149,6 @@ fn run(
             );
             continue;
         }
-        // `-I` narrows a named file too: honouring it only on the `-R` walk leaves the flag that exists to narrow a destructive verb inert on half its input.
         if target.is_symlink {
             results.push((target, Outcome::Symlink));
             continue;
@@ -191,7 +180,6 @@ fn run(
     }
 }
 
-/// Dual-rendered from one list: the JSON envelope every other surface emits, or prose.
 fn report(
     results: &[(&Target, Outcome)],
     applied: bool,
@@ -229,8 +217,7 @@ fn report(
     let _ = writeln!(err, "strip: {verb} {changed} of {scanned} files scanned");
 }
 
-/// One failure, rendered for whichever surface asked, so a JSON caller never reads emptiness as
-/// success. The caller pairs the code with its exit integer; `exit.rs` owns that taxonomy.
+/// The caller pairs the code with its exit integer; `exit.rs` owns that taxonomy.
 fn fail(
     out: &mut impl Write,
     err: &mut impl Write,
@@ -251,9 +238,8 @@ fn fail(
     exit_code
 }
 
-/// `-I` matched against the file name and the path as written. `walk::keep_entry` matches the
-/// ROOT-RELATIVE path where this sees the root-prefixed one, so a rooted glob can exclude here and
-/// not there. That direction is the safe one for a destructive verb: it over-skips, never over-strips.
+/// Matched against the file name AND the path as written, unlike `walk::keep_entry`'s
+/// root-relative match — this direction over-skips rather than over-strips.
 fn excluded(excludes: &globset::GlobSet, path: &Path) -> bool {
     !excludes.is_empty()
         && (path
@@ -262,7 +248,6 @@ fn excluded(excludes: &globset::GlobSet, path: &Path) -> bool {
             || excludes.is_match(path))
 }
 
-/// The one shape every setup failure takes.
 fn precondition(
     out: &mut impl Write,
     err: &mut impl Write,
@@ -279,17 +264,14 @@ fn precondition(
     )
 }
 
-/// A `.annotation` charter or `<name>.annotation` sidecar holds nothing but its annotation, so
-/// removing it means deleting the file — a different act than editing one, left to the caller.
+/// Removing it means deleting the file — a different act than editing one, left to the caller.
 fn is_annotation_artifact(path: &Path) -> bool {
     path.file_name().is_some_and(|n| n == ".annotation")
         || path.extension().is_some_and(|e| e == "annotation")
 }
 
-/// The line to remove, read fresh. Every caller re-asks rather than trusting an earlier answer:
-/// the same path can reach here twice, and the first removal invalidates the second's verdict. A
-/// file whose comment grammar is unknown is never edited — knowing where a comment ends is the
-/// whole safety argument.
+/// Read fresh every call: the same path can reach here twice, and the first removal
+/// invalidates the second's verdict.
 fn sole_annotation_line(path: &Path, config: &Config) -> Result<Option<(usize, String)>, ()> {
     let Some(lang) = config.language_for_path(path) else {
         return Ok(None);
@@ -306,7 +288,7 @@ fn strip_file(path: &Path, config: &Config) -> Outcome {
         return Outcome::AlreadyGone;
     };
     let mut lines: Vec<&str> = text.split('\n').collect();
-    // Take one blank line with it, so the body does not open on the whitespace that separated it.
+    // Take one blank line with it.
     if lines.get(at + 1).is_some_and(|l| l.trim().is_empty()) {
         lines.remove(at + 1);
     }
@@ -314,9 +296,8 @@ fn strip_file(path: &Path, config: &Config) -> Outcome {
     write_atomically(path, &lines.join("\n"))
 }
 
-/// Written beside the file and renamed over it. A truncate-then-write interrupted midway leaves a
-/// source file half-erased, which is worse than never having run; a rename either happens or does
-/// not. The temp file is removed on either failure, so a partial write leaves nothing behind.
+/// Written beside the file and renamed over it, so an interrupted write cannot leave the
+/// source file half-erased.
 fn write_atomically(path: &Path, body: &str) -> Outcome {
     let tmp = path.with_file_name(format!(
         ".{}.strip-tmp",
@@ -326,7 +307,7 @@ fn write_atomically(path: &Path, body: &str) -> Outcome {
         let _ = std::fs::remove_file(&tmp);
         return Outcome::Unwritable;
     }
-    // The rename carries the temp file's mode, so without this an executable script comes back unexecutable — a fresh file gets the process umask.
+    // Without this, an executable script comes back unexecutable — a fresh file gets the umask.
     if let Ok(meta) = std::fs::metadata(path) {
         let _ = std::fs::set_permissions(&tmp, meta.permissions());
     }

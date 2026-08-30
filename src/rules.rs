@@ -8,29 +8,20 @@ use serde::Serialize;
 use crate::graph::PackageEdges;
 use crate::manifest::Ecosystem;
 
-/// Resolved architectural rules. Empty/false means "enforce nothing".
+/// Empty/false means "enforce nothing".
 #[derive(Debug, Default, Clone)]
 pub struct Rules {
-    /// `(from, to)` pairs: `from` must not depend on `to` (canonical package names).
     pub deny: Vec<(String, String)>,
     pub forbid_cycles: bool,
     pub forbid_orphans: bool,
-    /// Opt-in: a manifest-bearing package that carries annotated files but resolves no
-    /// concern charter FAILS the check. Off by default (a package may honestly omit a
-    /// charter); enabling it turns the always-available charter census into a gate.
     pub require_package_charter: bool,
-    /// Per-part length bound: each annotation field (`Concern`, `Non-concern`, `IO`) may be at
-    /// most this many characters. The built-in config ships `200`, so this is `Some(200)`
-    /// unless a layer overrides it. `None` — what a configured `0` normalizes to — raises no
-    /// length issue at any length, which is how an adopter turns the bound off.
+    /// `None` — what a configured `0` normalizes to — raises no length issue at any length.
     pub max_annotation_length: Option<usize>,
 }
 
 impl Rules {
-    /// Whether any GRAPH rule is configured. When false the strict path skips the whole
-    /// graph build — no rules, no cost, no behaviour change. `max_annotation_length` is
-    /// deliberately excluded: it is a per-file property the annotation pass reads directly,
-    /// so setting it must not pull in a graph build.
+    /// When false the strict path skips the whole graph build. `max_annotation_length` is
+    /// excluded: it's a per-file property that must not pull in a graph build.
     pub fn is_active(&self) -> bool {
         !self.deny.is_empty()
             || self.forbid_cycles
@@ -39,51 +30,32 @@ impl Rules {
     }
 }
 
-/// Which architectural rule a [`Violation`] breaches. Serialized as the snake_case
-/// tag consumers branch on — the dispatch key mirror of `strict::Category`, so an
-/// agent branches on `code` instead of regexing the `message` prose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuleCode {
-    /// A `from -> to` edge the `deny` policy forbids exists in the tree.
     DeniedDependency,
-    /// A dependency cycle among internal packages (`forbid_cycles`).
     DependencyCycle,
-    /// A package with no internal edge in or out (`forbid_orphans`).
     OrphanPackage,
-    /// A `deny` rule names a package absent from the scanned tree.
     UnknownDenyPackage,
-    /// A manifest-bearing package with annotated files resolves no concern charter
-    /// (`require_package_charter`). Evaluated in `strict` (it needs a filesystem charter
-    /// resolve, not just edges), so it is not produced by [`evaluate`] below.
+    /// Evaluated in `strict` (needs a filesystem charter resolve), not produced by [`evaluate`].
     MissingPackageCharter,
 }
 
-/// A single rule finding. Carries a stable dispatch [`code`](RuleCode) and the located
-/// facts (participating packages, offending directory) alongside the human-readable
-/// `message` — the same located-diagnostic shape as `strict::AnnotationViolation`, so
-/// callers act on structure and only humans read the prose.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Violation {
-    /// Stable dispatch code (the mirror of `AnnotationViolation`'s `category`).
     pub code: RuleCode,
-    /// The finding as a human-readable line — the dual-render kept next to the code
-    /// (the `strict` report emits exactly this as its `rule: …` line).
     pub message: String,
-    /// The participating package name(s): `[from, to]` for a denied dependency, the
-    /// ordered node path for a cycle, the single package for an orphan / unknown deny.
+    /// `[from, to]` for a denied dependency, the ordered node path for a cycle, the single
+    /// package for an orphan / unknown deny.
     pub packages: Vec<String>,
-    /// The canonical directory of the offending package, when one exists in the tree
-    /// (`None` for a cycle spanning many packages, or an absent deny package).
+    /// `None` for a cycle spanning many packages, or an absent deny package.
     pub dir: Option<PathBuf>,
 }
 
-/// Evaluate every configured rule against the package edge list. Output is sorted
-/// and de-duplicated so the report is deterministic regardless of walk order.
+/// Sorted and de-duplicated so the report is deterministic regardless of walk order.
 pub fn evaluate(packages: &[PackageEdges], rules: &Rules) -> Vec<Violation> {
     let mut out = Vec::new();
 
-    // Fail-fast on user config: a rule naming a package absent from the tree can never fire, silently masking the author's intent.
     unknown_deny_packages(packages, &rules.deny, &mut out);
     deny_violations(packages, &rules.deny, &mut out);
     if rules.forbid_cycles {
@@ -129,7 +101,6 @@ fn deny_violations(packages: &[PackageEdges], deny: &[(String, String)], out: &m
                         code: RuleCode::DeniedDependency,
                         message: format!("denied dependency: {from} must not depend on {to}"),
                         packages: vec![from.clone(), to.clone()],
-                        // The offending edge originates in `pkg` (the `from` package).
                         dir: Some(pkg.dir.clone()),
                     });
                 }
@@ -138,10 +109,7 @@ fn deny_violations(packages: &[PackageEdges], deny: &[(String, String)], out: &m
     }
 }
 
-/// Every package with no resolved internal edge in OR out — depended on by nothing and
-/// depending on nothing within the scanned tree. This is the ONE orphan definition, which the
-/// `forbid_orphans` rule below builds on. Membership is keyed by `(ecosystem, name)`: deps are
-/// per-ecosystem, so a name shared across ecosystems is not the same node.
+/// Keyed by `(ecosystem, name)`: a name shared across ecosystems is not the same node.
 pub fn orphan_packages(packages: &[PackageEdges]) -> Vec<&PackageEdges> {
     let mut depended_on: HashSet<(Ecosystem, &str)> = HashSet::new();
     for pkg in packages {
@@ -174,7 +142,6 @@ fn orphan_violations(packages: &[PackageEdges], out: &mut Vec<Violation>) {
 }
 
 fn cycle_violations(packages: &[PackageEdges], out: &mut Vec<Violation>) {
-    // Only a resolved edge whose target is a package in the SAME ecosystem forms a real arc.
     let mut index: HashMap<(Ecosystem, &str), usize> = HashMap::new();
     for (i, pkg) in packages.iter().enumerate() {
         index.insert((pkg.ecosystem, pkg.name.as_str()), i);
@@ -192,7 +159,6 @@ fn cycle_violations(packages: &[PackageEdges], out: &mut Vec<Violation>) {
 
     for cycle in find_cycles(&adjacency) {
         let mut names: Vec<&str> = cycle.iter().map(|&i| packages[i].name.as_str()).collect();
-        // Members in cycle order with the loop NOT closed — the structured counterpart of the ` -> `-joined message.
         let path: Vec<String> = names.iter().map(|s| s.to_string()).collect();
         names.push(names[0]); // close the loop for a readable A -> B -> C -> A message
         out.push(Violation {
@@ -353,7 +319,6 @@ mod tests {
             deny: vec![("web".to_string(), "core".to_string())],
             ..Default::default()
         };
-        // The prose is frozen once at the e2e level (tests/rules.rs), so this asserts firing and package-naming, no more.
         let msgs = messages(&packages, &rules);
         assert_eq!(msgs.len(), 1, "a matched deny rule fires once: {msgs:?}");
         assert!(

@@ -5,8 +5,6 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
-/// Render a relative path with forward slashes on every platform, so lint output
-/// (`path:line: message`) is stable and editor/CI-parseable on Windows too.
 pub fn to_unix_path(rel: &Path) -> String {
     rel.components()
         .map(|c| c.as_os_str().to_string_lossy())
@@ -14,9 +12,7 @@ pub fn to_unix_path(rel: &Path) -> String {
         .join("/")
 }
 
-/// Compile pipe-bundled glob patterns into a matcher — the shared compiler for BOTH `-I`
-/// exclusion globs and `--include` selection globs. Each pattern may bundle several globs
-/// with `|`, tree-style: `-I 'node_modules|dist|*.pyc'` / `--include '*.sh|Dockerfile'`.
+/// Each pattern may bundle several globs with `|`, tree-style: `-I 'node_modules|dist|*.pyc'`.
 pub fn build_globset(patterns: &[String]) -> Result<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     for pattern in patterns {
@@ -51,7 +47,7 @@ pub fn format_relative_time(age_seconds: i64) -> String {
     } else if weeks < 5 {
         format!("{weeks}w ago")
     } else if days < 365 {
-        // Gate the months/years split on DAYS, not `months < 12`: `months` reaches 12 at day 360 but `years` only reaches 1 at day 365, so days 360-364 would otherwise fall through and render "0y ago".
+        // Gated on DAYS not `months < 12`: months hits 12 at day 360 but years hits 1 only at 365.
         format!("{months}mo ago")
     } else {
         format!("{years}y ago")
@@ -68,7 +64,6 @@ mod tests {
         assert_eq!(format_relative_time(300), "5m ago");
         assert_eq!(format_relative_time(7200), "2h ago");
         assert_eq!(format_relative_time(3 * 86400), "3d ago");
-        // The `w` (weeks) and `mo` (months) buckets sit between days and years.
         assert_eq!(format_relative_time(10 * 86400), "1w ago");
         assert_eq!(format_relative_time(60 * 86400), "2mo ago");
         assert_eq!(format_relative_time(400 * 86400), "1y ago");

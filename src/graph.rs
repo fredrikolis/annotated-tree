@@ -8,16 +8,14 @@ use serde::Serialize;
 use crate::manifest::{canonicalize, Ecosystem, ManifestParser};
 use crate::walk::WalkFilter;
 
-/// An internal (same-tree) dependency. `resolved` is false when the dep was
-/// *declared* internal (npm `workspace:*`, Cargo `path=`) but no package with
-/// that name exists in the scanned tree — a dangling workspace/path edge.
+/// `resolved` is false when the dep was *declared* internal (npm `workspace:*`, Cargo `path=`)
+/// but no package with that name exists in the scanned tree.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct InternalDep {
     pub name: String,
     pub resolved: bool,
 }
 
-/// The dependency facts shown next to a directory that holds a package manifest.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct DirDeps {
     pub used_by: Vec<String>,
@@ -25,10 +23,7 @@ pub struct DirDeps {
     pub external: Vec<String>,
 }
 
-/// The package-level internal-edge list, keyed by canonical name + ecosystem — the same one `build`
-/// already computes for directory keying. Exposing it lets `rules` reason over edges and `--since`
-/// map files to their owning package, without re-walking or re-parsing. `dir` is the package's
-/// canonical directory, matching the `dir_deps` keys.
+/// Exposed so `rules` and `--since` can reason over edges without re-walking or re-parsing.
 #[derive(Debug, Clone)]
 pub struct PackageEdges {
     pub name: String,
@@ -37,10 +32,8 @@ pub struct PackageEdges {
     pub dir: PathBuf,
 }
 
-/// A non-fatal issue found while building the graph: a manifest a parser could not read or parse.
-/// The map is still produced, just missing that package's edges, so the failure surfaces as a
-/// located diagnostic — stable `code`, offending `path`, human `message` — and an agent branches on
-/// `code`. The CLI prints `message` to stderr; `--format json` carries the struct in `warnings`.
+/// A manifest a parser could not read or parse; the map is still produced, just missing that
+/// package's edges.
 #[derive(Debug, Clone, Serialize)]
 pub struct Warning {
     pub code: &'static str,
@@ -48,9 +41,6 @@ pub struct Warning {
     pub message: String,
 }
 
-/// The resolved dependency graph: per-directory facts for rendering, plus the
-/// package edge list for policy checks, plus parse warnings. One struct so callers
-/// take exactly the view they need (Minimal API).
 pub struct Graph {
     pub dir_deps: HashMap<PathBuf, DirDeps>,
     pub packages: Vec<PackageEdges>,
@@ -65,10 +55,8 @@ struct Package {
     external: Vec<String>,
 }
 
-/// Scan `roots` for every known manifest, then resolve the graph. Directories are keyed by
-/// canonical absolute path. The manifest walk applies the SAME filter as the code-file walk, and
-/// `max_depth` bounds it one level below the deepest displayed row, so "what's graphed" is exactly
-/// "what's shown". `None` scans every depth; a multi-root run drives both from the PRIMARY root.
+/// `max_depth` bounds the manifest walk one level below the deepest displayed row, so "what's
+/// graphed" is exactly "what's shown". `None` scans every depth.
 pub fn build(roots: &[PathBuf], filter: WalkFilter<'_>, max_depth: Option<usize>) -> Graph {
     let parsers = crate::manifest::parsers();
     let mut raw: Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)> = Vec::new();
@@ -79,7 +67,6 @@ pub fn build(roots: &[PathBuf], filter: WalkFilter<'_>, max_depth: Option<usize>
         collect_manifests(root, &scope, &parsers, &mut raw, &mut warnings);
     }
 
-    // Known package names per ecosystem, canonicalized, for internal detection.
     let mut names_by_eco: HashMap<Ecosystem, HashSet<String>> = HashMap::new();
     for (eco, _, m) in &raw {
         if let Some(name) = &m.name {
@@ -122,7 +109,7 @@ pub fn build(roots: &[PathBuf], filter: WalkFilter<'_>, max_depth: Option<usize>
         });
     }
 
-    // Reverse edges: for each *resolved* internal dep D of P, D is "used by" P. Unresolved deps have no target package in the tree, so no reverse edge.
+    // Unresolved deps have no target package in the tree, so no reverse edge.
     let mut used_by: HashMap<(Ecosystem, String), Vec<String>> = HashMap::new();
     for pkg in &packages {
         for dep in pkg.internal.iter().filter(|d| d.resolved) {
@@ -137,7 +124,6 @@ pub fn build(roots: &[PathBuf], filter: WalkFilter<'_>, max_depth: Option<usize>
         names.dedup();
     }
 
-    // The package edge list is derived from the same resolved packages the directory map is built from — computed once, no re-derivation in `rules`.
     let package_edges = packages
         .iter()
         .map(|pkg| PackageEdges {
@@ -171,10 +157,7 @@ pub fn build(roots: &[PathBuf], filter: WalkFilter<'_>, max_depth: Option<usize>
 }
 
 impl Graph {
-    /// The transitive reverse-dependency closure of `pkg` within ecosystem `eco` — the "blast
-    /// radius", every package that directly or indirectly depends on it — walked over the resolved
-    /// internal edges. The seed itself is NOT included. Cycle-safe via a visited set, so a
-    /// dependency cycle terminates instead of looping.
+    /// The seed itself is NOT included. Cycle-safe via a visited set.
     pub fn reverse_closure(&self, pkg: &str, eco: Ecosystem) -> HashSet<String> {
         let mut result = HashSet::new();
         let mut seen: HashSet<String> = HashSet::from([pkg.to_string()]);
@@ -194,10 +177,8 @@ impl Graph {
         result
     }
 
-    /// The set of package directories in the blast radius of a change set: for each changed file,
-    /// resolve its owning package, take that package's reverse-dependency closure, and map those
-    /// dependents back to their directories. The returned dirs are canonical, so a walked file is in
-    /// the blast radius iff it `starts_with` one of them.
+    /// The returned dirs are canonical, so a walked file is in the blast radius iff it
+    /// `starts_with` one of them.
     pub fn blast_radius_dirs(&self, changed: &HashSet<PathBuf>) -> HashSet<PathBuf> {
         let mut affected: HashSet<(Ecosystem, String)> = HashSet::new();
         for file in changed {
@@ -214,9 +195,7 @@ impl Graph {
             .collect()
     }
 
-    /// The package that owns `file`: the package whose directory is the *deepest*
-    /// ancestor of the file (so a file in a nested package is attributed to the
-    /// inner one). `None` if the file lives under no package.
+    /// The *deepest* ancestor package wins, so a nested package is attributed to itself.
     fn owning_package(&self, file: &Path) -> Option<&PackageEdges> {
         self.packages
             .iter()
@@ -225,10 +204,7 @@ impl Graph {
     }
 }
 
-/// How a manifest walk is shaped: the code-file walk's exact [`WalkFilter`], plus the render's
-/// `-L LEVEL` (which this walk bounds one level DEEPER than the rows — see
-/// [`crate::walk::cap_manifest_depth`]), carried as one value so the two travel together
-/// and cannot drift apart between roots.
+/// Bounds one level DEEPER than the rows — see [`crate::walk::cap_manifest_depth`].
 struct WalkScope<'a> {
     filter: WalkFilter<'a>,
     max_depth: Option<usize>,
@@ -241,7 +217,6 @@ fn collect_manifests(
     out: &mut Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)>,
     warnings: &mut Vec<Warning>,
 ) {
-    // Shares the code-file walk's exact directory filter, so an invisible manifest raises no "could not parse" warning and leaks no package into the name set from a dir the tree never shows.
     let mut builder = crate::walk::configured_walk(root, scope.filter);
     crate::walk::cap_manifest_depth(&mut builder, scope.max_depth);
     let walker = builder.build();
@@ -254,7 +229,7 @@ fn collect_manifests(
         let Some(dir) = path.parent() else { continue };
         match parser.parse(path) {
             Ok(parsed) => out.push((parser.ecosystem(), dir.to_path_buf(), parsed)),
-            // The `message` embeds the path (via the parser's `with_context`) so stderr reads exactly as before; `path` is the same manifest as a structured field for the JSON `warnings` array to dispatch on.
+            // `path` is also a structured field, for the JSON `warnings` array to dispatch on.
             Err(err) => warnings.push(Warning {
                 code: crate::exit::code::MANIFEST_PARSE_ERROR,
                 path: path.display().to_string(),
@@ -311,9 +286,7 @@ impl DirDeps {
 mod tests {
     use super::*;
 
-    /// Build a `Graph` from a hand-written package edge list (name -> resolved
-    /// internal deps). Directories/`dir_deps` are irrelevant to `reverse_closure`,
-    /// so they stay empty — this isolates the pure closure algorithm.
+    /// Directories/`dir_deps` stay empty — irrelevant to `reverse_closure`.
     fn graph(edges: &[(&str, &[&str])]) -> Graph {
         let packages = edges
             .iter()

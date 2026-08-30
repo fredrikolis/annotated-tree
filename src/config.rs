@@ -11,8 +11,6 @@ use crate::rules::Rules;
 
 const DEFAULT_CONFIG: &str = include_str!("default_config.toml");
 
-/// The raw, all-optional shape parsed from a TOML layer. Every layer omits most
-/// fields; merging overlays later layers onto earlier ones.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
@@ -23,9 +21,6 @@ struct RawConfig {
     languages: HashMap<String, RawLanguage>,
 }
 
-/// Lint rules parsed from a `[rules]` table. Declarative and regex-free: `deny` names package
-/// pairs, the flags toggle structural checks, `max_annotation_length` bounds the whole
-/// annotation line.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawRules {
@@ -36,8 +31,6 @@ struct RawRules {
     max_annotation_length: Option<usize>,
 }
 
-/// Walk-scope limits parsed from a `[limits]` table. Deliberately separate from
-/// `[display]`: a runaway-scope cap bounds the walk, it is not a rendering choice.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawLimits {
@@ -67,7 +60,7 @@ struct RawLanguage {
     pattern: Option<String>,
 }
 
-/// CLI-supplied overrides. `None` means "not specified; keep the merged value".
+/// `None` means "not specified; keep the merged value".
 #[derive(Debug, Default)]
 pub struct CliOverrides {
     pub show_age: Option<bool>,
@@ -75,24 +68,15 @@ pub struct CliOverrides {
     pub gitignore: Option<bool>,
     pub hidden: Option<bool>,
     pub include_tests: Option<bool>,
-    /// Additional `--include` glob selectors from the CLI (each may pipe-bundle several,
-    /// tree-style). ADDITIVE to any config `[display] include`: the resolved selector set is
-    /// the config list followed by these. Empty means the CLI added no selectors.
+    /// ADDITIVE to any config `[display] include`, not a replacement.
     pub include: Vec<String>,
     pub config_file: Option<PathBuf>,
-    /// Runaway-scope cap override, modelled as an `Option<Option<usize>>`:
-    /// `None` = the CLI said nothing (fall through to env/config/default);
-    /// `Some(None)` = `--no-limit`/`--force` (cap disabled);
+    /// `None` = fall through to env/config/default; `Some(None)` = `--no-limit`/`--force`;
     /// `Some(Some(n))` = `--max-files n`.
     pub max_files: Option<Option<usize>>,
-    /// Per-directory display cap override, same `Option<Option<usize>>` shape as
-    /// `max_files`: `None` = CLI silent (use config/default); `Some(None)` =
-    /// `--full` (cap disabled); `Some(Some(n))` = `--max-per-node n`.
+    /// Same `Option<Option<usize>>` shape as `max_files`; `Some(None)` = `--full`.
     pub max_per_node: Option<Option<usize>>,
-    /// `--max-length <N>`: the whole-annotation length bound. A plain `Option<usize>` —
-    /// `None` is "the CLI said nothing; fall through to the config layers". There is no
-    /// `--full`-style sentinel; `--max-length 0` is how you turn the shipped bound off,
-    /// since 0 normalizes to "no bound" (the same normalization `--max-per-node 0` uses).
+    /// `0` normalizes to "no bound", same as `--max-per-node 0`.
     pub max_annotation_length: Option<usize>,
 }
 
@@ -101,42 +85,28 @@ pub struct Display {
     pub show_age: bool,
     pub ascii: bool,
     pub gitignore: bool,
-    /// Descend into dot-directories and list dot-files. Independent of `gitignore` — a hidden path
-    /// `.gitignore` also names needs both switched to appear — and `.git` is walked under neither.
+    /// Independent of `gitignore`; `.git` is walked under neither.
     pub hidden: bool,
     pub include_tests: bool,
-    /// Show at most this many subdirectories AND files per directory, replacing the overflow with a
-    /// `[+N folders and F files]` marker; `None` means no cap. A display concern, so it lives here
-    /// rather than in `Limits` — it truncates the rendered tree, it does not bound the walk.
     pub max_per_node: Option<usize>,
-    /// Glob selectors that ADD files of any type beyond the recognized-language set. A file is
-    /// listed when its extension maps to a known language OR matches one of these; an unrecognized
-    /// match shows its annotation via marker-agnostic extraction. Compiled to a `GlobSet` at the
-    /// walk call site, so a bad pattern surfaces there, next to `-I`'s.
+    /// A file is listed when its extension maps to a known language OR matches one of these.
     pub include: Vec<String>,
 }
 
-/// Walk-scope limits. `max_files: None` means "no cap". Kept out of `Display`
-/// (SoC): these bound the walk, not the rendered output.
 #[derive(Debug, Clone)]
 pub struct Limits {
     pub max_files: Option<usize>,
 }
 
-/// How a single language's first-line annotation is located. The annotation FORMAT is
-/// invariant (the three-field `Concern: … | Non-concern: … | IO: …` shape, validated in
-/// [`crate::annotation`]) — not configurable — so a language only configures HOW to find
-/// its first comment (markers / an escape-hatch `pattern`), never what shape to require.
+/// Configures only HOW to find the first comment (markers / an escape-hatch `pattern`); the
+/// annotation FORMAT itself is invariant, validated in [`crate::annotation`].
 #[derive(Debug, Clone)]
 pub struct Language {
     pub name: String,
-    /// Interpreter basenames this language claims on a `#!` line, the only way an EXTENSIONLESS
-    /// file resolves. A git hook or a `bin/` script carries its language in its shebang and
-    /// nowhere else, so without this it is unlistable and unlintable.
+    /// The only way an EXTENSIONLESS file resolves — a git hook or `bin/` script.
     pub interpreters: Vec<String>,
-    /// Whether a closed `---` block at the very start is a metadata PREFIX to scan past. True
-    /// wherever line 1 is spoken for by such a block, false where `---` is the file's own content —
-    /// there the annotation sits on line 1, above it, like everywhere else.
+    /// True where line 1 is spoken for by a metadata block to scan past; false where `---`
+    /// is the file's own content.
     pub frontmatter_prefix: bool,
     pub line: Option<String>,
     pub block: Option<(String, String)>,
@@ -144,18 +114,12 @@ pub struct Language {
     pub pattern: Option<Regex>,
 }
 
-/// The canonical, marker-free annotation body — one concrete, self-conforming instance of the fixed
-/// three-field format. The FORMAT is invariant, so a per-language example is DERIVED from this body
-/// plus the language's marker, never configured. Distinct from [`crate::strict::EXPECTED`]'s
-/// abstract template: this is a filled, valid line, that is the fill-in contract.
+/// A concrete, self-conforming annotation body. Per-language examples DERIVE from this
+/// plus the language's marker, never configured.
 const EXAMPLE_BODY: &str =
     "Concern: runs the core loop | Non-concern: transport | IO: (Job) -> Result";
 
 impl Language {
-    /// A full, conformant annotation line for this language — [`EXAMPLE_BODY`] wrapped in the
-    /// language's comment marker — shown verbatim in `--help` and `--strict-check` diagnostics.
-    /// Derived rather than configured because the format is invariant, and a tested invariant
-    /// guarantees it round-trips through the extractor and validator as `Outcome::Ok`.
     pub fn example(&self) -> String {
         if let Some(line) = &self.line {
             format!("{line} {EXAMPLE_BODY}")
@@ -169,12 +133,11 @@ impl Language {
     }
 }
 
-/// Fully resolved configuration. Extensions are indexed for O(1) lookup.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub display: Display,
     pub limits: Limits,
-    // Architectural `[rules]` are a strict-check concern the internal crate consumes; kept crate-private so making `Config` a public type does not leak the internal `Rules` shape into the library API (the low-level walk/annotation consumer never needs it).
+    // crate-private so `Config` being public doesn't leak `Rules` into the library API.
     pub(crate) rules: Rules,
     languages: Vec<Language>,
     ext_to_lang: HashMap<String, usize>,
@@ -182,8 +145,6 @@ pub struct Config {
 }
 
 impl Config {
-    /// Load defaults, overlay the user file, overlay the nearest repo file found
-    /// by walking up from `root`, then apply CLI overrides.
     pub fn load(root: &Path, cli: &CliOverrides) -> Result<Config> {
         let mut raw: RawConfig =
             toml::from_str(DEFAULT_CONFIG).context("built-in default config is invalid")?;
@@ -203,20 +164,14 @@ impl Config {
         resolve(raw, cli)
     }
 
-    /// The language for `path`: its extension, else — for an extensionless path only — the
-    /// interpreter its `#!` line names. `None` when neither resolves. Owns the dotted-lowercase
-    /// key normalization in ONE place, so walk/model/strict never re-derive
-    /// `format!(".{}", ext.to_lowercase())`, and every caller gets the shebang fallback for free.
     pub fn language_for_path(&self, path: &Path) -> Option<&Language> {
         match ext_key(path) {
             Some(key) => self.language_for_extension(&key),
-            // An extension always WINS, so a `.rs` opening with `#!` stays rust and `Cargo.lock` is never opened: the probe fires only where there is no extension to consult.
+            // An extension always wins; the shebang probe fires only when there's none to consult.
             None => self.language_for_shebang(path),
         }
     }
 
-    /// Whether `path` maps to a known language (the walk's file filter). Reads the head of an
-    /// EXTENSIONLESS path, exactly as [`language_for_path`](Self::language_for_path) does.
     pub fn known_for_path(&self, path: &Path) -> bool {
         self.language_for_path(path).is_some()
     }
@@ -225,8 +180,6 @@ impl Config {
         self.ext_to_lang.get(ext).map(|&i| &self.languages[i])
     }
 
-    /// The language claiming the interpreter on `path`'s shebang, or `None` when the file has
-    /// none, cannot be read, or names an interpreter no language claims.
     fn language_for_shebang(&self, path: &Path) -> Option<&Language> {
         let word = interpreter_word(&read_shebang(path)?)?;
         self.interp_to_lang
@@ -235,13 +188,9 @@ impl Config {
     }
 }
 
-/// The most a shebang line can need. A file with no extension may be an arbitrary binary, so the
-/// probe reads a bounded head and nothing more.
 const SHEBANG_BYTES: usize = 256;
 
-/// `path`'s first line when it opens with a literal `#!` at offset 0, else `None`. Offset 0 and
-/// nothing else counts: a `#!` further down is a comment, and treating it as a shebang would give
-/// a data file a language.
+/// Offset 0 only — a `#!` further down is a comment, not a shebang.
 fn read_shebang(path: &Path) -> Option<String> {
     use std::io::Read;
     let mut buf = [0u8; SHEBANG_BYTES];
@@ -251,8 +200,7 @@ fn read_shebang(path: &Path) -> Option<String> {
     Some(line.to_string())
 }
 
-/// The word a shebang names its interpreter with: its first, or — when that word is `env` — its
-/// next, so `#!/usr/bin/env python3` resolves exactly as `#!/usr/bin/python3` does.
+/// `env`'s own word is skipped: `#!/usr/bin/env python3` resolves as `#!/usr/bin/python3` does.
 fn interpreter_word(shebang: &str) -> Option<String> {
     let mut words = shebang.split_whitespace();
     let first = words.next()?;
@@ -262,25 +210,18 @@ fn interpreter_word(shebang: &str) -> Option<String> {
     words.next().map(str::to_string)
 }
 
-/// The canonical interpreter lookup key: the word's basename, lowercased (`/usr/bin/Python3` ->
-/// `python3`). The `interpreters` twin of [`ext_key`], so the table build and the shebang probe
-/// cannot normalize a name two different ways.
 fn interp_key(word: &str) -> String {
     word.rsplit_once('/')
         .map_or(word, |(_, base)| base)
         .to_lowercase()
 }
 
-/// The canonical extension lookup key for a path: the extension lowercased and
-/// dotted (`Foo.PY` -> `.py`). `None` for a path with no extension.
 fn ext_key(path: &Path) -> Option<String> {
     path.extension()
         .and_then(|e| e.to_str())
         .map(|e| format!(".{}", e.to_lowercase()))
 }
 
-/// A CONFIGURED extension in that same key form, written with or without its dot (`YML` and `.yml`
-/// both give `.yml`), so the lookup table and every rule keyed on an extension agree on one spelling.
 fn ext_table_key(ext: &str) -> String {
     format!(".{}", ext.strip_prefix('.').unwrap_or(ext).to_lowercase())
 }
@@ -291,7 +232,6 @@ fn read_layer(path: &Path) -> Result<RawConfig> {
     toml::from_str(&text).with_context(|| format!("parsing config {}", path.display()))
 }
 
-/// Overlay `src` onto `dst`: any field set in `src` wins; languages merge by key.
 fn merge(dst: &mut RawConfig, src: RawConfig) {
     if let Some(sd) = src.display {
         let dd = dst.display.get_or_insert_with(Default::default);
@@ -301,7 +241,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
         dd.hidden = sd.hidden.or(dd.hidden);
         dd.include_tests = sd.include_tests.or(dd.include_tests);
         dd.max_per_node = sd.max_per_node.or(dd.max_per_node);
-        // `include` is a whole list, so a layer that sets it REPLACES (not appends) — the same precedence `[rules] deny` uses, so a repo file can fully re-state the selectors rather than inherit a user file's. CLI selectors are folded in additively later, in `resolve`.
+        // A whole list REPLACES, not appends; CLI selectors are folded in additively later.
         dd.include = sd.include.or_else(|| dd.include.take());
     }
     if let Some(sl) = src.limits {
@@ -310,7 +250,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
     }
     if let Some(sr) = src.rules {
         let dr = dst.rules.get_or_insert_with(Default::default);
-        // `deny` is a whole list, so a layer that sets it replaces (not appends); the flags overlay per the standard `.or()` precedence.
+        // A whole list replaces, not appends.
         dr.deny = sr.deny.or_else(|| dr.deny.take());
         dr.forbid_cycles = sr.forbid_cycles.or(dr.forbid_cycles);
         dr.forbid_orphans = sr.forbid_orphans.or(dr.forbid_orphans);
@@ -324,7 +264,7 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
 
 fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     let disp = raw.display.unwrap_or_default();
-    // Selectors are config-first, then CLI: a config `[display] include` sets a baseline and each `--include` on the command line ADDS to it, so a run can widen the tree beyond what the repo file already opts in without having to re-state it.
+    // Config-first, then CLI additively.
     let mut include = disp.include.clone().unwrap_or_default();
     include.extend(cli.include.iter().cloned());
     let display = Display {
@@ -346,7 +286,6 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     let mut languages = Vec::new();
     let mut ext_to_lang = HashMap::new();
     let mut interp_to_lang = HashMap::new();
-    // Deterministic order so diagnostics and any future listing are stable.
     let mut entries: Vec<(String, RawLanguage)> = raw.languages.into_iter().collect();
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -372,15 +311,10 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     })
 }
 
-/// The extensions whose files OPEN with `---` as their own syntax: in YAML that marker starts a
-/// DOCUMENT, not the metadata block the scanner skips for a Markdown skill file, so such a file
-/// would otherwise certify as annotated off a comment below the block. Keyed on the EXTENSION,
-/// which is the file's syntax, never on the table key a repo chose.
+/// In YAML, `---` starts a DOCUMENT, not a metadata block to skip — else such a file would
+/// certify as annotated off a comment below it.
 const DOCUMENT_SEPARATOR_EXTENSIONS: &[&str] = &[".yml", ".yaml"];
 
-/// One `[languages.*]` entry resolved into a [`Language`]. Its own function so the raw shape is
-/// turned into the resolved one in ONE place, whether the entry arrives from a merged layer through
-/// [`resolve`] or straight from the built-in table through [`builtin_markdown`].
 fn to_language(name: String, raw: RawLanguage) -> Result<Language> {
     let pattern = match &raw.pattern {
         Some(p) => Some(
@@ -404,10 +338,7 @@ fn to_language(name: String, raw: RawLanguage) -> Result<Language> {
     })
 }
 
-/// The Markdown [`Language`] as the BUILT-IN table defines it, for reading a document compiled into
-/// the binary. Derived from [`DEFAULT_CONFIG`] rather than restated, so it cannot drift from the
-/// built-in grammar the gate starts from before a user's file layers over it.
-/// Reads nothing: the table is compiled in, as [`builtin_example`] is.
+/// Derived from [`DEFAULT_CONFIG`] so it cannot drift from the built-in grammar.
 pub(crate) fn builtin_markdown() -> Language {
     let mut raw: RawConfig =
         toml::from_str(DEFAULT_CONFIG).expect("built-in default config is valid TOML");
@@ -419,18 +350,12 @@ pub(crate) fn builtin_markdown() -> Language {
         .expect("built-in markdown language needs no pattern to compile")
 }
 
-/// A representative conformant annotation line for `--help`'s ANNOTATION FORMAT block: the
-/// canonical [`EXAMPLE_BODY`] with the default `//` marker, the help text separately noting how the
-/// marker varies. Derived from the same body every language's [`Language::example`] wraps, so
-/// `--help` and `--strict-check` cannot advertise different exemplars.
+/// Derived from the same body every language's [`Language::example`] wraps, so `--help` and
+/// `--strict-check` cannot advertise different exemplars.
 pub fn builtin_example() -> String {
     format!("// {EXAMPLE_BODY}")
 }
 
-/// Resolve the `[rules]` table. Takes the CLI overrides because `max_annotation_length` has a
-/// `--max-length` flag, which must win over the merged layers like every other CLI value. A
-/// resolved bound of `0` normalizes to `None`, as [`resolve_max_per_node`] does: an empty field is
-/// already fatal, so a literal 0 could only mean "fail everything" — and it is how you switch it off.
 fn resolve_rules(raw: RawRules, cli: &CliOverrides) -> Rules {
     Rules {
         deny: raw
@@ -449,10 +374,7 @@ fn resolve_rules(raw: RawRules, cli: &CliOverrides) -> Rules {
     }
 }
 
-/// Resolve the runaway-scope cap. Precedence: CLI, then env
-/// `ANNOTATED_TREE_MAX_FILES`, then config file, then built-in default. `None`
-/// means "no cap" (only reachable via `--no-limit`, since the built-in default
-/// always supplies a value).
+/// Precedence: CLI, then env `ANNOTATED_TREE_MAX_FILES`, then config, then built-in default.
 fn resolve_max_files(cli: &CliOverrides, config_limits: RawLimits) -> Result<Option<usize>> {
     if let Some(cli_choice) = cli.max_files {
         return Ok(cli_choice);
@@ -468,10 +390,7 @@ fn resolve_max_files(cli: &CliOverrides, config_limits: RawLimits) -> Result<Opt
     Ok(config_limits.max_files)
 }
 
-/// Resolve the per-directory display cap. Precedence: CLI, then config file, then
-/// built-in default. No env var (a display setting, unlike `max_files`). `0` is
-/// normalized to `None` (unlimited) so `--max-per-node 0` disables the cap the same
-/// way `--full` does; `None` otherwise only arises via `--full`.
+/// `0` normalizes to `None` (unlimited), so `--max-per-node 0` disables the cap like `--full` does.
 fn resolve_max_per_node(cli: &CliOverrides, config_value: Option<usize>) -> Option<usize> {
     let resolved = match cli.max_per_node {
         Some(cli_choice) => cli_choice,
@@ -510,10 +429,6 @@ fn find_repo_config(start: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    /// The advertised annotation format must provably pass the lint it advertises:
-    /// every built-in language's `example` (shown in `--help` and every strict-check
-    /// diagnostic) round-trips through the real extractor+validator as `Outcome::Ok`.
-    /// This is the DbC guarantee against advertise-vs-enforce drift.
     #[test]
     fn builtin_examples_are_self_conforming() {
         let raw: RawConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");
@@ -530,9 +445,6 @@ mod tests {
         }
     }
 
-    /// The whole resolution rule as one table, over real files, because the probe reads bytes.
-    /// The `.rs`-with-a-shebang row is the load-bearing one: an extension always wins, which is
-    /// what keeps the probe off every file that already has an answer.
     #[test]
     fn a_shebang_resolves_only_an_extensionless_file() {
         let raw: RawConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");
@@ -564,7 +476,6 @@ mod tests {
 
     #[test]
     fn builtin_example_matches_rust_derived() {
-        // `--help` sources its exemplar from `builtin_example()`; it must equal the `//` (Rust/Go/TS) language's DERIVED example, so help and the per-file diagnostic advertise the same body from the one `EXAMPLE_BODY` source.
         let raw: RawConfig = toml::from_str(DEFAULT_CONFIG).unwrap();
         let config = resolve(raw, &CliOverrides::default()).unwrap();
         let rust = config

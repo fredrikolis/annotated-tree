@@ -1,9 +1,7 @@
 // Concern: strips a compiled-in document's own first-line annotation | Non-concern: reading a file's annotation, or what any doc says | IO: (doc text) -> body
 
-/// The body of a document embedded with `include_str!`, its own first-line annotation dropped.
-/// Read with the BUILT-IN markdown grammar, never a [`Config`](crate::config::Config): a
-/// compiled-in document's grammar cannot vary with a user's file. Panics unless line 1 is wholly
-/// one conforming annotation — its FORM only, no length bound — so a malformed doc fails loudly.
+/// Read with the BUILT-IN markdown grammar, never [`Config`](crate::config::Config) — a
+/// compiled-in document's grammar cannot vary with a user's file.
 pub(crate) fn embedded_body<'a>(doc: &'a str, name: &str) -> &'a str {
     assert_eq!(
         crate::annotation::sole_annotation_line(doc, &crate::config::builtin_markdown()),
@@ -28,7 +26,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "doc line 1")]
     fn embedded_body_panics_rather_than_emit_a_line_it_cannot_strip() {
-        // The failure that matters: a doc whose line 1 is prose would otherwise render whole, and a near-miss annotation would ship its own scaffolding into an agent's context.
         embedded_body("# Title\n\nbody\n", "doc");
     }
 
