@@ -5,9 +5,7 @@
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-// Single source of truth mapping a host `${platform}-${arch}` to the npm
-// platform package that carries its prebuilt binary. Both Linux targets ship a
-// static musl binary, so one entry per Linux arch covers glibc and musl hosts.
+// Both Linux targets ship a static musl binary, so one entry per arch covers glibc and musl hosts.
 const PLATFORM_PACKAGES = {
   "linux-x64": "annotated-tree-linux-x64-musl",
   "linux-arm64": "annotated-tree-linux-arm64-musl",
@@ -15,9 +13,7 @@ const PLATFORM_PACKAGES = {
   "darwin-arm64": "annotated-tree-darwin-arm64",
 };
 
-// Resolve the absolute path to the binary shipped by the matching platform
-// package. Returns { pkg, bin } where `pkg` is null for an unsupported
-// platform and `bin` is null when the (supported) package is not installed.
+// pkg is null for an unsupported platform; bin is null when that package isn't installed.
 function resolveBinary() {
   const key = `${process.platform}-${process.arch}`;
   const pkg = PLATFORM_PACKAGES[key];
@@ -57,11 +53,9 @@ function main() {
   try {
     execFileSync(bin, process.argv.slice(2), { stdio: "inherit" });
   } catch (err) {
-    // Fail-Fast: forward the binary's own exit code verbatim.
     if (typeof err.status === "number") {
       process.exit(err.status);
     }
-    // Killed by a signal, or the binary could not be spawned at all.
     fail(err.signal ? `binary terminated by signal ${err.signal}` : err.message);
   }
 }

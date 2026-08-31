@@ -29,26 +29,16 @@ jobs:
       - name: Test
         run: cargo test --all
 
-  # Dogfood: the tool must pass its own annotation convention.
   self-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # Gate the whole repo (README, docs, code) except sample/, the golden fixture
-      # whose deliberately-loose annotations are pinned by tests/golden.rs.
-      # Two invocations: `walk::keep_entry` prunes any directory named `tests` unless
-      # `--include-tests` (default off), so the first cannot see tests/ at all and most of
-      # the repo's annotations would go unenforced. tests/fixtures stays excluded —
-      # charter_malformed is deliberately malformed. `--hidden` is the same prune at the
-      # other end: without it nothing under .githooks/ or .github/ is walked at all. Both
-      # lines must match .githooks/pre-commit and distribution/local-release-check.sh, or a
-      # commit the local hook blocks merges green here.
+      # Two runs (must match .githooks/pre-commit and local-release-check.sh): default prunes tests/, second adds it back except tests/fixtures.
       - run: cargo run --release -- --strict-check . --hidden --ignore sample --max-length 200
       - run: cargo run --release -- --strict-check . --hidden --ignore sample --include-tests -I 'tests/fixtures' --max-length 200
 
-  # Lint the distribution shell scripts.
   shellcheck:
     runs-on: ubuntu-latest
     steps:
@@ -57,9 +47,7 @@ jobs:
         with:
           scandir: ./distribution
 
-  # E2E: build the release binary, package it under the release asset name +
-  # .sha256, serve it locally, run install.sh against it, and assert the
-  # installed binary runs. Freezes the download -> verify -> install contract.
+  # Freezes the download -> verify -> install contract end-to-end.
   installer-e2e:
     runs-on: ubuntu-latest
     steps:
@@ -71,14 +59,10 @@ jobs:
       - name: Package release asset + checksum
         run: |
           set -eux
-          # Host runner is linux x86_64; the installer requests the musl asset
-          # name for that platform, so publish the built binary under that name.
+          # Host is linux x86_64 (glibc), but the installer only ships a musl asset for that platform — label it musl to match.
           target="x86_64-unknown-linux-musl"
           archive="annotated-tree-${target}.tar.gz"
-          # The real release (taiki-e/upload-rust-binary-action + cargo-binstall
-          # convention) names the checksum after the archive STEM, not the full
-          # filename: `annotated-tree-<target>.sha256` (no `.tar.gz`). Mirror that
-          # here so this E2E test exercises the actual published naming.
+          # Checksum name omits .tar.gz, matching the real release convention (see install.sh).
           checksum="annotated-tree-${target}.sha256"
           mkdir -p srv
           tar czf "srv/${archive}" -C target/release annotated-tree
@@ -86,7 +70,6 @@ jobs:
       - name: Serve assets
         run: |
           ( cd srv && python3 -m http.server 8137 >/dev/null 2>&1 & )
-          # Wait for the server to accept connections.
           for _ in $(seq 1 20); do
             if curl -fsS "http://localhost:8137/" >/dev/null 2>&1; then break; fi
             sleep 0.5
@@ -116,11 +99,6 @@ jobs:
             exit 1
           fi
 
-  # E2E: freeze the npm shim (distribution/npm/bin/annotated-tree.js) as glue.
-  # Build the release binary, stage it into the host platform package exactly as
-  # npm would install it, then drive the shim: assert --version works, a nonzero
-  # tool exit is forwarded, and a missing platform package errors explicitly
-  # (never silent).
   npm-shim-e2e:
     runs-on: ubuntu-latest
     steps:
@@ -135,9 +113,7 @@ jobs:
       - name: bin shim starts with a node shebang (npx/bin-link exec relies on it)
         run: |
           set -eux
-          # The `node <file>` steps below bypass the shebang; a real `npx`/bin-link
-          # invocation does not. Guard line 1 so the annotation can never again
-          # displace the shebang and silently break `npx annotated-tree`.
+          # `node <file>` below bypasses the shebang; npx doesn't — guard so the annotation can never displace it and silently break `npx annotated-tree`.
           test "$(head -1 distribution/npm/bin/annotated-tree.js)" = '#!/usr/bin/env node'
       - name: npm pack (main + a platform package)
         run: |
@@ -149,9 +125,7 @@ jobs:
       - name: Stage the built binary into the host platform package
         run: |
           set -eux
-          # Host runner is linux x64 -> the linux-x64-musl package. Place it on
-          # the shim's module resolution path (distribution/npm/node_modules)
-          # exactly as an `npm install` of the optional dep would.
+          # Placed at distribution/npm/node_modules, mimicking a real `npm install`'s optional-dep layout so require.resolve finds it.
           dest="distribution/npm/node_modules/annotated-tree-linux-x64-musl"
           mkdir -p "$dest"
           cp target/release/annotated-tree "$dest/"

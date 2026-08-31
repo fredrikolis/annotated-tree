@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 # Concern: one-time npm bootstrap that publishes the initial placeholder packages | Non-concern: normal release publishing (RELEASING.md owns it) | IO: (npm credentials) -> published placeholders
-# exist before a trusted publisher can be attached — so the 6 packages must be
-# published once by hand. This stages them from a published GitHub Release's binaries
-# and publishes them under your logged-in npm account (`npm login` first; npm will
-# prompt for your 2FA OTP per package). After this, configure a trusted publisher for
-# each package on npmjs.com and every future release publishes via OIDC in CI — no
-# token. Run ONCE.
-#
+# exist before a trusted publisher can be attached.
 # Usage:  distribution/bootstrap-npm.sh v0.1.0
 set -euo pipefail
 
@@ -30,8 +24,7 @@ echo ">> Publishing 5 packages (npm will prompt for your 2FA OTP each time)…"
 for plat in linux-x64-musl linux-arm64-musl darwin-x64 darwin-arm64; do
   npm publish "./distribution/npm/platforms/${plat}"
 done
-# Leading ./ is REQUIRED: a bare `npm publish npm` would treat `npm` as the package
-# spec (and try to republish the npm CLI); a leading ./ publishes the local directory.
+# Leading ./ required: a bare `npm publish npm` would republish the npm CLI itself.
 npm publish ./distribution/npm
 
 cat <<'EOF'

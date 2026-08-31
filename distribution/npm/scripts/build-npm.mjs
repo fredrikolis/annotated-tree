@@ -2,17 +2,12 @@
 //
 // Usage:  node distribution/npm/scripts/build-npm.mjs <version> <binaries-dir>
 //
-// <binaries-dir> holds one extracted binary per release target, at
-//   <binaries-dir>/<rust-target>/annotated-tree
-// exactly as the GitHub-release tarballs (`annotated-tree-<rust-target>.tar.gz`)
-// unpack. CI extracts those tarballs, then runs this once, then publishes each
-// printed directory. Binaries are NEVER committed — they are injected here.
+// <binaries-dir>/<rust-target>/annotated-tree. Never committed.
 
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Single source of truth: npm platform <-> release target <-> binary filename.
 const MATRIX = [
   { plat: "linux-x64-musl", target: "x86_64-unknown-linux-musl", bin: "annotated-tree" },
   { plat: "linux-arm64-musl", target: "aarch64-unknown-linux-musl", bin: "annotated-tree" },
@@ -37,7 +32,6 @@ function stampVersion(pkgPath, mutate = (p) => p) {
 
 const publishDirs = [];
 
-// Platform packages: stamp version + inject the matching binary.
 for (const { plat, target, bin } of MATRIX) {
   const platDir = join(npmDir, "platforms", plat);
   const src = join(binariesDir, target, bin);
@@ -50,17 +44,13 @@ for (const { plat, target, bin } of MATRIX) {
   publishDirs.push(platDir);
 }
 
-// Main package: stamp version + pin every optionalDependency to it.
 stampVersion(join(npmDir, "package.json"), (pkg) => {
   for (const dep of Object.keys(pkg.optionalDependencies ?? {})) {
     pkg.optionalDependencies[dep] = version;
   }
 });
 
-// Package README is the canonical repo-root README.md — one source of truth for
-// every channel (GitHub, crates.io, npmjs.com). Injected here, never committed
-// under distribution/npm/, so it can never drift from the root. npm auto-includes
-// README.md in the tarball regardless of the `files` allowlist.
+// From repo-root README.md; npm bundles README.md regardless of `files`.
 const repoRoot = dirname(dirname(npmDir));
 const rootReadme = join(repoRoot, "README.md");
 if (!existsSync(rootReadme)) {

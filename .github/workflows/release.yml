@@ -20,8 +20,7 @@ jobs:
         with:
           changelog: CHANGELOG.md
           token: ${{ secrets.GITHUB_TOKEN }}
-      # Publish the curl|sh installer under the stable asset name the README's
-      # one-liner points at (…/releases/latest/download/annotated-tree-installer.sh).
+      # Name must match the README's curl|sh one-liner.
       - name: Upload installer script
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,8 +54,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      # Produces cargo-binstall-compatible archives (name-target.tar.gz + .sha256)
-      # and uploads them to the release for this tag.
+      # cargo-binstall-compatible naming.
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: annotated-tree
@@ -74,13 +72,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  # Publishes the npm channel (`npx annotated-tree`) by REUSING the same binaries
-  # built above for the GitHub Release — one artifact, many channels. Downloads
-  # each release tarball, extracts its binary, stamps the version across the main
-  # shim + per-platform packages, then publishes platform packages first and the
-  # main package last, via OIDC trusted publishing — NO stored token. Requires each
-  # package to already exist on npm with a configured trusted publisher (one-time
-  # bootstrap; see RELEASING.md). Provenance is generated automatically.
+  # Publishes via OIDC (no stored token) — requires bootstrap-npm.sh's one-time publish first (RELEASING.md).
   publish-npm:
     needs: upload-assets
     runs-on: ubuntu-latest
@@ -113,15 +105,12 @@ jobs:
           set -eux
           version="${GITHUB_REF_NAME#v}"
           node distribution/npm/scripts/build-npm.mjs "$version" dist
-      # No NODE_AUTH_TOKEN: `npm publish` auto-detects the OIDC id-token. Unscoped
-      # packages are public by default; provenance is emitted automatically.
+      # No NODE_AUTH_TOKEN: npm publish auto-detects the OIDC id-token.
       - name: Publish platform packages then main package (OIDC)
         run: |
           set -eux
           for plat in linux-x64-musl linux-arm64-musl darwin-x64 darwin-arm64; do
             npm publish "./distribution/npm/platforms/${plat}"
           done
-          # Leading ./ is REQUIRED: a bare `npm publish npm` would treat `npm` as the
-          # package spec (and try to republish the npm CLI); a leading ./ publishes the
-          # local directory.
+          # Leading ./ required: a bare `npm publish npm` would republish the npm CLI itself.
           npm publish ./distribution/npm

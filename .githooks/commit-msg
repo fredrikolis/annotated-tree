@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 # Concern: the gate declarations for this repo | Non-concern: how a gate is checked (git-agent-verdict owns that) or what a reviewer judges | IO: (message, tool version) -> status, edited message
-# Line order IS review order: `set -e` stops at the first unattested gate, so a later gate is never
-# judged against content an earlier one is still changing.
+# Line order IS review order: `set -e` stops at the first unattested gate.
 # Enable per clone: git config core.hooksPath .githooks
 set -euo pipefail
 
 git agent-verdict --require-version 2.0
 
-# `--standard` names a rubric the tool ships (`git agent-verdict --standards`), so it cannot drift
-# out of step with the reviewer. A `--rule` beside it is the delta this repo owns.
+# `--standard` names a shipped rubric so it can't drift; `--rule` is this repo's delta.
 git agent-verdict "$1" standards --standard programming --doc docs/agent-ux.md \
 	--rule "This is a synchronous single-process CLI. The Async/Await I/O contract does not apply; blocking file and process IO is correct here, and a new blocking API is not a finding." \
 	--rule "The file annotation format is src/annotation-guide.md's Concern/Non-concern/IO, never the one the File-Level Annotations section shows." \

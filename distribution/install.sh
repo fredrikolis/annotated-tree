@@ -1,23 +1,8 @@
 #!/bin/sh
 # Concern: one-shot installer that downloads the right prebuilt annotated-tree binary for the host | Non-concern: building from source | IO: (host os/arch, version) -> installed binary
 #
-# Role:  Detect the host OS/arch, download the matching prebuilt release
-#        tarball plus its `.sha256`, verify the checksum (aborting on any
-#        mismatch — never install an unverified binary), then extract the
-#        binary into an install directory and make it executable.
-#
 # Usage: curl --proto '=https' --tlsv1.2 -LsSf \
 #          https://github.com/fredrikolis/annotated-tree/releases/latest/download/annotated-tree-installer.sh | sh
-#
-# Env overrides:
-#   INSTALL_DIR              install location (default: $HOME/.local/bin)
-#   ANNOTATED_TREE_BASE_URL  release-asset base URL (default: GitHub latest);
-#                            set to e.g. http://localhost:8000 to test against a
-#                            local file server.
-#
-# Portability: POSIX sh only. Uses curl or wget (whichever exists) and
-# sha256sum or `shasum -a 256` (whichever exists); fails fast if neither is
-# available.
 
 set -eu
 
@@ -60,7 +45,6 @@ detect_target() {
     esac
 }
 
-# --- Download <url> to <dest>, failing fast on HTTP/transport error ----------
 download() {
     url="$1"
     dest="$2"
@@ -75,7 +59,6 @@ download() {
     fi
 }
 
-# --- Compute the hex sha256 of <file> using whatever tool exists -------------
 sha256_of() {
     file="$1"
     if command -v sha256sum >/dev/null 2>&1; then
@@ -91,26 +74,19 @@ main() {
     target="$(detect_target)"
     archive="${BIN}-${target}.tar.gz"
     archive_url="${BASE_URL}/${archive}"
-    # The checksum asset is named after the archive stem, NOT the full archive
-    # filename: `annotated-tree-<target>.sha256` (no `.tar.gz`). This is the
-    # taiki-e/upload-rust-binary-action + cargo-binstall convention (see the
-    # `archive: $bin-$target` + `checksum: sha256` config in release.yml). Its
-    # internal content still records the `.tar.gz` filename, which is fine — we
-    # only read the hash below.
+    # Checksum asset name omits .tar.gz: taiki-e/upload-rust-binary-action + cargo-binstall convention (release.yml).
     checksum="${BIN}-${target}.sha256"
     checksum_url="${BASE_URL}/${checksum}"
 
     info "installing ${BIN} for ${target}"
 
     tmp="$(mktemp -d)"
-    # Clean up the scratch dir on any exit path.
     trap 'rm -rf "$tmp"' EXIT INT TERM
 
     download "$archive_url" "$tmp/$archive"
     download "$checksum_url" "$tmp/$checksum"
 
-    # The published .sha256 is `<hex>  <filename>`; take the first field only so
-    # a bare-hash file also works.
+    # .sha256 is `<hex>  <filename>`; -f1 also handles a bare-hash file.
     expected="$(cut -d ' ' -f 1 "$tmp/$checksum")"
     [ -n "$expected" ] || err "checksum file $checksum_url was empty"
     actual="$(sha256_of "$tmp/$archive")"
