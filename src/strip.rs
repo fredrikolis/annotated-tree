@@ -1,11 +1,11 @@
-// Concern: removes conforming first-line annotations from named files and trees, in place | Non-concern: whether a file should carry one | IO: (paths, flags) -> report + edits
+// Concern: removes conforming first-line annotations from named files and trees, in place | Non-concern: whether a file should carry one | IO: (paths, Config) -> report + edits
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::annotation;
 use crate::cli;
-use crate::config::Config;
+use crate::config::{CliOverrides, Config, Format};
 use crate::exit;
 use crate::walk;
 
@@ -59,53 +59,67 @@ impl Target {
     }
 }
 
+/// A directory's own config governs it; a file's comes from its parent.
+pub(crate) fn base_of(path: &Path) -> PathBuf {
+    if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."))
+            .to_path_buf()
+    }
+}
+
 /// Nothing is written without `-y`: the default reports and stops. No prompt, since a report
 /// that depended on a terminal would not be determined by its inputs.
 pub fn dispatch(
     args: &cli::Strip,
-    cli: &cli::Cli,
+    overrides: &CliOverrides,
+    bootstrap_format: Format,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> i32 {
     let mut targets: Vec<Target> = Vec::new();
     let mut configs: Vec<Config> = Vec::new();
-    let excludes = match crate::util::build_globset(&cli.ignore) {
-        Ok(g) => g,
-        Err(e) => return precondition(out, err, cli, &e),
-    };
+    let mut excludes: Vec<globset::GlobSet> = Vec::new();
 
     for path in &args.paths {
-        let base = if path.is_dir() {
-            path.clone()
-        } else {
-            path.parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .unwrap_or(Path::new("."))
-                .to_path_buf()
-        };
-        let resolved = match Config::load(&base, &cli.overrides()) {
+        let resolved = match Config::load(&base_of(path), overrides) {
             Ok(c) => c,
-            Err(e) => return precondition(out, err, cli, &e),
+            Err(e) => {
+                let format = configs
+                    .first()
+                    .map_or(bootstrap_format, |c| c.display.format);
+                return precondition(out, err, format, &e);
+            }
+        };
+        let format = configs
+            .first()
+            .map_or(resolved.display.format, |c| c.display.format);
+        let path_excludes = match crate::util::build_globset(&resolved.display.ignore) {
+            Ok(g) => g,
+            Err(e) => return precondition(out, err, format, &e),
         };
         let include = match crate::util::build_globset(&resolved.display.include) {
             Ok(g) => g,
-            Err(e) => return precondition(out, err, cli, &e),
+            Err(e) => return precondition(out, err, format, &e),
         };
         let idx = configs.len();
 
         if path.is_dir() {
             if !args.recursive {
                 let m = format!("{}: is a directory (use -R)", path.display());
-                return fail(out, err, cli, exit::code::USAGE, exit::USAGE, &m);
+                return fail(out, err, format, exit::code::USAGE, exit::USAGE, &m);
             }
-            match walk::collect_code_files(path, &resolved, &excludes, &include) {
+            match walk::collect_code_files(path, &resolved, &path_excludes, &include) {
                 Ok(files) => targets.extend(files.into_iter().map(|f| Target::new(f, idx))),
                 Err(_) => {
                     let m = format!("{}: exceeds the file cap", path.display());
                     return fail(
                         out,
                         err,
-                        cli,
+                        format,
                         exit::code::SCOPE_EXCEEDED,
                         exit::RUNAWAY_SCOPE,
                         &m,
@@ -116,23 +130,32 @@ pub fn dispatch(
             targets.push(Target::new(path.clone(), idx));
         } else {
             let m = format!("{}: no such file or directory", path.display());
-            return fail(out, err, cli, exit::code::NOT_FOUND, exit::PRECONDITION, &m);
+            return fail(
+                out,
+                err,
+                format,
+                exit::code::NOT_FOUND,
+                exit::PRECONDITION,
+                &m,
+            );
         }
         configs.push(resolved);
+        excludes.push(path_excludes);
     }
 
     targets.sort_by(|a, b| (&a.canonical, a.is_symlink).cmp(&(&b.canonical, b.is_symlink)));
     targets.dedup_by(|a, b| a.canonical == b.canonical && a.is_symlink == b.is_symlink);
-    run(args, cli, &targets, &configs, &excludes, out, err)
+    let format = configs[0].display.format;
+    run(args, format, &targets, &configs, &excludes, out, err)
 }
 
 /// Report only after the write pass, so a run that half-succeeded says so on the surface parsed.
 fn run(
     args: &cli::Strip,
-    cli: &cli::Cli,
+    format: Format,
     targets: &[Target],
     configs: &[Config],
-    excludes: &globset::GlobSet,
+    excludes: &[globset::GlobSet],
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> i32 {
@@ -153,16 +176,16 @@ fn run(
             results.push((target, Outcome::Symlink));
             continue;
         }
-        if excluded(excludes, &target.given) {
+        if excluded(&excludes[target.config], &target.given) {
             results.push((target, Outcome::Excluded));
             continue;
         }
-        let config = &configs[target.config];
-        match sole_annotation_line(&target.canonical, config) {
+        let target_config = &configs[target.config];
+        match sole_annotation_line(&target.canonical, target_config) {
             Err(()) => results.push((target, Outcome::Unreadable)),
             Ok(None) => {}
             Ok(Some(_)) if !args.yes => results.push((target, Outcome::Stripped)),
-            Ok(Some(_)) => results.push((target, strip_file(&target.canonical, config))),
+            Ok(Some(_)) => results.push((target, strip_file(&target.canonical, target_config))),
         }
     }
 
@@ -172,7 +195,7 @@ fn run(
             "strip: delete those {artifacts} `.annotation` files to remove them"
         );
     }
-    report(&results, args.yes, targets.len(), cli, out, err);
+    report(&results, args.yes, targets.len(), format, out, err);
     if results.iter().any(|(_, o)| o.is_failure()) {
         exit::PRECONDITION
     } else {
@@ -184,11 +207,11 @@ fn report(
     results: &[(&Target, Outcome)],
     applied: bool,
     scanned: usize,
-    cli: &cli::Cli,
+    format: Format,
     out: &mut impl Write,
     err: &mut impl Write,
 ) {
-    if cli.format == cli::Format::Json {
+    if format == Format::Json {
         let files: Vec<_> = results
             .iter()
             .map(|(t, o)| {
@@ -221,12 +244,12 @@ fn report(
 fn fail(
     out: &mut impl Write,
     err: &mut impl Write,
-    cli: &cli::Cli,
+    format: Format,
     code: &'static str,
     exit_code: i32,
     message: &str,
 ) -> i32 {
-    if cli.format == cli::Format::Json {
+    if format == Format::Json {
         let _ = writeln!(
             out,
             "{}",
@@ -251,13 +274,13 @@ fn excluded(excludes: &globset::GlobSet, path: &Path) -> bool {
 fn precondition(
     out: &mut impl Write,
     err: &mut impl Write,
-    cli: &cli::Cli,
+    format: Format,
     e: &anyhow::Error,
 ) -> i32 {
     fail(
         out,
         err,
-        cli,
+        format,
         exit::code::PRECONDITION,
         exit::PRECONDITION,
         &format!("{e:#}"),

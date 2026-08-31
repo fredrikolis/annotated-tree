@@ -9,8 +9,11 @@ to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - `docs/agent-ux.md`, this repo's own agent-UX criteria.
+- `.annotated-tree.toml` keys for five flags that only argv could reach: `[limits] max_depth`,
+  and `[display] format`, `ignore`, `ignore_parsing_errors`, `no_guide`.
 
 ### Changed
+- **BREAKING:** `-L 0` is uncapped; it previously floored to `-L 1`.
 - `--githook-guide` defers the commit-msg wiring to `git-agent-verdict --repo-setup-guide`. The
   recipe it shipped is gone.
 - The comment-budget gate is `comment-crusher`, configured by `.comment-crusher.toml`, replacing

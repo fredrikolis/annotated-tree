@@ -127,9 +127,15 @@ fn decode_head(bytes: &[u8]) -> String {
 
 /// Shared by [`extract_from`] and [`analyze`] so they can never drift apart.
 enum Located {
-    Found { text: String, line: usize },
+    Found {
+        text: String,
+        line: usize,
+    },
     /// `raw` is the offending line verbatim, so a diagnostic can hint "wrong marker".
-    NoComment { line: usize, raw: String },
+    NoComment {
+        line: usize,
+        raw: String,
+    },
     Empty,
 }
 
@@ -227,7 +233,10 @@ pub(crate) fn part_label(part: &str) -> &'static str {
 pub enum Outcome {
     Ok,
     /// `raw` carries the offending line when one was present, `None` for an empty/unreadable head.
-    Missing { line: usize, raw: Option<String> },
+    Missing {
+        line: usize,
+        raw: Option<String>,
+    },
     /// `missing` names absent/empty keyed fields; `detail` is prose for the cases `missing`
     /// alone reads wrong on.
     Malformed {

@@ -2,21 +2,10 @@
 
 use std::path::PathBuf;
 
-use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
-use crate::config::CliOverrides;
+use crate::config::{CliOverrides, Format};
 use crate::exit;
-
-/// Output format. A render-time concern only — deliberately NOT threaded through
-/// `CliOverrides`/`Config`, which hold persistent display state, not the one-shot
-/// choice of renderer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
-pub enum Format {
-    #[default]
-    Text,
-    Json,
-    Md,
-}
 
 /// Annotated directory tree with a cross-ecosystem package dependency graph.
 #[derive(Debug, Parser)]
@@ -38,7 +27,7 @@ pub struct Cli {
     #[arg(long, value_name = "N", help = crate::strict::LENGTH_RULE)]
     pub max_length: Option<usize>,
 
-    /// Descend at most LEVEL directories deep. Caps the WALK, not just the output: nothing
+    /// Descend at most LEVEL directories deep; 0 is uncapped. Caps the WALK, not just the output: nothing
     /// below the cutoff is visited, counted against --max-files, or contributes graph
     /// edges, so a shallow render gives a shallower graph. Every directory shown still
     /// states its own dependency facts. Does not cap --strict-check.
@@ -66,9 +55,11 @@ pub struct Cli {
     #[arg(long)]
     pub ascii: bool,
 
-    /// Output format: text|json|md.
-    #[arg(long, value_enum, default_value_t = Format::Text)]
-    pub format: Format,
+    /// `None` when absent — one of several flags `Config` also has a say over (alongside
+    /// `--max-depth`, `--ignore`, `--ignore-parsing-errors` and `--no-guide`), so its
+    /// resolver must be able to tell "not given" from a real choice.
+    #[arg(long, value_enum, help = "Output format: text|json|md [default: text]")]
+    pub format: Option<Format>,
 
     /// Exclude paths matching GLOB (repeatable; pipe-separated allowed).
     #[arg(short = 'I', long = "ignore", value_name = "GLOB")]
@@ -258,6 +249,11 @@ impl Cli {
             hidden: self.hidden.then_some(true),
             include_tests: self.include_tests.then_some(true),
             include: self.include.clone(),
+            ignore: self.ignore.clone(),
+            max_depth: self.max_depth,
+            format: self.format,
+            ignore_parsing_errors: self.ignore_parsing_errors.then_some(true),
+            no_guide: self.no_guide.then_some(true),
             config_file: self.config.clone(),
             // `--no-limit`/`--force` wins over `--max-files`; either present means the CLI spoke (outer Some), so env/config are not consulted.
             max_files: if self.no_limit {

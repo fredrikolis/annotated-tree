@@ -167,22 +167,22 @@ fn strict_check_is_not_depth_capped() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// `-L 0` and `-L 1` are the same view: depth 0 is the root's own contents. Pins the floor —
-/// a walk literally bounded at 0 would render nothing.
+/// `-L 0` means uncapped, agreeing with `[limits] max_depth = 0` — not floored to a `-L 1`
+/// view that would hide `sub/`'s own contents.
 #[test]
-fn depth_zero_renders_the_same_view_as_depth_one() {
+fn depth_zero_is_uncapped() {
     let dir = temp_dir("zero");
     std::fs::create_dir_all(dir.join("sub")).expect("mkdir sub");
     std::fs::write(dir.join("sub/nested.rs"), ANNOTATION).expect("write nested");
     std::fs::write(dir.join("top.rs"), ANNOTATION).expect("write top");
 
     let (zero, _err, zcode) = run(&dir, &["-L", "0"]);
-    let (one, _err, ocode) = run(&dir, &["-L", "1"]);
-    assert_eq!((zcode, ocode), (0, 0), "both exit clean");
-    assert_eq!(zero, one, "-L 0 is -L 1, not an empty tree");
+    let (uncapped, _err, ucode) = run(&dir, &[]);
+    assert_eq!((zcode, ucode), (0, 0), "both exit clean");
+    assert_eq!(zero, uncapped, "-L 0 is the same view as no -L at all");
     assert!(
-        zero.contains("sub/") && zero.contains("top.rs"),
-        "and it is the root's own contents:\n{zero}"
+        zero.contains("sub/") && zero.contains("nested.rs"),
+        "and nested.rs, below the old floor, is visited:\n{zero}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

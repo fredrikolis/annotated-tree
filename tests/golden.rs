@@ -1,16 +1,38 @@
 // Concern: freezes the tool's output across the text, JSON, Markdown, strict-check and guide surfaces | Non-concern: what the sample tree contains | IO: (sample tree, fixtures) -> pass/fail
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use annotated_tree::Cli;
 use clap::Parser;
 
-/// An absolute sample path keeps output independent of the test's working directory.
+/// A fresh copy of `sample/`, walked from a temp dir instead of in the repo — `find_repo_config`
+/// walks up looking for `.annotated-tree.toml`, so running in place risks an outside config
+/// reaching these goldens.
+fn sample_copy() -> tempfile::TempDir {
+    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sample");
+    let dir = tempfile::tempdir().expect("mkdtemp");
+    copy_tree(&src, dir.path());
+    dir
+}
+
+fn copy_tree(src: &Path, dst: &Path) {
+    for entry in std::fs::read_dir(src).expect("read_dir sample") {
+        let entry = entry.expect("dir entry");
+        let to = dst.join(entry.file_name());
+        if entry.file_type().expect("file_type").is_dir() {
+            std::fs::create_dir(&to).expect("mkdir");
+            copy_tree(&entry.path(), &to);
+        } else {
+            std::fs::copy(entry.path(), &to).expect("copy fixture file");
+        }
+    }
+}
+
 fn run(extra: &[&str]) -> (String, i32) {
-    let sample = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sample");
+    let dir = sample_copy();
     let mut argv = vec!["annotated-tree".to_string()];
     argv.extend(extra.iter().map(|s| s.to_string()));
-    argv.push(sample.to_string_lossy().into_owned());
+    argv.push(dir.path().to_string_lossy().into_owned());
 
     let cli = Cli::parse_from(&argv);
     let mut buf: Vec<u8> = Vec::new();

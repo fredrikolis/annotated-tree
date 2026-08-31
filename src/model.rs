@@ -171,7 +171,7 @@ fn convert(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
 
-    let pruned = max_depth.is_some_and(|limit| depth >= limit) && depth > 0;
+    let pruned = max_depth.is_some_and(|limit| depth >= limit);
     if pruned {
         // A `.annotation` breadcrumb still resolves (no children needed); entry-file promotion cannot.
         return DirNode {

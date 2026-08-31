@@ -4,12 +4,23 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use clap::ValueEnum;
 use regex::Regex;
 use serde::Deserialize;
 
 use crate::rules::Rules;
 
 const DEFAULT_CONFIG: &str = include_str!("default_config.toml");
+
+/// `[display] format` can win over an absent `--format`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Format {
+    #[default]
+    Text,
+    Json,
+    Md,
+}
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +46,7 @@ struct RawRules {
 #[serde(deny_unknown_fields)]
 struct RawLimits {
     max_files: Option<usize>,
+    max_depth: Option<usize>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -47,6 +59,10 @@ struct RawDisplay {
     include_tests: Option<bool>,
     max_per_node: Option<usize>,
     include: Option<Vec<String>>,
+    format: Option<Format>,
+    ignore: Option<Vec<String>>,
+    ignore_parsing_errors: Option<bool>,
+    no_guide: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -61,7 +77,7 @@ struct RawLanguage {
 }
 
 /// `None` means "not specified; keep the merged value".
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CliOverrides {
     pub show_age: Option<bool>,
     pub ascii: Option<bool>,
@@ -70,6 +86,13 @@ pub struct CliOverrides {
     pub include_tests: Option<bool>,
     /// ADDITIVE to any config `[display] include`, not a replacement.
     pub include: Vec<String>,
+    /// ADDITIVE, like `include`.
+    pub ignore: Vec<String>,
+    pub max_depth: Option<usize>,
+    /// `Some` only when `--format` actually appeared.
+    pub format: Option<Format>,
+    pub ignore_parsing_errors: Option<bool>,
+    pub no_guide: Option<bool>,
     pub config_file: Option<PathBuf>,
     /// `None` = fall through to env/config/default; `Some(None)` = `--no-limit`/`--force`;
     /// `Some(Some(n))` = `--max-files n`.
@@ -91,11 +114,17 @@ pub struct Display {
     pub max_per_node: Option<usize>,
     /// A file is listed when its extension maps to a known language OR matches one of these.
     pub include: Vec<String>,
+    /// A matching path is pruned from the walk.
+    pub ignore: Vec<String>,
+    pub format: Format,
+    pub ignore_parsing_errors: bool,
+    pub no_guide: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Limits {
     pub max_files: Option<usize>,
+    pub max_depth: Option<usize>,
 }
 
 /// Configures only HOW to find the first comment (markers / an escape-hatch `pattern`); the
@@ -243,6 +272,10 @@ fn merge(dst: &mut RawConfig, src: RawConfig) {
         dd.max_per_node = sd.max_per_node.or(dd.max_per_node);
         // A whole list REPLACES, not appends; CLI selectors are folded in additively later.
         dd.include = sd.include.or_else(|| dd.include.take());
+        dd.ignore = sd.ignore.or_else(|| dd.ignore.take());
+        dd.format = sd.format.or(dd.format);
+        dd.ignore_parsing_errors = sd.ignore_parsing_errors.or(dd.ignore_parsing_errors);
+        dd.no_guide = sd.no_guide.or(dd.no_guide);
     }
     if let Some(sl) = src.limits {
         let dl = dst.limits.get_or_insert_with(Default::default);
@@ -267,6 +300,8 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     // Config-first, then CLI additively.
     let mut include = disp.include.clone().unwrap_or_default();
     include.extend(cli.include.iter().cloned());
+    let mut ignore = disp.ignore.clone().unwrap_or_default();
+    ignore.extend(cli.ignore.iter().cloned());
     let display = Display {
         show_age: cli.show_age.or(disp.show_age).unwrap_or(false),
         ascii: cli.ascii.or(disp.ascii).unwrap_or(false),
@@ -275,10 +310,19 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
         include_tests: cli.include_tests.or(disp.include_tests).unwrap_or(false),
         max_per_node: resolve_max_per_node(cli, disp.max_per_node),
         include,
+        ignore,
+        format: cli.format.or(disp.format).unwrap_or(Format::Text),
+        ignore_parsing_errors: cli
+            .ignore_parsing_errors
+            .or(disp.ignore_parsing_errors)
+            .unwrap_or(false),
+        no_guide: cli.no_guide.or(disp.no_guide).unwrap_or(false),
     };
 
+    let raw_limits = raw.limits.unwrap_or_default();
     let limits = Limits {
-        max_files: resolve_max_files(cli, raw.limits.unwrap_or_default())?,
+        max_files: resolve_max_files(cli, raw_limits.clone())?,
+        max_depth: resolve_max_depth(cli, raw_limits.max_depth),
     };
 
     let rules = resolve_rules(raw.rules.unwrap_or_default(), cli);
@@ -397,6 +441,12 @@ fn resolve_max_per_node(cli: &CliOverrides, config_value: Option<usize>) -> Opti
         None => config_value,
     };
     resolved.filter(|&n| n > 0)
+}
+
+/// `0` normalizes to `None` (uncapped) from either layer — `-L 0` and `[limits] max_depth = 0`
+/// now agree; CLI still wins outright when given.
+fn resolve_max_depth(cli: &CliOverrides, config_value: Option<usize>) -> Option<usize> {
+    cli.max_depth.or(config_value).filter(|&n| n > 0)
 }
 
 fn user_config_path() -> Option<PathBuf> {

@@ -1,6 +1,6 @@
 // Concern: the renderer seam — the `Renderer` trait, the format -> renderer factory, and the shared elision summary | Non-concern: building the map | IO: (CodebaseMap) -> String
 
-use crate::cli::Format;
+use crate::config::Format;
 use crate::model::CodebaseMap;
 
 pub mod json;

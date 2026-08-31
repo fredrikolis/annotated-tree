@@ -76,9 +76,9 @@ pub(crate) struct WalkedTree {
     pub dirs: Vec<PathBuf>,
 }
 
-/// Floored at 1: depth 0 is the root's own contents, always expanded.
+/// `Some(0)` never arrives: `resolve_max_depth` maps 0 to uncapped at both layers.
 fn row_depth(max_depth: Option<usize>) -> Option<usize> {
-    max_depth.map(|level| level.max(1))
+    max_depth
 }
 
 /// The manifest walk runs ONE level deeper — see [`cap_manifest_depth`].

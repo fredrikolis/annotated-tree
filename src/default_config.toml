@@ -3,6 +3,7 @@
 
 [limits]
 max_files = 10000
+max_depth = 0 # 0 = uncapped
 
 [rules]
 deny = [] # e.g. [["web", "core"]] forbids package `web` depending on `core`
@@ -18,6 +19,11 @@ gitignore = true
 hidden = false
 include_tests = false
 max_per_node = 50
+format = "text"
+ignore = []
+include = [] # never linted, view only
+ignore_parsing_errors = false
+no_guide = false
 
 [languages.python]
 extensions = [".py"]

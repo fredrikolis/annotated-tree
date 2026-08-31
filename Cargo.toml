@@ -37,3 +37,6 @@ codegen-units = 1
 [profile.dev]
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
+
+[dev-dependencies]
+tempfile = "3"
