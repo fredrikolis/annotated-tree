@@ -2,8 +2,7 @@
 # annotated-tree: the deeper argument
 
 The extended case for [annotated-tree](README.md): read it when the question is "why
-should I believe this", not "how do I run it". Works cited inline are listed in full at
-the [end](#references).
+should I believe this", not "how do I run it".
 
 ## Would any of this survive an infinite context window?
 

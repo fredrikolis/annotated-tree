@@ -10,6 +10,11 @@ header_free_chars = 200
 max_lines = 150
 
 [[allow]]
+paths = ["README.md"]
+reason = "the front door for a stranger evaluating the tool, not an agent-facing file; a user reads --help, but a prospect reads this"
+set = ["doc-length.max_lines=500"]
+
+[[allow]]
 paths = ["CHANGELOG.md"]
 reason = "a changelog grows monotonically by design; a line budget measures age, not bloat"
 set = ["doc-length.max_lines=600"]
