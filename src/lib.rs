@@ -28,6 +28,7 @@ pub(crate) mod changed;
 pub(crate) mod charter;
 pub(crate) mod cli;
 pub mod config;
+pub(crate) mod edit_hook;
 pub(crate) mod embedded_doc;
 pub mod exit;
 pub(crate) mod githook;
@@ -162,6 +163,9 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
     }
     if let Some(cli::Command::BashAnnotator(args)) = invocation.command {
         return bash_annotator::dispatch(args, out, err);
+    }
+    if let Some(cli::Command::EditHook(args)) = invocation.command {
+        return edit_hook::dispatch(args, out, err);
     }
 
     if invocation.schema {

@@ -11,6 +11,9 @@ to [Semantic Versioning](https://semver.org/).
 - `docs/agent-ux.md`, this repo's own agent-UX criteria.
 - `.annotated-tree.toml` keys for five flags that only argv could reach: `[limits] max_depth`,
   and `[display] format`, `ignore`, `ignore_parsing_errors`, `no_guide`.
+- `edit-hook --claude`, a `PostToolUse` hook entry point: reports a just-written file's annotation
+  defect, informing but never blocking.
+- `bash-annotator --install-claude-hook` now writes a third entry, for `edit-hook --claude`.
 
 ### Changed
 - **BREAKING:** `-L 0` is uncapped; it previously floored to `-L 1`.

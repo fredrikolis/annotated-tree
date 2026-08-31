@@ -6,19 +6,31 @@ use serde_json::{json, Map, Value};
 
 /// `SessionStart` names every source; `compact` matters most since a compacted session would
 /// otherwise never hear the announcement again.
-const ENTRIES: &[(&str, &str, &str)] = &[
-    ("PreToolUse", "Bash", "--rewrite-tool-call"),
+const ENTRIES: &[(&str, &str, &str, &str)] = &[
+    (
+        "PreToolUse",
+        "Bash",
+        "bash-annotator --rewrite-tool-call",
+        "--rewrite-tool-call",
+    ),
     (
         "SessionStart",
         "startup|resume|clear|compact|fork",
+        "bash-annotator --session-announcement",
         "--session-announcement",
+    ),
+    (
+        "PostToolUse",
+        "Write|Edit|MultiEdit|NotebookEdit",
+        "edit-hook --claude",
+        "edit-hook",
     ),
 ];
 
 /// A bare name (not absolute, unlike the rewritten-pipeline annotator): the harness runs it
 /// directly, no pipe to SIGPIPE if it fails to resolve.
-fn command(verb: &str) -> String {
-    format!("annotated-tree bash-annotator {verb}")
+fn command(suffix: &str) -> String {
+    format!("annotated-tree {suffix}")
 }
 
 #[derive(Debug, PartialEq)]
@@ -68,7 +80,7 @@ fn names(entry: &Value, needle: &str) -> bool {
 
 /// Any entry naming one of our verbs, regardless of which event it sits under.
 fn is_ours(entry: &Value) -> bool {
-    ENTRIES.iter().any(|(_, _, verb)| names(entry, verb))
+    ENTRIES.iter().any(|(_, _, _, verb)| names(entry, verb))
 }
 
 /// Read the settings file as an object, or an empty one when it does not exist yet.
@@ -119,7 +131,7 @@ pub fn install(path: &Path) -> Result<Outcome, String> {
     let mut root = read(path)?;
     let mut added = false;
     let mut replaced = false;
-    for (event, matcher, verb) in ENTRIES {
+    for (event, matcher, suffix, verb) in ENTRIES {
         let hooks = root
             .entry("hooks")
             .or_insert_with(|| json!({}))
@@ -139,7 +151,7 @@ pub fn install(path: &Path) -> Result<Outcome, String> {
         replaced |= list.len() != before;
         list.push(json!({
             "matcher": matcher,
-            "hooks": [{ "type": "command", "command": command(verb) }],
+            "hooks": [{ "type": "command", "command": command(suffix) }],
         }));
         added = true;
     }
@@ -164,7 +176,7 @@ pub fn uninstall(path: &Path) -> Result<Outcome, String> {
         let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) else {
             return Ok(Outcome::NotPresent);
         };
-        for (event, _, _) in ENTRIES {
+        for (event, _, _, _) in ENTRIES {
             let Some(list) = hooks.get_mut(*event).and_then(Value::as_array_mut) else {
                 continue;
             };
@@ -207,11 +219,11 @@ mod tests {
         assert_eq!(install(&p).unwrap(), Outcome::Added);
         assert_eq!(install(&p).unwrap(), Outcome::AlreadyPresent);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
-        for (event, matcher, verb) in ENTRIES {
+        for (event, matcher, suffix, _verb) in ENTRIES {
             let list = v["hooks"][event].as_array().unwrap();
             assert_eq!(list.len(), 1, "{event} was duplicated");
             assert_eq!(list[0]["matcher"], *matcher);
-            assert_eq!(list[0]["hooks"][0]["command"], command(verb));
+            assert_eq!(list[0]["hooks"][0]["command"], command(suffix));
         }
     }
 
@@ -243,7 +255,7 @@ mod tests {
         assert_eq!(list.len(), 1, "the stale entry was left beside the new one");
         assert_eq!(
             list[0]["hooks"][0]["command"],
-            command("--session-announcement")
+            command("bash-annotator --session-announcement")
         );
     }
 
@@ -355,7 +367,29 @@ mod tests {
         assert!(v["hooks"]["SessionStart"][0]["matcher"]
             .as_str()
             .is_some_and(|m| m.contains("compact")));
+        assert_eq!(
+            v["hooks"]["PostToolUse"][0]["matcher"],
+            "Write|Edit|MultiEdit|NotebookEdit"
+        );
+        assert_eq!(
+            v["hooks"]["PostToolUse"][0]["hooks"][0]["command"],
+            "annotated-tree edit-hook --claude"
+        );
         assert_eq!(v.as_object().unwrap().len(), 1);
-        assert_eq!(v["hooks"].as_object().unwrap().len(), 2);
+        assert_eq!(v["hooks"].as_object().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn edit_hook_is_matched_by_its_subcommand_not_the_claude_flag() {
+        let p = tmp("edit-hook-flag-only");
+        // Flag-only matching would wrongly claim, then remove, someone else's entry.
+        std::fs::write(
+            &p,
+            r#"{"hooks":{"PostToolUse":[{"matcher":"Write","hooks":[{"type":"command","command":"annotated-tree some-other-verb --claude"}]}]}}"#,
+        )
+        .unwrap();
+        assert_eq!(uninstall(&p).unwrap(), Outcome::NotPresent);
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        assert_eq!(v["hooks"]["PostToolUse"].as_array().unwrap().len(), 1);
     }
 }

@@ -132,6 +132,8 @@ pub enum Command {
     BashAnnotator(BashAnnotator),
     /// Remove first-line annotations from FILEs, and from DIRs under -R.
     Strip(Strip),
+    /// Report a just-written file's annotation defect before the commit gate would.
+    EditHook(EditHook),
 }
 
 #[derive(Debug, clap::Args)]
@@ -151,9 +153,19 @@ pub struct Strip {
 }
 
 #[derive(Debug, clap::Args)]
+pub struct EditHook {
+    /// PostToolUse hook entry point: reads one Claude Code event (Write, Edit, MultiEdit or
+    /// NotebookEdit) on stdin. Prints a JSON envelope naming the file's annotation defect if it
+    /// has one, and nothing if it doesn't. Always exits 0 — the pre-commit gate is what refuses
+    /// a bad annotation; this only tells you sooner, while the change is still live in context.
+    #[arg(long)]
+    pub claude: bool,
+}
+
+#[derive(Debug, clap::Args)]
 pub struct BashAnnotator {
-    /// Add both Claude Code hook entries — PreToolUse and SessionStart — to FILE
-    /// [default: ~/.claude/settings.json].
+    /// Add all three Claude Code hook entries — PreToolUse, SessionStart and PostToolUse —
+    /// to FILE [default: ~/.claude/settings.json].
     #[arg(long)]
     pub install_claude_hook: bool,
 

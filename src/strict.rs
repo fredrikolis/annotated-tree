@@ -95,7 +95,7 @@ pub struct AnnotationViolation {
 }
 
 impl AnnotationViolation {
-    fn message(&self) -> String {
+    pub(crate) fn message(&self) -> String {
         match self.category {
             Category::MissingAnnotation => {
                 let mut msg = format!(

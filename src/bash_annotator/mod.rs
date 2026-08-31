@@ -19,7 +19,7 @@ use crate::exit;
 const VERBS: &[(&str, &str)] = &[
     (
         "--install-claude-hook [FILE]",
-        "switch both hook entries on [default: ~/.claude/settings.json]",
+        "switch all three hook entries on [default: ~/.claude/settings.json]",
     ),
     (
         "--uninstall-claude-hook [FILE]",
