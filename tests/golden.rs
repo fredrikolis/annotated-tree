@@ -5,9 +5,7 @@ use std::path::PathBuf;
 use annotated_tree::Cli;
 use clap::Parser;
 
-/// Run the tool with `args` (after the program name) against the in-repo `sample/`
-/// tree and return (stdout, exit_code). An absolute sample path keeps output
-/// independent of the test's working directory.
+/// An absolute sample path keeps output independent of the test's working directory.
 fn run(extra: &[&str]) -> (String, i32) {
     let sample = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sample");
     let mut argv = vec!["annotated-tree".to_string()];
@@ -44,10 +42,8 @@ fn depth_one() {
     assert_golden("depth1.txt", &["-L", "1"], 0);
 }
 
-/// `--no-gitignore` is a single-delta view over the default: the fixture's `build/`
-/// is `.gitignore`d, so `build/generated.py` is the ONLY file it adds. Freeze exactly
-/// that relationship (default hides it, `--no-gitignore` reveals it) rather than
-/// re-freezing the whole fixture a second time.
+/// A single-delta view: `build/` is `.gitignore`d, so `generated.py` is the ONLY file
+/// `--no-gitignore` adds. Freeze that, not the whole fixture again.
 #[test]
 fn no_gitignore_reveals_gitignored_build_dir() {
     let (default_out, dcode) = run(&[]);
@@ -64,10 +60,8 @@ fn no_gitignore_reveals_gitignored_build_dir() {
     );
 }
 
-/// `--hidden` is a single-delta view over the default, in the shape of the `--no-gitignore` case
-/// above: the fixture's `.ci/` is a dot-directory, so its contents are what the flag adds. The three
-/// goldens staying byte-identical with `.ci/` present is itself the proof that the flag defaults
-/// OFF; this freezes that passing it does something.
+/// Same single-delta shape as `--no-gitignore` above: `.ci/`'s contents are what `--hidden`
+/// adds. Byte-identical goldens with `.ci/` present prove the flag defaults OFF.
 #[test]
 fn hidden_reveals_the_dot_directory() {
     let (default_out, dcode) = run(&[]);
@@ -85,10 +79,8 @@ fn hidden_reveals_the_dot_directory() {
     );
 }
 
-/// `--ascii` is a pure glyph swap of the default view, so freeze exactly THAT
-/// relationship rather than re-freezing the whole fixture a second time: run both
-/// and assert the ascii output equals the default with the box glyphs substituted
-/// (the mapping `render/text.rs` actually uses). No content is re-frozen.
+/// `--ascii` is a pure glyph swap of the default view — assert ascii equals default with
+/// `render/text.rs`'s box-glyph map.
 #[test]
 fn ascii_is_default_with_glyphs_substituted() {
     let (default_out, dcode) = run(&[]);
@@ -107,14 +99,11 @@ fn ascii_is_default_with_glyphs_substituted() {
 
 #[test]
 fn strict_check_reports_offenders() {
-    // `--no-guide` keeps this golden pinned to the report itself; the guide that a bare failing `--strict-check` prints is covered by `strict_failure_prints_guide_on_stdout`.
+    // `--no-guide` pins this golden to the report; the guide itself is covered elsewhere.
     assert_golden("strict_check.txt", &["--strict-check", "--no-guide"], 1);
 }
 
-/// `--strict-check` accepts a single FILE, not only a directory — the natural unit for an
-/// agent linting the one file it just wrote (and a pre-commit hook over changed files). A
-/// conforming file passes (exit 0, one file checked); a malformed one fails (exit 1); a file
-/// whose extension maps to no language fails fast as a precondition (never a silent pass).
+/// Accepts a single FILE, not only a directory — the unit an agent lints after writing one.
 #[test]
 fn strict_check_accepts_a_single_file() {
     let dir = std::env::temp_dir().join(format!("at-single-file-{}", std::process::id()));
@@ -153,7 +142,7 @@ fn strict_check_accepts_a_single_file() {
     let (_out, code) = check(&bad);
     assert_eq!(code, 1, "a malformed single file fails strict-check");
 
-    // A file whose extension maps to no language is a precondition error: in text mode `run()` returns `Err` (the binary renders it as `error:` prose and exits PRECONDITION), never a silent pass or a lint failure.
+    // An unmapped extension is a precondition error: `run()` returns `Err`, never a pass or lint failure.
     let cli = Cli::parse_from([
         "annotated-tree",
         "--strict-check",
@@ -170,10 +159,8 @@ fn strict_check_accepts_a_single_file() {
     );
 }
 
-/// `--strict-check --format json` is the machine-consumable counterpart to the TEXT report: the
-/// same verdict, structured. Freeze the shape, not the whole fixture — `passed`/counts at the
-/// envelope, and each violation carrying the fields an agent acts on. The exit code stays 1 on
-/// failure, matching the text path.
+/// The machine counterpart to the TEXT report. Freeze the shape — `passed`/counts, and
+/// each violation carrying the fields an agent acts on.
 #[test]
 fn strict_check_json_emits_structured_violations() {
     let (got, code) = run(&["--strict-check", "--format", "json"]);
@@ -189,7 +176,6 @@ fn strict_check_json_emits_structured_violations() {
         "one annotation gap (only the intentionally-malformed utils.py)"
     );
     assert_eq!(doc["files_checked"], serde_json::json!(25), "files checked");
-    // The convergence numerator: 24 of the 25 files carry a conforming annotation; only the one malformed file does not.
     assert_eq!(
         doc["annotated_count"],
         serde_json::json!(24),
@@ -198,7 +184,6 @@ fn strict_check_json_emits_structured_violations() {
 
     let violations = doc["violations"].as_array().expect("violations array");
     assert_eq!(violations.len(), 1, "one record per annotation gap");
-    // The Python util has a comment but not the three-field shape — a malformed_annotation at line 1, echoing the offending content and a conformant example to copy.
     let py = violations
         .iter()
         .find(|v| v["path"] == serde_json::json!("packages/core/acme_core/utils.py"))
@@ -217,7 +202,7 @@ fn strict_check_json_emits_structured_violations() {
         "the example is a conformant annotation line: {:?}",
         py["example"]
     );
-    // The machine-coded delta an agent branches on: the comment carries NONE of the three keyed fields, so all are missing; `length`/`max` are absent when they do not apply.
+    // The machine-coded delta an agent branches on; `length`/`max` are absent when inapplicable.
     assert_eq!(
         py["defect"]["missing"],
         serde_json::json!(["concern", "non_concern", "io"]),
@@ -227,7 +212,6 @@ fn strict_check_json_emits_structured_violations() {
         py["defect"].get("length").is_none() && py["defect"].get("max").is_none(),
         "empty/absent defect fields are omitted (absent-key convention)"
     );
-    // The contract to converge on: the fill-in template plus which fields are enforced.
     assert!(
         py["expected"]["template"]
             .as_str()
@@ -249,7 +233,7 @@ fn strict_check_json_emits_structured_violations() {
         "no recommended-only fields (all three are required): {:?}",
         py["expected"]["recommended"]
     );
-    // The `<…>` slots mark what an agent should replace, on a line whose FORM already conforms.
+    // `<…>` slots mark what an agent replaces, on a line whose FORM already conforms.
     let suggestion = py["suggestion"].as_str().expect("suggestion string");
     assert!(
         suggestion.starts_with("# Concern: small helpers used across the engine")
@@ -263,10 +247,8 @@ fn strict_check_json_emits_structured_violations() {
     );
 }
 
-/// The versioned envelope is frozen by `json_schema_is_versioned`; here we freeze
-/// the WHAT of a node instead of re-freezing the whole fixture: the JSON renderer
-/// surfaces a representative file's annotation and nests directories/files (rather
-/// than flattening them). `find_file` descending through `dirs` IS the nesting check.
+/// The envelope is frozen by `json_schema_is_versioned`; here, a node's WHAT — its annotation,
+/// and nesting directories/files rather than flattening them. Descending `find_file` IS that check.
 #[test]
 fn json_surfaces_representative_node_annotation_and_nesting() {
     let (got, code) = run(&["--format", "json"]);
@@ -284,8 +266,7 @@ fn json_surfaces_representative_node_annotation_and_nesting() {
     );
 }
 
-/// Recursively search a DirNode's `dirs`/`files` for a file by name. Descending into
-/// `dirs` exercises that the JSON nests directories and files rather than flattening.
+/// Descending into `dirs` exercises that the JSON nests, rather than flattens.
 fn find_file<'a>(node: &'a serde_json::Value, name: &str) -> Option<&'a serde_json::Value> {
     if let Some(files) = node["files"].as_array() {
         if let Some(found) = files.iter().find(|f| f["name"] == serde_json::json!(name)) {
@@ -302,8 +283,7 @@ fn find_file<'a>(node: &'a serde_json::Value, name: &str) -> Option<&'a serde_js
     None
 }
 
-/// Freeze the versioned envelope: schema number + top-level shape. This is the
-/// stability guarantee external consumers depend on, independent of the fixture.
+/// Schema number + top-level shape: the stability guarantee external consumers depend on.
 #[test]
 fn json_schema_is_versioned() {
     let (got, _) = run(&["--format", "json"]);
@@ -316,10 +296,8 @@ fn json_schema_is_versioned() {
     assert!(first["files"].is_array(), "node has files array");
 }
 
-/// Markdown is a human-facing presentation format (like the text view), NOT a
-/// machine contract, so it is deliberately NOT byte-frozen — freezing its exact
-/// formatting would freeze "how", not "what". A light structural check that each
-/// package surfaces as a heading captures the contract that matters.
+/// Markdown is human-facing, not a machine contract, so it is deliberately NOT byte-frozen —
+/// a light structural check (each package as a heading) captures what matters.
 #[test]
 fn md_format_surfaces_package_headings() {
     let (got, code) = run(&["--format", "md"]);
@@ -333,10 +311,8 @@ fn md_format_surfaces_package_headings() {
     }
 }
 
-/// A FAILING `--strict-check` prints the annotation guide inline on stdout by default; `--no-guide`
-/// suppresses it, and a PASSING run never shows it. The one piece of content pinned is the enforced
-/// template, which `strict::EXPECTED` derives — the guide teaching a format the gate does not enforce
-/// is the failure worth a test. Uses a throwaway fixture with one unannotated file.
+/// A FAILING `--strict-check` prints the guide inline by default; `--no-guide` suppresses it,
+/// and a PASSING run never shows it. Pins the enforced template, from `strict::EXPECTED`.
 #[test]
 fn strict_failure_prints_guide_on_stdout() {
     let dir = std::env::temp_dir().join(format!("at-guide-{}", std::process::id()));
@@ -365,20 +341,18 @@ fn strict_failure_prints_guide_on_stdout() {
         out.contains("ANNOTATION GUIDE"),
         "the failing report carries the guide inline, got: {out}"
     );
-    // The template is derived from `strict::EXPECTED`; pin that the guide surfaces it.
     assert!(
         out.contains(
             "Concern: {what it does} | Non-concern: {what it isn't} | IO: (in) -> out  OR  none"
         ),
         "the guide renders the enforced template"
     );
-    // A marker past `<!-- more -->`: the failure surface gets the FULL guide, not help's essence.
+    // Past `<!-- more -->`: the failure surface gets the FULL guide, not help's essence.
     assert!(
         out.contains("HOW TO FIND THE NON-CONCERN"),
         "a failing check prints the full guide, got: {out}"
     );
 
-    // `--no-guide` keeps the report clean for a caller that already knows the format.
     let (out, _err, code) = run_strict(&["--no-guide"]);
     assert_eq!(code, 1, "--no-guide does not change the verdict");
     assert!(
@@ -386,7 +360,6 @@ fn strict_failure_prints_guide_on_stdout() {
         "--no-guide suppresses the guide, got: {out}"
     );
 
-    // A PASSING run never shows the guide (nothing to fix).
     std::fs::write(
         dir.join("bad.py"),
         "# Concern: exercises the strict gate | Non-concern: rendering (the golden suite owns that) | IO: (x) -> y\n",
@@ -401,11 +374,9 @@ fn strict_failure_prints_guide_on_stdout() {
     );
 }
 
-/// `--annotation-guide` is the way to READ the guide without provoking a violation to print it.
-/// The same guide text reaches two surfaces, and `--help` is the one nothing else covers.
+/// Reads the guide without provoking a violation; the same text also reaches `--help`.
 #[test]
 fn annotation_guide_flag_prints_the_guide_alone() {
-    // The flag short-circuits before any traversal, so the appended sample path is unused.
     let (out, code) = run(&["--annotation-guide"]);
     assert_eq!(
         code, 0,
@@ -429,7 +400,6 @@ fn annotation_guide_flag_prints_the_guide_alone() {
         help.contains("ANNOTATION GUIDE"),
         "--help still carries the guide, got: {help}"
     );
-    // Serving help's essence from this flag is invisible to every other assertion here.
     assert!(
         !help.contains(out.trim_end()),
         "the flag prints more than --help's essence, got: {out}"
@@ -444,11 +414,9 @@ fn annotation_guide_flag_prints_the_guide_alone() {
     );
 }
 
-/// An info flag prints its guide alone and exits 0; the pointer it carries is what other surfaces
-/// promise is here. Everything else the guide says is prose, and the prose gate reads it.
+/// Prints its guide alone and exits 0; the pointer it carries is what other surfaces promise.
 #[test]
 fn githook_guide_prints_the_guide_alone_and_names_the_tool() {
-    // The flag short-circuits before any traversal, so the appended sample path is unused.
     let (out, code) = run(&["--githook-guide"]);
     assert_eq!(
         code, 0,
@@ -458,7 +426,7 @@ fn githook_guide_prints_the_guide_alone_and_names_the_tool() {
         out.starts_with("GITHOOK GUIDE") && !out.contains("Usage:"),
         "the guide is printed alone, not appended to another surface, got: {out}"
     );
-    // README and CONTRIBUTING route an agent here for that pointer, so it has to survive.
+    // README and CONTRIBUTING route an agent here, so the pointer has to survive.
     assert!(
         out.contains("git-agent-verdict"),
         "the guide names where the commit-msg wiring lives, got: {out}"

@@ -33,9 +33,8 @@ fn run(dir: &Path, extra: &[&str]) -> (String, String, i32) {
     )
 }
 
-/// The issue's own repro (#15): 41 code files, two of which a `-L 1` render can show. The
-/// runaway-scope cap must count what the CAPPED walk visits, so a cap of 5 does not abort a
-/// two-row render — the walk never reaches the 40 files below the cutoff.
+/// Issue #15: the cap counts what the CAPPED walk visits, so 5 doesn't abort a `-L 1`
+/// two-row render of 41 files.
 #[test]
 fn max_files_counts_only_what_the_capped_walk_visits() {
     let dir = temp_dir("maxfiles");
@@ -61,17 +60,15 @@ fn max_files_counts_only_what_the_capped_walk_visits() {
         "nothing below the cutoff is rendered:\n{out}"
     );
 
-    // The cap still trips when the CAPPED walk itself exceeds it — the guard is bounded by -L, not disabled by it.
+    // The cap still trips when the CAPPED walk exceeds it — bounded by -L, not disabled.
     let (_out, _err, code) = run(&dir, &["--max-files", "5"]);
     assert_eq!(code, 3, "an uncapped walk of 41 files still aborts at 5");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A directory earns its row by being VISITED, not by holding a listable file somewhere
-/// beneath it — and that rule holds at EVERY depth, not only at the cutoff. `notes.txt` maps
-/// to no known language, so `emptyish/` has nothing listable below it at any depth; it is
-/// listed all the same, in the capped view and the full one alike.
+/// A directory earns its row by being VISITED, not by holding a listable file below, at every
+/// depth. `emptyish/` holds only an unmapped extension, yet is listed.
 #[test]
 fn a_directory_with_nothing_listable_below_is_listed_at_every_depth() {
     let dir = temp_dir("emptyish");
@@ -99,10 +96,7 @@ fn a_directory_with_nothing_listable_below_is_listed_at_every_depth() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// `-L LEVEL` cuts the graph analyzer's input one level BELOW the deepest row, since a package's
-/// manifest lives inside the package — so a displayed row always states its own dependency facts,
-/// and only a package the render does not show is cut. The fixture puts `a/` and `b/` at depth 1
-/// and `nested/c/` at depth 2, with `a` declaring a path dependency on both.
+/// Cuts the graph one level BELOW the deepest row, since a manifest lives inside its package.
 #[test]
 fn a_displayed_row_keeps_its_deps_while_a_package_below_the_cutoff_is_dropped() {
     let dir = temp_dir("graph");
@@ -123,7 +117,7 @@ fn a_displayed_row_keeps_its_deps_while_a_package_below_the_cutoff_is_dropped() 
     manifest(&dir.join("b"), "b", "\n");
     manifest(&dir.join("nested/c"), "c", "\n");
 
-    // -L 1: `a/` and `b/` are rows, so both manifests are read one level deeper and the edge between two visible rows is stated in both directions.
+    // -L 1: both manifests read one level deeper; the edge draws both ways.
     let (shallow, _err, code) = run(&dir, &["-L", "1"]);
     assert_eq!(code, 0, "-L 1 exits clean");
     assert!(
@@ -134,13 +128,13 @@ fn a_displayed_row_keeps_its_deps_while_a_package_below_the_cutoff_is_dropped() 
         shallow.contains("<- depends on [b"),
         "and the forward edge between two visible rows is drawn:\n{shallow}"
     );
-    // `c` is two levels past the cutoff: never a row, never read, so the declared path dependency on it resolves to nothing.
+    // `c` is two levels past the cutoff, never read, so its dependency resolves to nothing.
     assert!(
         shallow.contains("c (unresolved)"),
         "a package below the cutoff contributes no resolved edge:\n{shallow}"
     );
 
-    // -L 2: `nested/c/` becomes a row, so its manifest is read and the same dependency now resolves — the graph deepens exactly with the view.
+    // -L 2: `nested/c/` becomes a row, so its manifest is read and resolves.
     let (deep, _err, code) = run(&dir, &["-L", "2"]);
     assert_eq!(code, 0, "-L 2 exits clean");
     assert!(
@@ -151,9 +145,8 @@ fn a_displayed_row_keeps_its_deps_while_a_package_below_the_cutoff_is_dropped() 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// `--strict-check` is a gate over the whole tree, not a rendered view, so `-L` must never
-/// shrink what it lints: an unannotated file five levels down is still a violation under
-/// `-L 1`. Pins that the walk cap did not leak from the map path into the check path.
+/// `--strict-check` gates the whole tree, not a view — a file five levels down still
+/// violates under `-L 1`. Pins the cap out of the check path.
 #[test]
 fn strict_check_is_not_depth_capped() {
     let dir = temp_dir("strict");
@@ -174,9 +167,8 @@ fn strict_check_is_not_depth_capped() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// `-L 0` and `-L 1` are the same view: depth 0 is the root's own contents, which every
-/// render expands. Pins the floor the walk cap applies — a walk literally bounded at 0 would
-/// yield the root alone and render nothing.
+/// `-L 0` and `-L 1` are the same view: depth 0 is the root's own contents. Pins the floor —
+/// a walk literally bounded at 0 would render nothing.
 #[test]
 fn depth_zero_renders_the_same_view_as_depth_one() {
     let dir = temp_dir("zero");

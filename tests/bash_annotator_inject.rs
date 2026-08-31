@@ -17,13 +17,13 @@ use Want::{Leave, Rewrite};
 /// is here because a reviewer found the behaviour wrong, or because it guards a property the design
 /// rests on — the third field says which.
 const CASES: &[(&str, Want, &str)] = &[
-    // ---- the mapped tools, plainly -------------------------------------------------------
+    // the mapped tools, plainly
     ("grep -rn foo .", Rewrite, "the base case"),
     ("ls -la", Rewrite, "the base case"),
     ("find . -name x", Rewrite, "the base case"),
     ("cat file.txt", Leave, "not a mapped tool"),
     ("awk '{print}' file.txt", Leave, "not a mapped tool"),
-    // ---- prefixes that do not change how the program resolves -----------------------------
+    // prefixes that do not change how the program resolves
     ("LC_ALL=C ls", Rewrite, "a locale assignment is harmless"),
     (
         "timeout 5 grep -rn x .",
@@ -31,7 +31,7 @@ const CASES: &[(&str, Want, &str)] = &[
         "timeout does not change resolution",
     ),
     ("nice ls -la", Rewrite, "nor does nice"),
-    // ---- prefixes that DO change it: rewriting these yields exit 127 ----------------------
+    // prefixes that DO change it: rewriting these yields exit 127
     (
         "PATH=/usr/bin ls",
         Rewrite,
@@ -54,7 +54,7 @@ const CASES: &[(&str, Want, &str)] = &[
         "the program reads as `sudo`; the paths it prints are still unannotated, which is the \
          fail-closed side",
     ),
-    // ---- spellings that explicitly ask for the REAL binary --------------------------------
+    // spellings that explicitly ask for the REAL binary
     (
         "/usr/bin/grep pattern a.rs",
         Leave,
@@ -76,7 +76,7 @@ const CASES: &[(&str, Want, &str)] = &[
         Leave,
         "a relative path is a different program",
     ),
-    // ---- grep flags on which the session function delegates to the real binary ------------
+    // grep flags on which the session function delegates to the real binary
     (
         "grep -rlZ A .",
         Leave,
@@ -102,7 +102,7 @@ const CASES: &[(&str, Want, &str)] = &[
     ),
     ("grep -rl --config x .", Rewrite, "same"),
     ("grep -rl --save-config x .", Rewrite, "same"),
-    // ---- control operators do not disqualify; each branch still writes to the result ------
+    // control operators do not disqualify; each branch still writes to the result
     (
         "cd src && ls -la && grep -rn foo .",
         Rewrite,
@@ -114,11 +114,11 @@ const CASES: &[(&str, Want, &str)] = &[
         "|| keeps stdout",
     ),
     ("ls; grep -rn foo .", Rewrite, "; keeps stdout"),
-    // ---- stderr redirection is not stdout redirection -------------------------------------
+    // stderr redirection is not stdout redirection
     ("ls 2>/dev/null", Rewrite, "2> is stderr"),
     ("ls 2>&1", Rewrite, "2>&1 is stderr"),
     ("grep -rn foo . 2>>err.log", Rewrite, "2>> is stderr"),
-    // ---- stdout leaving for a file --------------------------------------------------------
+    // stdout leaving for a file
     ("ls > listing.txt", Leave, "redirected"),
     ("ls >> listing.txt", Leave, "redirected"),
     ("ls 1> listing.txt", Leave, "redirected"),
@@ -128,7 +128,7 @@ const CASES: &[(&str, Want, &str)] = &[
         Leave,
         "redirected DOWNSTREAM of a pipe",
     ),
-    // ---- downstream stages whose unit is a line -------------------------------------------
+    // downstream stages whose unit is a line
     ("ls | head -20", Rewrite, "head counts lines"),
     ("ls | tail -5", Rewrite, "tail counts lines"),
     ("ls | sort", Rewrite, "sort is line-wise"),
@@ -145,7 +145,7 @@ const CASES: &[(&str, Want, &str)] = &[
         Rewrite,
         "a chain of line-wise stages",
     ),
-    // ---- downstream stages that appended text would change --------------------------------
+    // downstream stages that appended text would change
     (
         "ls | uniq",
         Rewrite,
@@ -183,7 +183,7 @@ const CASES: &[(&str, Want, &str)] = &[
         Leave,
         "a filter over a stream has no paths",
     ),
-    // ---- `ls` layouts whose lines mean something only IN THE ORDER PRINTED --------------------
+    // `ls` layouts whose lines mean something only IN THE ORDER PRINTED
     (
         "ls -R | sort",
         Leave,
@@ -249,7 +249,7 @@ const CASES: &[(&str, Want, &str)] = &[
         Rewrite,
         "and a stage that neither drops nor reorders leaves the scoping intact",
     ),
-    // ---- output consumed rather than read ---------------------------------------------------
+    // output consumed rather than read
     ("grep -rl foo . | xargs rm", Leave, "xargs is not line-safe"),
     (
         "ls | sort | xargs rm",
@@ -269,7 +269,7 @@ const CASES: &[(&str, Want, &str)] = &[
          the pipe — so the annotator would read another program's output as though it were \
          find's. `consumes_args` names only two of the four",
     ),
-    // ---- separators the lexer must distinguish ----------------------------------------------
+    // separators the lexer must distinguish
     (
         "ls -la\ngrep -rn foo .",
         Rewrite,
@@ -285,7 +285,7 @@ const CASES: &[(&str, Want, &str)] = &[
         Rewrite,
         "an INPUT redirect does not take stdout away",
     ),
-    // ---- the program token must be spelled bare ----------------------------------------------
+    // the program token must be spelled bare
     (
         "\"grep\" -rn x .",
         Rewrite,
@@ -297,7 +297,7 @@ const CASES: &[(&str, Want, &str)] = &[
         Leave,
         "a wrapper's own argument is not the program",
     ),
-    // ---- long spellings of the flags that make a downstream stage unsafe ---------------------
+    // long spellings of the flags that make a downstream stage unsafe
     ("ls | head --bytes=20", Leave, "the long form of -c"),
     (
         "ls | sort --unique",
@@ -309,7 +309,7 @@ const CASES: &[(&str, Want, &str)] = &[
         Leave,
         "the long form of -l, and still a count rather than paths",
     ),
-    // ---- shapes the lexer must refuse rather than model ------------------------------------
+    // shapes the lexer must refuse rather than model
     ("files=$(ls src)", Leave, "command substitution"),
     ("echo `ls`", Leave, "backtick substitution"),
     ("( ls; ls ) | wc -l", Leave, "subshell"),
@@ -335,7 +335,7 @@ const CASES: &[(&str, Want, &str)] = &[
         Leave,
         "so is an indented heredoc",
     ),
-    // ---- grouping the stage model does not represent -----------------------------------------
+    // grouping the stage model does not represent
     (
         "{ ls; ls; } > out.txt",
         Leave,
@@ -365,7 +365,7 @@ const CASES: &[(&str, Want, &str)] = &[
          reason the annotator was moved to the tail at all — is silently void. Two identical \
          `a.rs` lines collapse to one raw and stay two annotated",
     ),
-    // ---- text the lexer must not treat as command words ---------------------------------------
+    // text the lexer must not treat as command words
     (
         "ls src   # sources",
         Rewrite,
@@ -377,7 +377,7 @@ const CASES: &[(&str, Want, &str)] = &[
         Rewrite,
         "`#` inside a word is an ordinary character, not a comment opener",
     ),
-    // ---- redirects on either side of the command ----------------------------------------------
+    // redirects on either side of the command
     (
         "2>/dev/null ls -la",
         Rewrite,
@@ -389,7 +389,7 @@ const CASES: &[(&str, Want, &str)] = &[
         "`2>&1`'s `1` is a redirect TARGET; forwarded as an argument it made a directory named \
          `1` the operand and rebased every name in the listing",
     ),
-    // ---- operands the SHELL expands, not us ---------------------------------------------------
+    // operands the SHELL expands, not us
     (
         "d=docs; ls \"$d\"",
         Rewrite,
@@ -397,7 +397,7 @@ const CASES: &[(&str, Want, &str)] = &[
          re-quoted, `$d` reached the annotator literally and the base fell back to the cwd",
     ),
     ("ls ~/x", Rewrite, "a tilde expands for the same reason"),
-    // ---- downstream stages that stop the lines being paths ------------------------------------
+    // downstream stages that stop the lines being paths
     (
         "ls | sed s/alpha/beta/",
         Leave,
@@ -520,7 +520,7 @@ fn the_decision_table_holds() {
 
 #[test]
 fn the_rest_of_the_command_survives_byte_for_byte() {
-    // Nothing is substituted; the pipeline is wrapped. So the agent's own text — its spacing, its quoting, its globs — must reappear VERBATIM inside the parentheses, and the surrounding command must be untouched outside them.
+    // The agent's own text — spacing, quoting, globs — must reappear verbatim inside the parens.
     let spaced = check("ls    -la");
     assert!(
         spaced.contains("( ls    -la | "),
@@ -536,7 +536,7 @@ fn the_rest_of_the_command_survives_byte_for_byte() {
         both.starts_with("cd src && ( ls -la | ") && both.contains("( grep -rn foo . | "),
         "the surrounding command was altered: {both}"
     );
-    // The exit-code recovery must index the stage that was last BEFORE the annotator was appended. (That the resulting CODE matches the unrewritten command, with and without `pipefail`, is checked end to end in bash_annotator_equivalence.rs.)
+    // Exit-code recovery indexes the stage last BEFORE the annotator; equivalence.rs checks the CODE itself.
     assert!(
         check("ls | sort").contains("__rc=${__ps[1]}"),
         "a two-stage pipeline must re-raise stage 1, not stage 0"
@@ -549,7 +549,7 @@ fn the_rest_of_the_command_survives_byte_for_byte() {
 
 #[test]
 fn no_input_makes_the_injector_exit_nonzero() {
-    // A panic exits 101, which the harness surfaces as an error on a command the agent wrote correctly. `check` asserts the exit code, so this is a totality sweep over shapes the table does not otherwise reach.
+    // A panic exits 101, surfaced as an error on a command the agent wrote correctly; `check` asserts the code.
     for cmd in [
         "grep -rn \"— the\" .", // em-dash: this repo's own annotations are full of them
         "ls # 日本語",

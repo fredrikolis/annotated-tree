@@ -28,7 +28,7 @@ fn temp_tree(tag: &str, n_dirs: usize, n_files: usize) -> PathBuf {
 }
 
 fn run_capture(dir: &Path, extra: &[&str]) -> (String, String, i32) {
-    // Every assertion pins the cap via a CLI flag (`--max-per-node`/`--full`), which outranks the built-in default of 50, so this in-process harness needs no env manipulation (unsafe under edition 2024).
+    // A CLI flag outranks the built-in default, so no env manipulation (unsafe on 2024) is needed.
     let mut argv = vec!["annotated-tree".to_string()];
     argv.extend(extra.iter().map(|s| s.to_string()));
     argv.push(dir.to_string_lossy().into_owned());
@@ -56,7 +56,6 @@ fn files_over_cap_render_single_marker_and_full_expands() {
         "one marker reports the 55 elided files:\n{out}"
     );
 
-    // --full expands every file: no marker, the highest-index file is present.
     let (out2, _err2, code2) = run_capture(&dir, &["--full"]);
     assert_eq!(code2, 0);
     assert!(!out2.contains("[+"), "--full shows no marker:\n{out2}");
@@ -67,7 +66,6 @@ fn files_over_cap_render_single_marker_and_full_expands() {
 
 #[test]
 fn marker_trips_only_when_count_exceeds_cap() {
-    // Exactly-at-cap shows no marker; one past shows `[+1 files`.
     let dir = temp_tree("boundary", 0, 6);
 
     let (out_at, _err, _code) = run_capture(&dir, &["--max-per-node", "6"]);
@@ -87,7 +85,6 @@ fn marker_trips_only_when_count_exceeds_cap() {
 
 #[test]
 fn combined_marker_folds_dirs_and_files_into_one_row() {
-    // A directory overflowing on BOTH axes gets ONE row carrying both counts.
     let dir = temp_tree("combo", 10, 60);
 
     let (out, _err, code) = run_capture(&dir, &["--max-per-node", "5"]);

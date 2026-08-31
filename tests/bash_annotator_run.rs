@@ -62,7 +62,7 @@ fn native(dir: &Path, tool: &str, args: &[&str]) -> String {
 
 /// `ls` exists on every platform this is expected to run on, but not on Windows. Skip loudly.
 fn have_ls() -> bool {
-    // `--version` must SUCCEED, not merely spawn. BSD `ls` on macOS spawns and then fails, and it is a different program: `-I` takes no argument there and `--color` does not exist, so the GNU-only rows below would fail that CI leg rather than skip.
+    // `--version` must SUCCEED: BSD `ls` on macOS spawns then fails, and lacks `-I`/`--color`.
     let ok = Command::new("ls")
         .arg("--version")
         .output()
@@ -152,7 +152,7 @@ fn a_crlf_line_keeps_its_carriage_return_last() {
         "// Concern: CR | Non-concern: n | IO: none\r\nhit\r\n",
     )
     .unwrap();
-    // `-rn .`, NOT `-n z.rs`: given a single file operand grep prints no `path:` prefix, so no contract is appended and the assertion below would hold without ever reaching the branch it exists to guard.
+    // `-rn .`, not `-n z.rs`: a single file operand prints no `path:` prefix, so no contract lands.
     let out = run_bytes(&dir, &["grep", "-rn", "Concern", "."]);
     // A contract appended AFTER the `\r` makes a terminal overwrite the line it describes. Pick the CRLF file's own line: the fixture holds other files, and `-r` visits them all.
     let line = out
@@ -230,7 +230,7 @@ fn the_rewritten_pipeline_reraises_the_tools_own_exit_code() {
     if !have_ls() {
         return;
     }
-    // A naive `tool | annotator` would report the annotator's status and lose `grep`'s exit 1 on no-match, which agents branch on. This runs the emitted command through a real shell rather than trusting the string.
+    // A naive `tool | annotator` loses `grep`'s exit 1 to the annotator's own status; run it via a real shell.
     let dir = fixture("exit");
     let status = |cmd: &str| {
         let rewritten = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
@@ -271,10 +271,9 @@ fn the_rewritten_pipeline_reraises_the_tools_own_exit_code() {
     );
 }
 
-/// A path a listing names is OPENED to read its first line, and not every path is a file whose
-/// first line arrives: a FIFO blocks until someone writes, a character device until it has
-/// something to say — so `ls` over a directory holding either never returns and the agent loses the
-/// whole call. Not a `SHAPES` row: a row that hangs cannot report, so this runs under `timeout`.
+/// A listed path is OPENED to read its first line; a FIFO or character device blocks until it has
+/// something to say, so `ls` over one never returns. Not a `SHAPES` row: a hang can't report, so
+/// this runs under `timeout`.
 #[test]
 fn a_path_that_is_not_a_regular_file_is_never_read() {
     if !have_ls() {
@@ -310,9 +309,8 @@ fn a_path_that_is_not_a_regular_file_is_never_read() {
 }
 
 /// THE ANNOTATION TABLE — which file each printed line is ABOUT. Rounds 3 and 4 each fixed one
-/// shape and broke another because each was tested alone, so these hold simultaneously or not at
-/// all, and every mismatch is reported in one run. Columns: the argv, substrings that MUST appear,
-/// substrings that must NOT, and why the row is here. Named fields so nobody counts positions.
+/// shape and broke another tested alone, so these hold simultaneously or not at all, with every
+/// mismatch reported in one run. Named fields so nobody counts positions.
 struct Shape {
     args: &'static [&'static str],
     must: &'static [&'static str],
@@ -646,7 +644,7 @@ fn every_printed_shape_names_the_file_its_line_is_about() {
     std::fs::write(dir.join("delta.rs"), "beta.rs is the thing\n").unwrap();
     // Prose that names an existing file with a COLON after it — the shape a grep content line takes when the invocation printed no `path:` prefix and the scan has nothing to anchor on.
     std::fs::write(dir.join("notes.md"), "beta.rs: the beta file\n").unwrap();
-    // A matched line that is EXACTLY a path — indistinguishable from `grep -l` output without parsing flags, which run.rs deliberately does not. Recorded so the behaviour is chosen rather than accidental.
+    // Exactly a path — indistinguishable from `grep -l` without parsing flags, which run.rs skips.
     std::fs::write(dir.join("bare.rs"), "beta.rs\n").unwrap();
     std::fs::write(dir.join("a file name.rs"), ann("SPACED")).unwrap();
     // Whitespace that is NOT a single space. Re-joining tokens with " " silently loses these.
@@ -664,7 +662,7 @@ fn every_printed_shape_names_the_file_its_line_is_about() {
     )
     .unwrap();
     std::fs::write(dir.join("plain.rs"), ann("PLAIN")).unwrap();
-    // A directory whose `.annotation` carries the charter line AND a line of prose under it — the shape a maintainer writes when the charter needs a note. It resolves to no charter at all, so no contract reaches the line.
+    // `.annotation` with a charter line plus prose resolves to no charter, so no contract lands.
     std::fs::create_dir_all(dir.join("noisy")).unwrap();
     std::fs::write(
         dir.join("noisy/.annotation"),

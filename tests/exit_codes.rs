@@ -2,9 +2,7 @@
 
 use std::process::Command;
 
-/// A run over a directory that does not exist has no valid roots, so the tool errors
-/// out — a precondition/environment failure the binary translates into exit 4
-/// (`PRECONDITION`) with `error:` on stderr (distinct from clap's usage exit 2).
+/// A missing root is a precondition failure: exit 4 (`PRECONDITION`), distinct from clap's exit 2.
 #[test]
 fn nonexistent_directory_exits_precondition_with_error_on_stderr() {
     let bin = env!("CARGO_BIN_EXE_annotated-tree");

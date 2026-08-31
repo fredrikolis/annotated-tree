@@ -25,7 +25,7 @@ fn temp_tree(tag: &str, n_files: usize) -> PathBuf {
 }
 
 fn run_capture(dir: &Path, extra: &[&str]) -> (String, String, i32) {
-    // Every assertion pins the cap via a CLI flag, which outranks any ambient env value, so this in-process harness needs no `env::remove_var` (unsafe under edition 2024). The env rung is covered out-of-process in `config_precedence.rs`.
+    // A CLI flag outranks any ambient env value, so no `env::remove_var` (unsafe on 2024) is needed.
     let mut argv = vec!["annotated-tree".to_string()];
     argv.extend(extra.iter().map(|s| s.to_string()));
     argv.push(dir.to_string_lossy().into_owned());
@@ -45,7 +45,6 @@ fn run_capture(dir: &Path, extra: &[&str]) -> (String, String, i32) {
 fn over_cap_aborts_empty_stdout_and_no_limit_completes() {
     let dir = temp_tree("over", 5);
 
-    // Over the cap: exit 3 (RUNAWAY_SCOPE), EMPTY stdout (no partial tree / half-written JSON), and stderr must name the limit and BOTH override routes.
     let (out, err, code) = run_capture(&dir, &["--max-files", "3"]);
     assert_eq!(
         code, 3,
@@ -72,7 +71,6 @@ fn over_cap_aborts_empty_stdout_and_no_limit_completes() {
         "stderr names the offending path:\n{err}"
     );
 
-    // --no-limit walks everything: exit 0, non-empty tree.
     let (out2, _err2, code2) = run_capture(&dir, &["--no-limit"]);
     assert_eq!(code2, 0, "--no-limit must complete");
     assert!(!out2.is_empty(), "--no-limit renders the tree");
@@ -83,7 +81,7 @@ fn over_cap_aborts_empty_stdout_and_no_limit_completes() {
 
 #[test]
 fn cap_trips_only_when_count_exceeds_limit() {
-    // The valve trips when the count EXCEEDS the limit, not when it reaches it: 5 files under a cap of 5 pass; a cap of 4 trips. Isolates the boundary the integration test above (3 vs 5) does not pin exactly.
+    // Trips when the count EXCEEDS the limit, not when it reaches it — the boundary 3-vs-5 above misses.
     let dir = temp_tree("boundary", 5);
 
     let (_out, _err, code_at) = run_capture(&dir, &["--max-files", "5"]);

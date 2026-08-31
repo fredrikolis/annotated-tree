@@ -8,8 +8,7 @@ use clap::Parser;
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-/// A fresh temp dir under the system temp root (so no ancestor `.annotated-tree.toml`
-/// from this repo leaks into discovery), tagged for the calling test.
+/// System temp root, not the repo, so no ancestor `.annotated-tree.toml` leaks into discovery.
 fn temp_dir(tag: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("at-scope-{}-{tag}-{n}", std::process::id()));
@@ -18,8 +17,7 @@ fn temp_dir(tag: &str) -> PathBuf {
     dir
 }
 
-/// Run the tool in-process over `paths` with `extra` flags and return stdout. Asserts
-/// a clean (exit 0) render — these are visibility tests, not failure paths.
+/// Asserts a clean (exit 0) render — these are visibility tests, not failure paths.
 fn run(paths: &[&Path], extra: &[&str]) -> String {
     let mut argv = vec!["annotated-tree".to_string()];
     argv.extend(extra.iter().map(|s| s.to_string()));
@@ -36,7 +34,7 @@ fn run(paths: &[&Path], extra: &[&str]) -> String {
 
 #[test]
 fn explicit_config_flag_takes_effect_and_bypasses_discovery() {
-    // The dir holds a `.foo` and a `.bar` file — both unknown to the built-in config, so neither shows unless a config layer teaches its extension.
+    // Both extensions are unknown to the built-in config, so neither shows unless a layer teaches it.
     let dir = temp_dir("config-flag");
     let src = dir.join("src");
     std::fs::create_dir_all(&src).unwrap();
@@ -68,12 +66,10 @@ fn explicit_config_flag_takes_effect_and_bypasses_discovery() {
 
     let out = run(&[&dir], &["--config", &explicit.to_string_lossy()]);
 
-    // The explicit config took effect: its `.foo` language is applied.
     assert!(
         out.contains("thing.foo"),
         "--config's language must take effect (thing.foo shown):\n{out}"
     );
-    // ...and it REPLACED discovery: the discovered `.bar` language was not consulted, so the `.bar` file stays an unknown (invisible) extension.
     assert!(
         !out.contains("other.bar"),
         "--config must bypass the discovered .annotated-tree.toml (.bar not shown):\n{out}"
@@ -84,7 +80,7 @@ fn explicit_config_flag_takes_effect_and_bypasses_discovery() {
 
 #[test]
 fn multi_root_run_scopes_config_per_root() {
-    // Root A opts into showing tests via its own `.annotated-tree.toml`; root B has no config. A single `annotated-tree A B` invocation must apply each root's config to ITS OWN tree — A's `include_tests` must not leak onto B.
+    // One invocation over both roots must apply each root's own config — A's include_tests must not leak onto B.
     let root_a = temp_dir("multi-a");
     let root_b = temp_dir("multi-b");
 
@@ -98,7 +94,6 @@ fn multi_root_run_scopes_config_per_root() {
         .unwrap();
     }
 
-    // Only root A sets include_tests = true.
     std::fs::write(
         root_a.join(".annotated-tree.toml"),
         "[display]\ninclude_tests = true\n",
@@ -120,9 +115,8 @@ fn multi_root_run_scopes_config_per_root() {
     let _ = std::fs::remove_dir_all(&root_b);
 }
 
-/// A discovered repo file is a full peer of the command line: `[display] hidden = true` in one makes
-/// every run in that tree see the dot-directory, so a repo whose hooks and workflows live behind a
-/// dot states it once instead of on every invocation.
+/// A discovered repo file is a full peer of the CLI: a repo whose workflows live behind a dot
+/// states `[display] hidden = true` once instead of on every invocation.
 #[test]
 fn repo_config_hidden_reveals_a_dot_directory_without_the_flag() {
     let dir = temp_dir("hidden-config");

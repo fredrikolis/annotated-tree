@@ -72,7 +72,6 @@ fn editing_core_surfaces_api_and_worker_as_blast_radius() {
     git(&dir, &["add", "-A"]);
     git(&dir, &["commit", "-q", "-m", "initial"]);
 
-    // Edit a file inside `core` only.
     std::fs::write(
         dir.join("packages/acme-core/acme_core/code.py"),
         "# Concern: the edited acme_core file for the changed fixture | Non-concern: real behavior (a test stub) | IO: none\n",
@@ -82,12 +81,10 @@ fn editing_core_surfaces_api_and_worker_as_blast_radius() {
     let (out, code) = run_capture(&dir, &["--since", "HEAD"]);
     assert_eq!(code, 0, "a normal filtered run exits 0:\n{out}");
 
-    // (a) The changed file appears.
     assert!(
         out.contains("acme_core"),
         "the edited core file must appear:\n{out}"
     );
-    // (b) The blast radius — the reverse-dep closure of core — is surfaced: api and worker both depend on core, so both must show even though neither was edited.
     assert!(
         out.contains("acme_api"),
         "api (depends on core) must surface as blast radius:\n{out}"
@@ -102,13 +99,12 @@ fn editing_core_surfaces_api_and_worker_as_blast_radius() {
 
 #[test]
 fn untracked_file_under_subdir_root_is_surfaced() {
-    // Regression: `git ls-files --others` emitted cwd-relative paths, so joining them onto the repo top-level dropped untracked files whenever the analyzed root was a SUBDIRECTORY — the tool's monorepo wheelhouse.
+    // Regression: joining `ls-files --others`'s cwd-relative paths onto repo-top dropped untracked files under a SUBDIRECTORY root.
     let dir = temp_workspace("subdir");
     git(&dir, &["init", "-q"]);
     git(&dir, &["add", "-A"]);
     git(&dir, &["commit", "-q", "-m", "initial"]);
 
-    // A brand-new UNTRACKED file under a subdirectory we then analyze directly.
     let subroot = dir.join("packages").join("acme-core");
     std::fs::write(
         subroot.join("acme_core").join("brandnew.py"),
@@ -128,7 +124,6 @@ fn untracked_file_under_subdir_root_is_surfaced() {
 
 #[test]
 fn bad_ref_and_non_repo_are_errors_not_empty() {
-    // Fail-Fast: a bad ref inside a real repo must error, never silently return an empty (mis-scoped) view.
     let dir = temp_workspace("badref");
     git(&dir, &["init", "-q"]);
     git(&dir, &["add", "-A"]);
@@ -146,7 +141,6 @@ fn bad_ref_and_non_repo_are_errors_not_empty() {
         "a bad ref must be an explicit error, not an empty result"
     );
 
-    // A directory that is not a git repository must also error.
     let non_repo = temp_workspace("nonrepo");
     let cli2 = Cli::parse_from(["annotated-tree", "--changed", &non_repo.to_string_lossy()]);
     let (mut out2, mut err2) = (Vec::new(), Vec::new());

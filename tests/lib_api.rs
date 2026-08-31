@@ -11,9 +11,7 @@ use globset::GlobSet;
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-/// A throwaway tree (under the system temp root, so no ancestor `.annotated-tree.toml` leaks in)
-/// with a recognized `src/lib.rs` and an unrecognized-extension `runbook.ops` carrying a
-/// marker-agnostic annotation.
+/// System temp root, not the repo, so no ancestor `.annotated-tree.toml` leaks in.
 fn temp_tree(tag: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("at-libapi-{}-{tag}-{n}", std::process::id()));
@@ -36,7 +34,7 @@ fn public_primitives_compose_config_walk_and_extraction() {
     let dir = temp_tree("compose");
     let config = Config::load(&dir, &CliOverrides::default()).expect("config resolves");
 
-    // The recognized-only walk (empty include) sees just the `.rs`, and the marker-based extractor reads its annotation through the resolved `Language`.
+    // Empty include: sees just the `.rs`; the marker-based extractor reads it via `Language`.
     let empty = GlobSet::empty();
     let recognized = walk::collect_code_files(&dir, &config, &empty, &empty).expect("walk");
     assert_eq!(recognized.len(), 1, "recognized walk sees only src/lib.rs");

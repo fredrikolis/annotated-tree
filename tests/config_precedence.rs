@@ -6,8 +6,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-/// A temp dir under the system temp root (so no ancestor `.annotated-tree.toml` from
-/// this repo leaks in) holding exactly `n_files` code files under `src/`.
+/// System temp root, not the repo, so no ancestor `.annotated-tree.toml` leaks in.
 fn temp_tree(tag: &str, n_files: usize) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("at-cfg-{}-{tag}-{n}", std::process::id()));
@@ -23,8 +22,7 @@ fn temp_tree(tag: &str, n_files: usize) -> PathBuf {
     dir
 }
 
-/// Spawn the built binary over `dir` with an explicit, per-process env (each pair set;
-/// each key in `clear` removed), so nothing leaks between tests. Returns (stderr, code).
+/// Spawn the built binary with an explicit per-process env, so nothing leaks between tests.
 fn run(dir: &Path, set: &[(&str, &str)], clear: &[&str], args: &[&str]) -> (String, i32) {
     let bin = env!("CARGO_BIN_EXE_annotated-tree");
     let mut cmd = Command::new(bin);
@@ -59,7 +57,6 @@ fn env_max_files_below_count_aborts_runaway_scope() {
 
 #[test]
 fn env_max_files_garbage_fails_fast() {
-    // A non-numeric env value is a hard config error (Fail-Fast), not silently ignored.
     let dir = temp_tree("env-garbage", 1);
     let (stderr, code) = run(
         &dir,
@@ -84,7 +81,6 @@ fn repo_config_limit_applies_and_cli_overrides_it() {
     )
     .unwrap();
 
-    // With the env cleared, the discovered repo `.annotated-tree.toml` cap (1) is below the file count (3): the config limit takes effect.
     let (_e1, code_cfg) = run(&dir, &[], &["ANNOTATED_TREE_MAX_FILES"], &[]);
     assert_eq!(
         code_cfg, 3,
@@ -108,7 +104,7 @@ fn repo_config_limit_applies_and_cli_overrides_it() {
 
 #[test]
 fn env_max_files_overrides_repo_config() {
-    // The MIDDLE rung of CLI > env > config: a repo `.annotated-tree.toml` cap of 1 would abort a 3-file tree, but env ANNOTATED_TREE_MAX_FILES=100 outranks the config file, so the walk completes (exit 0). No CLI flag is given, so this isolates env-beats-config specifically.
+    // Middle rung of CLI > env > config: no CLI flag, so this isolates env-beats-config alone.
     let dir = temp_tree("env-over-cfg", 3);
     std::fs::write(
         dir.join(".annotated-tree.toml"),

@@ -8,8 +8,7 @@ use clap::Parser;
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-/// A temp tree under the system temp root (so no ancestor `.annotated-tree.toml` from
-/// this repo leaks in) with `keep.rs`, `skip.rs`, and a `tests/checks.rs`.
+/// System temp root, not the repo, so no ancestor `.annotated-tree.toml` leaks in.
 fn temp_tree(tag: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("at-filters-{}-{tag}-{n}", std::process::id()));
@@ -33,8 +32,7 @@ fn run(dir: &Path, extra: &[&str]) -> String {
     out
 }
 
-/// Like [`run`] but returns the exit code alongside stdout, for cases (a passing
-/// `--strict-check`) where the code itself is under test.
+/// Like [`run`], but for cases where the exit code itself is under test.
 fn run_raw(dir: &Path, extra: &[&str]) -> (i32, String) {
     let mut argv = vec!["annotated-tree".to_string()];
     argv.extend(extra.iter().map(|s| s.to_string()));
@@ -46,9 +44,8 @@ fn run_raw(dir: &Path, extra: &[&str]) -> (i32, String) {
     (code, String::from_utf8(out).unwrap())
 }
 
-/// A temp tree with a recognized `src/main.rs`, an UNrecognized-extension file that carries a
-/// marker-agnostic annotation (`deploy.zsh`, a `#`-comment shell script the config has no `.zsh`
-/// language for), and a bare un-annotated `data.bin`. The three exercise `--include` selection.
+/// `main.rs` recognized, `deploy.zsh` UNrecognized but marker-agnostically annotated, and a
+/// bare `data.bin` — exercising `--include` selection.
 fn temp_tree_mixed(tag: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("at-include-{}-{tag}-{n}", std::process::id()));
@@ -153,7 +150,7 @@ fn hidden_dir_invisible_by_default_and_revealed_by_flag() {
 
 #[test]
 fn hidden_never_descends_into_dot_git() {
-    // The invariant `--hidden` makes load-bearing: `.git` was reachable only because every dot-directory was pruned, so the name prune must hold with the prune switched off — under `--no-gitignore` too, since a repo's `.gitignore` could otherwise be the only thing covering it.
+    // `.git` was safe only because every dot-directory was pruned; the name-prune must hold with `--hidden` on, even under `--no-gitignore`.
     let dir = temp_tree_hidden("dot-git");
     for args in [
         &["--hidden"][..],
@@ -191,12 +188,10 @@ fn hidden_respects_gitignore() {
 #[test]
 fn ignore_glob_excludes_the_matched_file() {
     let dir = temp_tree("ignore");
-    // Baseline: both files show.
     let base = run(&dir, &[]);
     assert!(base.contains("keep.rs"), "baseline lists keep.rs:\n{base}");
     assert!(base.contains("skip.rs"), "baseline lists skip.rs:\n{base}");
 
-    // `-I 'skip.rs'` drops exactly the matched file, leaving the sibling.
     let filtered = run(&dir, &["-I", "skip.rs"]);
     assert!(
         !filtered.contains("skip.rs"),
@@ -213,14 +208,12 @@ fn ignore_glob_excludes_the_matched_file() {
 #[test]
 fn tests_dir_hidden_by_default_and_revealed_by_flag() {
     let dir = temp_tree("tests-toggle");
-    // Default: the tests/ directory is pruned wholesale.
     let default = run(&dir, &[]);
     assert!(
         !default.contains("checks.rs"),
         "tests/ is hidden by default:\n{default}"
     );
 
-    // --include-tests reveals it.
     let shown = run(&dir, &["--include-tests"]);
     assert!(
         shown.contains("checks.rs"),
@@ -234,7 +227,6 @@ fn tests_dir_hidden_by_default_and_revealed_by_flag() {
 fn include_glob_adds_unrecognized_files_with_marker_agnostic_annotation() {
     let dir = temp_tree_mixed("glob");
 
-    // Baseline: only the recognized `.rs` file shows; the `.zsh`/`.bin` are invisible.
     let base = run(&dir, &[]);
     assert!(base.contains("main.rs"), "baseline lists main.rs:\n{base}");
     assert!(
@@ -242,7 +234,7 @@ fn include_glob_adds_unrecognized_files_with_marker_agnostic_annotation() {
         "an unrecognized extension is hidden by default:\n{base}"
     );
 
-    // `--include '*.zsh'` ADDS the shell script (recognized files stay), and its annotation is read marker-agnostically even though the config has no `.zsh` language.
+    // `--include '*.zsh'` ADDS the file; its annotation reads marker-agnostically, no `.zsh` language needed.
     let included = run(&dir, &["--include", "*.zsh"]);
     assert!(
         included.contains("main.rs"),
@@ -256,7 +248,6 @@ fn include_glob_adds_unrecognized_files_with_marker_agnostic_annotation() {
         included.contains("Concern: an unrecognized-extension file the selector opts in"),
         "the marker-agnostic annotation is shown:\n{included}"
     );
-    // A file NOT matched by the selector stays hidden.
     assert!(
         !included.contains("data.bin"),
         "--include '*.zsh' must not pull in the unmatched data.bin:\n{included}"
@@ -268,7 +259,7 @@ fn include_glob_adds_unrecognized_files_with_marker_agnostic_annotation() {
 #[test]
 fn strict_check_stays_recognized_only_under_include() {
     let dir = temp_tree_mixed("strict");
-    // `--include` governs the TREE view alone: `--strict-check` still lints recognized languages only, so it examines just `main.rs` and never the opted-in `.zsh`/`.bin` (whose comment grammar it could not validate). The tree's one `.rs` is annotated, so the gate passes.
+    // `--include` governs the TREE view alone; `--strict-check` still lints recognized languages only.
     let (code, out) = run_raw(&dir, &["--strict-check", "--include", "*"]);
     assert_eq!(code, 0, "the one recognized file is annotated:\n{out}");
     assert!(

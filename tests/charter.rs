@@ -19,7 +19,6 @@ fn run(extra: &[&str], fixture: &str) -> (String, i32) {
     (String::from_utf8(out).unwrap(), code)
 }
 
-/// The dir-row line for the directory named `name`/ (its trailing ` # …`), or `None`.
 fn dir_line<'a>(out: &'a str, name: &str) -> Option<&'a str> {
     out.lines().find(|l| l.contains(&format!("{name}/")))
 }
@@ -63,7 +62,7 @@ fn annotation_breadcrumb_overrides_the_entry_file() {
 
 #[test]
 fn entry_file_annotation_is_promoted_to_the_directory_row() {
-    // `charter/overridden` carries an override, so this needs `charter_rule` — a crate whose src/lib.rs is the entry file and whose dir has no breadcrumb.
+    // Needs `charter_rule`: a crate whose src/lib.rs is the entry file and whose dir has no breadcrumb.
     let (out, code) = run(&[], "charter_rule");
     assert_eq!(code, 0, "rendering (not strict) exits 0");
     let line = dir_line(&out, "withcharter").expect("withcharter/ dir row is present");
@@ -121,7 +120,7 @@ fn malformed_annotation_serializes_as_a_located_violation() {
 
 #[test]
 fn require_package_charter_flags_a_charterless_package() {
-    // Also the regression guard for the shared `annotated_files` / `packages_owning_annotations` path, now reached only via `Rules::is_active()`: if that seam breaks, this gate goes silent rather than failing.
+    // Also guards the shared `annotated_files`/`packages_owning_annotations` path reached via `Rules::is_active()`.
     let (out, code) = run(&["--strict-check"], "charter_rule");
     assert_eq!(
         code, 1,
@@ -155,7 +154,7 @@ fn require_package_charter_serializes_with_a_stable_code() {
 
 #[test]
 fn the_trailing_whitespace_guard_cannot_be_silently_disarmed() {
-    // THE TRAP: every editor terminates a file with a newline, so a rule keyed on "the body contains a newline" would have failed every real adopter on day one, while the hand-crafted fixtures — which had none — sailed through and kept the suite green.
+    // THE TRAP: every editor ends a file in a newline; a fixture with none would hide that rule breaking.
     let body = std::fs::read_to_string(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/charter/grouping/.annotation"),

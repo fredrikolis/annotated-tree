@@ -3,9 +3,8 @@
 use annotated_tree::Cli;
 use clap::Parser;
 
-/// A throwaway tree under the OS temp dir holding `files` (relative path -> content), and one
-/// run over it. `name` keys the directory so parallel tests never collide. Returns stdout,
-/// stderr (the channel the map's advisory notes use) and the exit code.
+/// `name` keys the directory so parallel tests never collide. Returns stdout, stderr (the
+/// channel the map's advisory notes use), and the exit code.
 fn run(name: &str, args: &[&str], files: &[(&str, &str)]) -> (String, String, i32) {
     let dir = std::env::temp_dir().join(format!("at-sidecar-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -31,9 +30,8 @@ fn run(name: &str, args: &[&str], files: &[(&str, &str)]) -> (String, String, i3
     )
 }
 
-/// The three fixture files every case below shares: a CSV that cannot hold a comment and the
-/// sidecar carrying its contract, plus one ordinary annotated code file so the tree is not
-/// degenerate.
+/// Shared across cases: a CSV with no comment marker, its sidecar's contract, and one ordinary
+/// annotated file so the tree is not degenerate.
 const CONTRACT: &str =
     "Concern: raw measurements from the runs | Non-concern: interpretation | IO: none";
 
@@ -76,7 +74,7 @@ fn a_sidecar_lists_a_comment_less_file_and_takes_no_row_of_its_own() {
 
 #[test]
 fn the_row_that_took_the_contract_says_so_in_json() {
-    // The structured counterpart of the text note: a JSON consumer reads the same exclusion off the data. `sidecar` is omitted on every other row, so an in-file annotation serializes byte-identically.
+    // The JSON counterpart: `sidecar` is omitted on every other row, so in-file rows serialize byte-identically.
     let (out, _err, code) = run("json", &["--format", "json"], &tree_files());
     assert_eq!(code, 0);
     let doc: serde_json::Value = serde_json::from_str(&out).expect("map json parses");
@@ -228,7 +226,7 @@ fn the_orphan_finding_is_structured_and_located() {
 
 #[test]
 fn a_directory_charter_is_never_read_as_a_sidecar() {
-    // The two scales share one metadata name, so the bare `.annotation` must resolve as the DIRECTORY's charter and never as a sidecar for a file called "" — the one case where the shared suffix could alias, and where a false orphan would otherwise be reported.
+    // The bare `.annotation` must resolve as the DIRECTORY's charter, not a sidecar for a file named "".
     let (out, err, code) = run(
         "charter",
         &[],
@@ -264,7 +262,7 @@ fn a_directory_charter_is_never_read_as_a_sidecar() {
 
 #[test]
 fn a_sidecar_with_prose_below_its_line_gives_the_row_no_contract_and_fails() {
-    // The same rule at file scale. The CSV is still LISTED — writing the sidecar IS the opt-in, and that does not depend on the body being valid — but it carries NO contract rather than one with a newline in it, and the finding lands on the sidecar, the file an author edits.
+    // Same rule at file scale: the CSV stays LISTED (opt-in doesn't need a valid body), but carries NO contract.
     let files = &[
         ("trials.csv", "a,b\n1,2\n"),
         (
@@ -326,10 +324,8 @@ fn a_sidecar_with_prose_below_its_line_gives_the_row_no_contract_and_fails() {
     );
 }
 
-/// One location, with every switch that could expose a `.annotation` row on at once: `--hidden` walks
-/// into the dot-file a charter is, `--include '*'` selects every path whatever its extension. So the
-/// suppression must hold by NAME, not as a by-product of the hidden prune — a charter listed as its
-/// own row is an Annotation somewhere other than the path it annotates.
+/// Every switch that could expose a `.annotation` row, on at once: suppression must hold by
+/// NAME, not as a by-product of the hidden prune.
 #[test]
 fn hidden_and_include_still_suppress_the_charter_row() {
     let mut files = tree_files();

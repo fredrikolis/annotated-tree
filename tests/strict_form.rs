@@ -3,9 +3,8 @@
 use annotated_tree::Cli;
 use clap::Parser;
 
-/// A throwaway tree under the OS temp dir holding `files` (relative path -> content), and the
-/// `--strict-check` verdict over it. `name` keys the directory so parallel tests never collide.
-/// Pass `--no-guide` when asserting on TEXT: a failing run otherwise appends the whole guide.
+/// `name` keys the directory so parallel tests never collide. Pass `--no-guide` when asserting
+/// on TEXT: a failing run otherwise appends the whole guide.
 fn check(name: &str, args: &[&str], files: &[(&str, &str)]) -> (String, i32) {
     let dir = std::env::temp_dir().join(format!("at-form-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -29,7 +28,7 @@ fn check(name: &str, args: &[&str], files: &[(&str, &str)]) -> (String, i32) {
 
 #[test]
 fn wording_is_never_a_finding() {
-    // Form only: filler words, a Non-concern pointing at the file itself, and `<…>` placeholder slots are all present and non-empty, so every one of them PASSES.
+    // Form only: filler words, a self-referential Non-concern, `<…>` slots — all non-empty, all PASS.
     let (out, code) = check(
         "wording",
         &["--no-guide"],
@@ -57,7 +56,7 @@ fn wording_is_never_a_finding() {
 
 #[test]
 fn the_emitted_suggestion_itself_passes() {
-    // The stub the report prints is itself a well-formed line, so applying it clears the form defect instead of stacking a second one.
+    // The stub is itself well-formed, so applying it clears the defect instead of stacking one.
     let (json, code) = check(
         "suggestion",
         &["--format", "json"],
@@ -82,7 +81,7 @@ fn the_emitted_suggestion_itself_passes() {
 
 #[test]
 fn an_empty_field_fails_and_the_text_says_which() {
-    // Without the detail clause the human line claims `concern` is missing while `Concern:` is plainly visible in `found` — the defect the carrier exists to fix.
+    // Without the detail clause, the line would claim `concern` missing while `Concern:` is visible.
     let (out, code) = check(
         "empty-text",
         &["--no-guide"],
@@ -186,7 +185,7 @@ fn the_length_bound_fires_only_past_the_limit() {
 
 #[test]
 fn the_length_bound_is_machine_readable_and_covers_charters() {
-    // A `.annotation` charter line is held to the SAME bound as a file annotation, and the structured surface carries the annotation's length plus the bound, as two numbers.
+    // A charter line is held to the SAME bound as a file annotation.
     let long = "z".repeat(30);
     let (json, code) = check(
         "len-json",
@@ -234,7 +233,7 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
         v.get("suggestion").is_none(),
         "no stub is emitted for an over-length annotation — the key is absent, not null: {v}"
     );
-    // Charters and file annotations reach that suppression by separate paths, so asserting it on the charter alone leaves the ordinary case — a commented file — unguarded.
+    // Charters and files reach that suppression by separate paths; the charter alone leaves the commented-file case unguarded.
     let file = doc["violations"]
         .as_array()
         .expect("violations array")
@@ -250,7 +249,7 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
 
 #[test]
 fn malformed_outranks_too_long() {
-    // At most one outcome per file: an over-length line that also has an empty field stays `malformed_annotation` — structure is the more basic defect.
+    // At most one outcome per file: structure is the more basic defect, so it outranks length.
     let long = "w".repeat(40);
     let (json, code) = check(
         "precedence",
@@ -276,7 +275,7 @@ fn malformed_outranks_too_long() {
 
 #[test]
 fn a_clean_tree_carries_no_warnings_surface() {
-    // The advisory channel is gone: the JSON document has no `warnings` key at all, and the TEXT report has no `Found N warning(s)` block.
+    // The advisory channel is gone: no `warnings` key in JSON, no `Found N warning(s)` in TEXT.
     let files: &[(&str, &str)] = &[("ok.rs", "// Concern: a | Non-concern: b | IO: c\n")];
     let (json, code) = check("no-warn-json", &["--format", "json"], files);
     assert_eq!(code, 0);
@@ -296,7 +295,7 @@ fn a_clean_tree_carries_no_warnings_surface() {
 
 #[test]
 fn a_comment_wrapped_charter_names_the_marker_and_suggests_the_bare_line() {
-    // "The separators are missing" is the one diagnosis that cannot be true when they are plainly there, and a stub seeded from the wrapped text embeds the marker, so it cannot be pasted either.
+    // "Separators are missing" can't be true when they're plainly there; a stub seeded from wrapped text embeds the marker too.
     let (out, code) = check(
         "wrapped-charter",
         &["--no-guide"],
@@ -325,7 +324,7 @@ fn a_comment_wrapped_charter_names_the_marker_and_suggests_the_bare_line() {
 
 #[test]
 fn yaml_frontmatter_keeps_line_one_and_the_annotation_still_counts() {
-    // Frontmatter must keep line 1, so requiring the annotation above it made shipping Claude Code skills and enforcing `--strict-check` mutually exclusive.
+    // Frontmatter must keep line 1: requiring the annotation above it broke shipping skills.
     let (out, code) = check(
         "frontmatter",
         &["--no-guide"],
@@ -354,7 +353,7 @@ fn yaml_frontmatter_keeps_line_one_and_the_annotation_still_counts() {
 
 #[test]
 fn a_toml_is_held_to_the_same_bar_as_code() {
-    // A manifest is a `.toml` like any other: it is checked, not waived because a directory row already states its dependency edges.
+    // A manifest is checked like any other `.toml`, not waived for stating dependency edges.
     let (out, code) = check(
         "toml",
         &["--no-guide"],
@@ -379,7 +378,7 @@ fn a_toml_is_held_to_the_same_bar_as_code() {
 
 #[test]
 fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
-    // An `.annotation`'s stray lines reach no report surface, on any of the three shapes that produce them — and the malformed-first-line cases prove the precedence rule: without it, `found:` and `suggestion:` echo the stray line and ONE finding prints as THREE lines.
+    // Stray lines reach no report surface; without the precedence rule, ONE finding prints as THREE lines.
     let files = &[
         ("main.rs", "// Concern: a | Non-concern: b | IO: none\n"),
         (
@@ -440,9 +439,8 @@ fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
     );
 }
 
-/// The gate's blind spot, frozen: a dot-directory is pruned, so every hook and workflow file under
-/// one is unchecked and the run reports all files passed — a green gate vouching for what it never
-/// opened. `--hidden` is what makes the check reach them.
+/// The gate's blind spot, frozen: a pruned dot-directory reports all files passed — a green
+/// gate vouching for what it never opened. `--hidden` makes the check reach it.
 #[test]
 fn strict_check_misses_a_hidden_dir_without_the_flag() {
     let files: &[(&str, &str)] = &[
@@ -498,7 +496,7 @@ fn an_extensionless_script_is_checked_and_a_plain_file_is_not() {
 
 #[test]
 fn a_yaml_is_held_to_the_same_bar_as_code() {
-    // A workflow file is where a repo's build, test and release behaviour actually lives, so it is checked like any other file rather than waived for being configuration.
+    // A workflow file is checked like any other, not waived for being configuration.
     let (out, code) = check(
         "yaml",
         &["--no-guide"],
@@ -521,10 +519,8 @@ fn a_yaml_is_held_to_the_same_bar_as_code() {
     );
 }
 
-/// In YAML `---` starts a DOCUMENT, not the metadata prefix the scanner skips for a Markdown skill
-/// file: without the distinction a file whose line 1 is `---` certifies as annotated off a comment
-/// three lines down. So a `.yml` annotation sits on line 1, above any marker. (A language whose own
-/// comment marker is `--`, such as SQL, has the same shape and is untouched here.)
+/// In YAML `---` starts a DOCUMENT, not the frontmatter prefix skipped for Markdown — without
+/// the distinction, line 1 `---` certifies off a comment three lines down.
 #[test]
 fn a_yaml_document_marker_is_content_not_frontmatter() {
     let (out, code) = check(

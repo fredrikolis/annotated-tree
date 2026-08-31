@@ -35,9 +35,8 @@ fn strip(args: &[&str]) -> i32 {
     annotated_tree::run(&cli, &mut Vec::new(), &mut Vec::new()).unwrap()
 }
 
-/// The whole contract: nothing is written without confirmation, and what IS written is only the
-/// conforming three-field line. An ordinary comment that mentions `Concern:` and a line missing a
-/// field both survive — stripping on the extractor alone would take the first comment of every file.
+/// Nothing is written without confirmation, and only the conforming three-field line is. A mere
+/// mention of `Concern:` and a line missing a field both survive.
 #[test]
 fn strip_removes_conforming_annotations_only_once_confirmed() {
     let dir = tree("contract");
@@ -72,9 +71,8 @@ fn strip_removes_conforming_annotations_only_once_confirmed() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// An Annotation is a span, not a line. A block comment closing mid-line and a docstring
-/// opening one are both refused, because deleting their line would take code with it. The same path
-/// named twice must also not delete a second line — the verdict is re-established before each write.
+/// An Annotation is a span, not a line: a closer mid-line or an opener one are both refused,
+/// since deleting the line would take code with it. A path named twice must not delete twice.
 #[test]
 fn a_line_that_is_not_wholly_an_annotation_is_left_alone() {
     let dir = tree("span");
@@ -103,8 +101,7 @@ fn a_line_that_is_not_wholly_an_annotation_is_left_alone() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// The JSON surface reports AFTER the write pass and echoes the path as given, so a caller can
-/// match a row to its input and tell a clean run from a partial one.
+/// Reports AFTER the write pass and echoes the path as given, so a caller can tell clean from partial.
 #[test]
 fn the_json_report_is_emitted_for_success_as_well_as_failure() {
     let dir = tree("json");
@@ -125,8 +122,8 @@ fn the_json_report_is_emitted_for_success_as_well_as_failure() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// Each root is judged by ITS OWN config, so argument order cannot decide which files are edited.
-/// Pooling every target under one resolved config made `strip -R A B` and `strip -R B A` disagree.
+/// Each root is judged by ITS OWN config; pooling under one resolved config made `A B` and
+/// `B A` disagree.
 #[test]
 fn each_root_uses_its_own_config() {
     let dir = tree("roots");
@@ -146,7 +143,6 @@ fn each_root_uses_its_own_config() {
     )
     .unwrap();
 
-    // The .zz language is A's alone; B must not decide whether A's file is recognized.
     assert_eq!(
         strip(&[
             "strip",
@@ -161,8 +157,8 @@ fn each_root_uses_its_own_config() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// A file it cannot read is named with a dispatchable code and colours the exit, rather than
-/// passing silently; and the mode of a file it rewrites survives the rename.
+/// An unreadable file is named with a dispatchable code and colours the exit, not silence; a
+/// rewritten file's mode survives the rename.
 #[test]
 fn an_unreadable_file_is_reported_and_a_mode_survives() {
     let dir = tree("io");
@@ -178,7 +174,7 @@ fn an_unreadable_file_is_reported_and_a_mode_survives() {
 
         let code = strip(&["strip", "-R", "-y", dir.to_str().unwrap()]);
         let mode = std::fs::metadata(&exec).unwrap().permissions().mode() & 0o777;
-        // Restored BEFORE asserting: a regression must not leave an unreadable file behind and fail the cleanup, poisoning the next run.
+        // Restored BEFORE asserting: a regression must not leave an unreadable file to poison cleanup.
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o644)).unwrap();
 
         assert_eq!(code, 4, "an unreadable file colours the exit code");
@@ -187,9 +183,8 @@ fn an_unreadable_file_is_reported_and_a_mode_survives() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// A skip is a reported row, not silence, and never colours the exit code. A symlink named beside
-/// its own target must not collapse into it: they share a canonical path, and dropping one would
-/// let argument order decide whether the real file is edited.
+/// A skip is a reported row, not silence, and never colours the exit code. A symlink beside its
+/// own target must not collapse into it, sharing a canonical path.
 #[test]
 fn a_skipped_path_is_reported_and_does_not_hide_its_target() {
     let dir = tree("skips");

@@ -8,8 +8,7 @@ use clap::Parser;
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-/// A temp dir under the system temp root (so no ancestor `.annotated-tree.toml` from
-/// this repo leaks in) holding a `src/` for freshly written code files.
+/// System temp root, not the repo, so no ancestor `.annotated-tree.toml` leaks in.
 fn temp_tree() -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("at-age-{}-{n}", std::process::id()));
@@ -30,7 +29,7 @@ fn age_flag_puts_a_relative_age_token_on_every_file_line() {
     assert_eq!(code, 0, "a normal run over a valid tree exits 0");
     let out = String::from_utf8(out).unwrap();
 
-    // Every `.py` leaf must carry the age suffix the text renderer appends (`  (… ago)`); freeze that the column is present in SHAPE, never the exact (real-time) value.
+    // Frozen on shape only: the real-time value can't be pinned exactly.
     let file_lines: Vec<&str> = out.lines().filter(|l| l.contains(".py")).collect();
     assert_eq!(file_lines.len(), 2, "both files should be listed:\n{out}");
     for line in &file_lines {
