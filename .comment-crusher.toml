@@ -13,3 +13,8 @@ max_lines = 150
 paths = ["CHANGELOG.md"]
 reason = "a changelog grows monotonically by design; a line budget measures age, not bloat"
 set = ["doc-length.max_lines=600"]
+
+[[allow]]
+paths = ["src/cli.rs"]
+reason = "clap-derive doc comments ARE the --help output; 4977 of its 5386 comment chars ship to users, so the ratio measures program text here"
+set = ["comment-ratio.max_ratio=0.60"]
