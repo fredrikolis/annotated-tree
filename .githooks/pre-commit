@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Concern: the mechanical gates every commit clears locally — annotations, then comment budget | Non-concern: the semantic review, attested in the commit message | IO: (working tree) -> pass/fail
+# Concern: the mechanical gates a change clears, here and replayed in CI — annotations, then comment budget | Non-concern: the semantic review, attested in the commit message | IO: (tree) -> pass/fail
 # Enable per clone: git config core.hooksPath .githooks   Bypass: git commit --no-verify
 set -euo pipefail
 
@@ -11,16 +11,12 @@ else
 	run=(cargo run --quiet --)
 fi
 
-# Must match ci.yml and local-release-check.sh's invocations exactly, or this passes while CI fails.
-fail_1() {
+# Flagless: .annotated-tree.toml carries the gate, and CI replays this script.
+"${run[@]}" --strict-check . || {
 	echo "" >&2
-	echo "pre-commit: ANNOTATION GATE FAILED — $1 (see above)" >&2
+	echo "pre-commit: ANNOTATION GATE FAILED (see above)" >&2
 	exit 1
 }
-"${run[@]}" --strict-check . --hidden --ignore sample --max-length 200 ||
-	fail_1 "a code file lacks one"
-"${run[@]}" --strict-check . --hidden --ignore sample --include-tests -I 'tests/fixtures' --max-length 200 ||
-	fail_1 "a file under tests/ lacks one"
 
 # Pinned to a rev and cached under target/, so a fresh clone gates without a manual install step.
 REV=db39b2eeeefbe31a64030577206737caadc4f2ac

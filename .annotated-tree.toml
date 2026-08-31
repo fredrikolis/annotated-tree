@@ -1,0 +1,9 @@
+# Concern: declares this repo's walk and annotation bound, for every run rooted here | Non-concern: running the gate (.githooks/pre-commit) or what a good annotation says | IO: none
+
+[rules]
+max_annotation_length = 200
+
+[display]
+hidden = true
+include_tests = true
+ignore = ["sample", "tests/fixtures"]

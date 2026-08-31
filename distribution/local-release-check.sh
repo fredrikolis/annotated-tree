@@ -25,8 +25,7 @@ cargo test --all
 
 say "self-check (dogfood the convention)"
 # Second run adds --include-tests but skips tests/fixtures (deliberately malformed).
-cargo run --release --quiet -- --strict-check . --hidden --ignore sample --max-length 200
-cargo run --release --quiet -- --strict-check . --hidden --ignore sample --include-tests -I 'tests/fixtures' --max-length 200
+bash .githooks/pre-commit
 
 say "crate is publishable"
 cargo package --list --allow-dirty >/dev/null

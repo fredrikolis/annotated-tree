@@ -1,4 +1,4 @@
-# Concern: the checks every push and pull request must clear — fmt, clippy, tests, the annotation gate | Non-concern: cutting a release | IO: (push, PR) -> pass/fail
+# Concern: the checks every push and pull request must clear — fmt, clippy, tests, then the commit gate the hook defines | Non-concern: cutting a release | IO: (push, PR) -> pass/fail
 name: ci
 
 on:
@@ -36,8 +36,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # Two runs (must match .githooks/pre-commit and local-release-check.sh): default prunes tests/, second adds it back except tests/fixtures.
-      - run: cargo run --release -- --strict-check . --hidden --ignore sample --max-length 200
-      - run: cargo run --release -- --strict-check . --hidden --ignore sample --include-tests -I 'tests/fixtures' --max-length 200
+      - run: cargo build --release
+      - name: Replay the commit gate
+        run: bash .githooks/pre-commit
 
   shellcheck:
     runs-on: ubuntu-latest
