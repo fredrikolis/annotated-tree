@@ -45,10 +45,8 @@ fn read_toml(path: &Path) -> Result<toml::Value> {
     toml::from_str(&read_file(path)?).with_context(|| format!("parsing {}", path.display()))
 }
 
-/// One implementation per ecosystem. Adding a language's dependency graph means adding a parser
-/// here and registering it in [`parsers`] — open for extension. `parse` returns `Err` only when the
-/// file is unreadable or syntactically corrupt; a well-formed file that declares no package is
-/// `Ok(ParsedManifest { name: None, .. })` and skipped quietly downstream.
+/// `parse` returns `Err` only when the file is unreadable or syntactically corrupt; a well-formed
+/// file that declares no package is `Ok(ParsedManifest { name: None, .. })` and skipped quietly.
 pub trait ManifestParser {
     fn filename(&self) -> &'static str;
     fn ecosystem(&self) -> Ecosystem;

@@ -1,8 +1,6 @@
 # Concern: the comment budget this repo holds itself to, one 200-char annotation per file aside | Non-concern: what makes a comment worth keeping | IO: none
 
 [global]
-# `sample/` is a fixture tree whose deliberately-loose annotations are pinned byte-for-byte by
-# tests/golden.rs. Editing it to pass a budget breaks the tests that assert its exact bytes.
 exclude = ["sample"]
 
 [rules.comment-ratio]
