@@ -7,7 +7,6 @@ use annotated_tree::exit;
 
 fn main() -> ExitCode {
     let cli = annotated_tree::parse_cli();
-    // Wrapping `io::stdout()` takes the lock once per flushed block rather than once per formatted fragment, and nothing else in the process needs stdout.
     let mut handle = io::BufWriter::new(io::stdout());
     let mut errout = io::stderr();
 
@@ -16,7 +15,7 @@ fn main() -> ExitCode {
             let _ = handle.flush();
             ExitCode::from(code as u8)
         }
-        // Exit 2 arrives two ways — clap emits it before `run()` for a bad flag, and `bash-annotator` returns `Ok(2)` for an invocation it cannot act on — and a runaway-scope abort is exit 3. Agents branch recovery on this code.
+        // Exit 2: clap or bash-annotator Ok(2); exit 3: runaway-scope abort.
         Err(err) => {
             let _ = handle.flush();
             let _ = writeln!(errout, "error: {err:#}");

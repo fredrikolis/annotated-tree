@@ -1,9 +1,6 @@
 // Concern: routes each bash-annotator verb to its module, and owns the hook wire format | Non-concern: eligibility, or what an annotation means | IO: (args, stdin) -> output + exit code
 
-//! What gets rewritten, and why it is safe to leave on. Only `ls`, `find` and `grep` are eligible
-//! (`map.rs` is that table); the annotator is appended as the LAST stage, one contract per line,
-//! so downstream stages still see raw output. Refusals are stated where enforced, in `inject.rs`.
-//! A Bash allowlist matches the REWRITTEN string, so a `Bash(grep:*)` rule stops matching.
+//! Annotator runs LAST in the pipeline; a Bash allowlist matches the REWRITTEN string, so `Bash(grep:*)` stops matching.
 
 mod contracts;
 mod hookfile;
@@ -19,8 +16,6 @@ use anyhow::Result;
 use crate::cli::BashAnnotator;
 use crate::exit;
 
-/// The six verbs and their one-line summaries, in the order `--help` lists them. Kept here so the
-/// fail-fast usage message below cannot drift from what actually parses.
 const VERBS: &[(&str, &str)] = &[
     (
         "--install-claude-hook [FILE]",
@@ -48,7 +43,6 @@ const VERBS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Which of the six mode flags are set, spelled as the user would type them.
 fn modes(args: &BashAnnotator) -> Vec<&'static str> {
     let mut set = Vec::new();
     if args.install_claude_hook {
@@ -80,16 +74,12 @@ fn usage(err: &mut impl Write) -> Result<()> {
     Ok(())
 }
 
-/// Run one `bash-annotator` verb. Exactly one of the six mode flags must be set.
-///
-/// Every path returns a code the [`exit`] taxonomy already names: [`exit::SUCCESS`] on success,
-/// [`exit::USAGE`] from the mode check, and [`exit::PRECONDITION`] from a failed settings write.
 pub(crate) fn dispatch(
     args: &BashAnnotator,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> Result<i32> {
-    // `trailing_var_arg` reaches us with the producer's flags intact, and its cost is paid here: clap swallows a mistyped flag into `args` instead of rejecting it, so falling through would make `--install-claud-hook` indistinguishable from success.
+    // trailing_var_arg makes clap swallow a mistyped flag into `args` instead of rejecting it.
     let set = modes(args);
     if set.len() != 1 {
         if set.len() > 1 {
@@ -130,10 +120,7 @@ pub(crate) fn dispatch(
     annotate_tool_output(args, out, err)
 }
 
-/// Turning the hook on and off. `cargo install` has no post-install step and `cargo uninstall` no
-/// pre-remove step — the only code cargo runs is build.rs, at BUILD time, which would fire on every
-/// checkout build and in CI. Editing a user's settings from there would be wrong twice over, so
-/// switching the hook on is an explicit command the user runs.
+/// cargo has no install/uninstall step; the only code it runs is build.rs, at BUILD time.
 fn hook_file(
     args: &BashAnnotator,
     verb: &str,
@@ -167,7 +154,7 @@ fn hook_file(
             writeln!(out, "{}", outcome.describe(&path))?;
             Ok(exit::SUCCESS)
         }
-        // A settings file that cannot be read, parsed or replaced is a precondition failure, and takes the code the taxonomy already has for one. Never 1: on this binary that is `--strict-check found at least one violation`, which `--help` advertises.
+        // Never exit 1: here that means "--strict-check found a violation".
         Err(e) => {
             writeln!(err, "annotated-tree bash-annotator: {e}")?;
             Ok(exit::PRECONDITION)
@@ -175,7 +162,6 @@ fn hook_file(
     }
 }
 
-/// Offline surface: show what each command would become, substituting nothing.
 fn check(args: &BashAnnotator, out: &mut impl Write) -> Result<i32> {
     for cmd in &args.args {
         let cmd = cmd.to_string_lossy();
@@ -187,27 +173,18 @@ fn check(args: &BashAnnotator, out: &mut impl Write) -> Result<i32> {
     Ok(exit::SUCCESS)
 }
 
-/// Said once at the start of a session, rather than on every rewritten call. It tells an agent the
-/// trailing `# Concern: …` lines are expected and points it at the command that maps a whole tree,
-/// because a notice that only prevents confusion never gets the map used. Holds the document with
-/// its own annotation line; [`crate::embedded_doc::embedded_body`] drops that.
+/// Holds its own annotation line; [`crate::embedded_doc::embedded_body`] drops it.
 const SESSION_ANNOUNCEMENT_DOC: &str = include_str!("session-announcement.md");
 
-/// The `SessionStart` hook entry point: print the announcement, exit 0. Claude Code adds a
-/// `SessionStart` hook's stdout to the agent's context verbatim, so no JSON envelope is needed and
-/// none is emitted — the text a user reads here is exactly the text the agent is handed.
+/// `SessionStart` hook entry point: stdout goes to the agent's context verbatim, no JSON envelope.
 fn session_announcement(out: &mut impl Write) -> Result<i32> {
     let text = crate::embedded_doc::embedded_body(SESSION_ANNOUNCEMENT_DOC, "session announcement");
     writeln!(out, "{}", text.trim_end())?;
     Ok(exit::SUCCESS)
 }
 
-/// The `PreToolUse` hook entry point: one hook event on stdin, one JSON object out, or nothing.
-/// An `updatedInput` comes back when the event names an eligible Bash command; anything else gets
-/// silence. ALWAYS [`exit::SUCCESS`] — a PreToolUse exit 2 BLOCKS the tool call, and other nonzero
-/// codes surface as errors.
+/// `PreToolUse` hook entry point: JSON in, JSON out or nothing. ALWAYS exit::SUCCESS; exit 2 blocks the tool call.
 fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
-    // A hook is fed JSON on stdin. Run by hand from a terminal there is nothing to read, so say so instead of blocking forever on a pipe that will never carry anything.
     if std::io::stdin().is_terminal() {
         writeln!(
             err,
@@ -237,7 +214,7 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
 
     let mut updated = input.clone();
     updated.insert("command".into(), serde_json::Value::String(rewritten));
-    // No `permissionDecision`: "allow" would SKIP PERMISSION CHECKS for the whole Bash command, including anything `&&`-joined to the eligible stage. No `additionalContext` either — it would repeat on every call, often about contracts that never appear.
+    // No `permissionDecision`: "allow" would skip permission checks for the whole `&&` chain.
     writeln!(
         out,
         "{}",
@@ -251,10 +228,7 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
     Ok(exit::SUCCESS)
 }
 
-/// The pipeline entry point: read the wrapped tool's stdout, append each printed path's contract.
-/// The tool is NOT run here — the shell already ran it, which is what makes the session's own `grep`
-/// and `find` the engines that answer. The argv is passed so the flags deciding how a line names its
-/// file are read rather than guessed.
+/// Tool NOT run here — the shell already ran it; the session's own `grep`/`find` are the engines.
 fn annotate_tool_output(
     args: &BashAnnotator,
     out: &mut impl Write,
@@ -274,7 +248,7 @@ fn annotate_tool_output(
     }
     let stdin = std::io::stdin();
     let mut input = stdin.lock();
-    // `annotate` returns a hardcoded 0, never the producer's status. That status is re-raised by the shell snippet `inject` emits, which runs in the agent's own shell — which is how `grep`'s exit 1 on no-match survives a rewrite.
+    // `annotate` always returns 0; `inject`'s shell snippet re-raises the producer's real exit status.
     let _ = run::annotate(&args.args, &mut input, out);
     Ok(exit::SUCCESS)
 }
