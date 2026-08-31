@@ -13,13 +13,15 @@ to [Semantic Versioning](https://semver.org/).
 ### Changed
 - `--githook-guide` defers the commit-msg wiring to `git-agent-verdict --repo-setup-guide`. The
   recipe it shipped is gone.
-- `--githook-guide` names the comment-budget gate: `cargo-lint-extra` and `.cargo-lint-extra.toml`.
+- The comment-budget gate is `comment-crusher`, configured by `.comment-crusher.toml`, replacing
+  `cargo-lint-extra`. `--githook-guide` names it.
 - Commit gates declare `git-agent-verdict` 2.0's bundled standards.
 
 ### Removed
 - `docs/repo-standards.md` and `docs/communication-style.md`, now bundled standards.
 - `SPEC.md`. The invariant register is gone; CONTRIBUTING no longer routes triage through it.
 - `docs/comment-standards.md`, now inline in `.githooks/pre-commit`.
+- `.cargo-lint-extra.toml`, with the `cargo-lint-extra` dependency it configured.
 
 ## [0.7.0] - 2026-08-04
 

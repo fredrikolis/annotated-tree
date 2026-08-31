@@ -90,7 +90,7 @@ Past that, the bound stops being editorial and becomes a design detector:
 
 ## Implementing this automation in an existing repo
 
-**Step 1: make the mechanical checks pass.** Lint and tests green. Annotate every file and put `annotated-tree --strict-check` over it. Add a comment budget; ours is [`.cargo-lint-extra.toml`](.cargo-lint-extra.toml).
+**Step 1: make the mechanical checks pass.** Lint and tests green. Annotate every file and put `annotated-tree --strict-check` over it. Add a comment budget; ours is [`.comment-crusher.toml`](.comment-crusher.toml).
 
 Do this with the gates off. A repo that has never carried annotations fails the annotation check on its first commit, and clearing that backlog one reviewed commit at a time is the slowest route there is. The gates are built to hold a state, not to reach one.
 

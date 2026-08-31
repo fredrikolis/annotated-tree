@@ -22,26 +22,26 @@ fail_1() {
 "${run[@]}" --strict-check . --hidden --ignore sample --include-tests -I 'tests/fixtures' --max-length 200 ||
 	fail_1 "a file under tests/ lacks one"
 
-# Blocking comes from `level = "deny"` in the config, not `-W` (exits 1 even with zero findings); pinned to a fork for its file-scoped rule.
-REV=7a232179e45414108d28047acd6315d9a2c4946b
-LINT=target/lint-tools/$REV/bin/cargo-lint-extra
+# Pinned to a rev and cached under target/, so a fresh clone gates without a manual install step.
+REV=db39b2eeeefbe31a64030577206737caadc4f2ac
+LINT=target/lint-tools/comment-crusher/$REV/bin/comment-crusher
 
-[ -x "$LINT" ] || cargo install --git https://github.com/fredrikolis/cargo-lint-extra --rev "$REV" --root "target/lint-tools/$REV" --quiet cargo-lint-extra >&2
+[ -x "$LINT" ] || cargo install --git https://github.com/fredrikolis/comment-crusher --rev "$REV" --root "target/lint-tools/comment-crusher/$REV" --quiet comment-crusher >&2
 
-"$LINT" lint-extra --config .cargo-lint-extra.toml . 1>&2 || {
+"$LINT" . --format editor 1>&2 || {
 	echo "" >&2
 	echo "pre-commit: COMMENT GATE FAILED — what this gate does and does not measure:" >&2
 	cat >&2 <<'STANDARD'
-It measures size, never quality: a comment ratio and consecutive runs inside functions, the same
-per file including doc comments, plus a line-length and a file-length bound. It cannot tell a good
-comment from a bad one and does not try.
+It measures size, never quality: a comment ratio per file, the length of any one comment block,
+and the length of a prose document. It cannot tell a good comment from a bad one and does not try.
 
 Tripping it is NOT an instruction to delete comments until the number passes. It asks why this
-function needed a block of explanation, or why this line or file grew so long; the usual answer is
+function needed a block of explanation, or why this document grew so long; the usual answer is
 that the code is wrong, not the comment. Fix the shape: extract it, rename it, split it.
 
-Never raise a threshold to make a file pass. The bound is the detector, and a bigger number only
-hides what it found.
+Never widen a bound in .comment-crusher.toml to make a file pass. The bound is the detector, and a
+bigger number only hides what it found. The one honest exception is a file whose comments are not
+commentary at all — clap doc comments that compile into --help — and it states that as its reason.
 
 The bar a comment must clear to earn its space: git-agent-verdict --standards programming
 STANDARD

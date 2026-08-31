@@ -27,9 +27,9 @@ PRE-COMMIT — mechanical, deterministic (never a judgment about meaning)
   that it is true.
 
   Comment budget, after the annotation check. A bound on comment VOLUME. Ours is
-  `cargo-lint-extra` from
-  https://github.com/fredrikolis/cargo-lint-extra, pinned to a rev and configured by
-  `.cargo-lint-extra.toml` — Rust-only, so substitute your own.
+  `comment-crusher` from
+  https://github.com/fredrikolis/comment-crusher, pinned to a rev and configured by
+  `.comment-crusher.toml` — language-agnostic, so it should port as-is.
 
 COMMIT-MSG — semantic, attestation-based (quality + staleness)
   The hook runs NO reviewer, and neither does the dev agent. `git-agent-verdict` dispatches each
