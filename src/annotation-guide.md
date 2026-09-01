@@ -5,10 +5,11 @@ Every source file's first line states its ONE job, in three ` | `-delimited fiel
   {TEMPLATE}
 Example:  {EXAMPLE}
 
-  Concern      the file's ONE job — a verb-led phrase. "utils" or "helpers" is not a job.
-  Non-concern  a concern an agent would expect here but this file does NOT own — not its
-               own internals. This field IS the point.
-  IO           (inputs) -> outputs, OR the literal `none` (config, data, docs).
+The template states each field; these are the traps it cannot:
+
+  Concern      "utils" or "helpers" is not a job.
+  Non-concern  never this file's own internals. This field IS the point.
+  IO           `none` for config, data and docs.
 
 BREVITY — every field states WHAT, never why, how, or when: no mechanism, rationale, or
 conditions in any of them. Naming WHERE an excluded concern lives is OPTIONAL — add the

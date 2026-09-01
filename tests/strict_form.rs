@@ -43,7 +43,7 @@ fn wording_is_never_a_finding() {
             ),
             (
                 "slots.rs",
-                "// Concern: <what it does> | Non-concern: <concern owned elsewhere> | IO: (<inputs>) -> <outputs>\n",
+                "// Concern: <what it does> | Non-concern: <a concern an agent would expect here but this file does NOT own> | IO: (<inputs>) -> <outputs>\n",
             ),
         ],
     );

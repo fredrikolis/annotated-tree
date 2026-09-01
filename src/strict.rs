@@ -53,7 +53,7 @@ pub struct Expected {
 
 /// `pub(crate)` so the embedded annotation guide renders the SAME template the checker enforces.
 pub(crate) const EXPECTED: Expected = Expected {
-    template: "Concern: {what it does} | Non-concern: {what it isn't} | IO: (in) -> out  OR  none",
+    template: "Concern: {the file's ONE job, verb-led} | Non-concern: {a concern an agent would expect here but this file does NOT own} | IO: (in) -> out  OR  none",
     required: &[
         crate::annotation::PART_CONCERN,
         crate::annotation::PART_NON_CONCERN,
@@ -773,7 +773,7 @@ fn tailored_suggestion(marker: &str, path: &str, seed: Option<&str>) -> String {
         None => format!("<what {} does>", file_stem(path)),
     };
     format!(
-        "{marker} Concern: {concern} | Non-concern: <concern owned elsewhere> | IO: (<inputs>) -> <outputs>"
+        "{marker} Concern: {concern} | Non-concern: <a concern an agent would expect here but this file does NOT own> | IO: (<inputs>) -> <outputs>"
     )
 }
 

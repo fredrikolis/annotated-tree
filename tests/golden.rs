@@ -259,7 +259,7 @@ fn strict_check_json_emits_structured_violations() {
     let suggestion = py["suggestion"].as_str().expect("suggestion string");
     assert!(
         suggestion.starts_with("# Concern: small helpers used across the engine")
-            && suggestion.contains("Non-concern: <concern owned elsewhere>")
+            && suggestion.contains("Non-concern: <a concern an agent would expect here but this file does NOT own>")
             && suggestion.contains("(<inputs>) -> <outputs>"),
         "suggestion is file-tailored with placeholder judgment slots: {suggestion:?}"
     );
@@ -364,10 +364,12 @@ fn strict_failure_prints_guide_on_stdout() {
         "the failing report carries the guide inline, got: {out}"
     );
     assert!(
-        out.contains(
-            "Concern: {what it does} | Non-concern: {what it isn't} | IO: (in) -> out  OR  none"
-        ),
-        "the guide renders the enforced template"
+        !out.contains("{TEMPLATE}"),
+        "the guide interpolates the enforced template rather than printing its slot, got: {out}"
+    );
+    assert!(
+        out.contains("Concern: {") && out.contains("| Non-concern: {") && out.contains("| IO: "),
+        "the rendered template keeps all three fields, got: {out}"
     );
     // Past `<!-- more -->`: the failure surface gets the FULL guide, not help's essence.
     assert!(
