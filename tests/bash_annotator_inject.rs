@@ -25,11 +25,7 @@ const CASES: &[(&str, Want, &str)] = &[
     ("awk '{print}' file.txt", Leave, "not a mapped tool"),
     // prefixes that do not change how the program resolves
     ("LC_ALL=C ls", Rewrite, "a locale assignment is harmless"),
-    (
-        "timeout 5 grep -rn x .",
-        Rewrite,
-        "timeout does not change resolution",
-    ),
+    ("timeout 5 grep -rn x .", Rewrite, "timeout does not change resolution"),
     ("nice ls -la", Rewrite, "nor does nice"),
     // prefixes that DO change it: rewriting these yields exit 127
     (
@@ -38,16 +34,8 @@ const CASES: &[(&str, Want, &str)] = &[
         "the annotator is spelled as an absolute path and the TOOL is resolved by the caller's \
          own shell, so a PATH change can strand neither",
     ),
-    (
-        "export PATH=/usr/bin; ls",
-        Rewrite,
-        "same, one stage later — the guard this used to need is gone with the substitution",
-    ),
-    (
-        "env -i ls /tmp",
-        Leave,
-        "env is not a stepped-over wrapper, so the program reads as `env`",
-    ),
+    ("export PATH=/usr/bin; ls", Rewrite, "same, one stage later — the guard this used to need is gone with the substitution"),
+    ("env -i ls /tmp", Leave, "env is not a stepped-over wrapper, so the program reads as `env`"),
     (
         "sudo grep -rn x .",
         Leave,
@@ -55,45 +43,21 @@ const CASES: &[(&str, Want, &str)] = &[
          fail-closed side",
     ),
     // spellings that explicitly ask for the REAL binary
-    (
-        "/usr/bin/grep pattern a.rs",
-        Leave,
-        "an explicit path means the binary",
-    ),
+    ("/usr/bin/grep pattern a.rs", Leave, "an explicit path means the binary"),
     (
         "\\grep pattern a.rs",
         Rewrite,
         "a backslash asks for the real binary and GETS it — nothing is substituted, so honouring \
          the caller's spelling and annotating its output are no longer in tension",
     ),
-    (
-        "command grep pattern a.rs",
-        Leave,
-        "the program reads as `command`, which is not in the map",
-    ),
-    (
-        "./grep pattern a.rs",
-        Leave,
-        "a relative path is a different program",
-    ),
+    ("command grep pattern a.rs", Leave, "the program reads as `command`, which is not in the map"),
+    ("./grep pattern a.rs", Leave, "a relative path is a different program"),
     // grep flags on which the session function delegates to the real binary
-    (
-        "grep -rlZ A .",
-        Leave,
-        "-Z emits NUL-delimited records, so there are no lines to append to",
-    ),
-    (
-        "grep -rl --null A .",
-        Leave,
-        "the long spelling of the same",
-    ),
+    ("grep -rlZ A .", Leave, "-Z emits NUL-delimited records, so there are no lines to append to"),
+    ("grep -rl --null A .", Leave, "the long spelling of the same"),
     ("grep -rl --null-data A .", Leave, "and a third spelling"),
     ("ls --zero", Leave, "ls has its own NUL-delimited mode"),
-    (
-        "find . -name x -print0",
-        Leave,
-        "so does find, spelled as a PREDICATE rather than a flag",
-    ),
+    ("find . -name x -print0", Leave, "so does find, spelled as a PREDICATE rather than a flag"),
     (
         "grep -rl --format-open x .",
         Rewrite,
@@ -103,16 +67,8 @@ const CASES: &[(&str, Want, &str)] = &[
     ("grep -rl --config x .", Rewrite, "same"),
     ("grep -rl --save-config x .", Rewrite, "same"),
     // control operators do not disqualify; each branch still writes to the result
-    (
-        "cd src && ls -la && grep -rn foo .",
-        Rewrite,
-        "&& keeps stdout",
-    ),
-    (
-        "ls -R /a 2>/dev/null || ls -R /b",
-        Rewrite,
-        "|| keeps stdout",
-    ),
+    ("cd src && ls -la && grep -rn foo .", Rewrite, "&& keeps stdout"),
+    ("ls -R /a 2>/dev/null || ls -R /b", Rewrite, "|| keeps stdout"),
     ("ls; grep -rn foo .", Rewrite, "; keeps stdout"),
     // stderr redirection is not stdout redirection
     ("ls 2>/dev/null", Rewrite, "2> is stderr"),
@@ -123,11 +79,7 @@ const CASES: &[(&str, Want, &str)] = &[
     ("ls >> listing.txt", Leave, "redirected"),
     ("ls 1> listing.txt", Leave, "redirected"),
     ("ls &> listing.txt", Leave, "redirected"),
-    (
-        "ls | sort > out.txt",
-        Leave,
-        "redirected DOWNSTREAM of a pipe",
-    ),
+    ("ls | sort > out.txt", Leave, "redirected DOWNSTREAM of a pipe"),
     // downstream stages whose unit is a line
     ("ls | head -20", Rewrite, "head counts lines"),
     ("ls | tail -5", Rewrite, "tail counts lines"),
@@ -140,11 +92,7 @@ const CASES: &[(&str, Want, &str)] = &[
         "the annotator is LAST, so what reaches it is a count — a bare number that could itself \
          resolve to a file. This flipped when annotation moved to the tail",
     ),
-    (
-        "find . -name x | sort | head -3",
-        Rewrite,
-        "a chain of line-wise stages",
-    ),
+    ("find . -name x | sort | head -3", Rewrite, "a chain of line-wise stages"),
     // downstream stages that appended text would change
     (
         "ls | uniq",
@@ -153,36 +101,20 @@ const CASES: &[(&str, Want, &str)] = &[
          — annotating before it was what used to break it",
     ),
     ("ls | sort -u", Rewrite, "same reasoning, same fix"),
-    (
-        "ls | sort -k2",
-        Rewrite,
-        "a key reads the raw line; the contract is appended after sort has finished",
-    ),
+    ("ls | sort -k2", Rewrite, "a key reads the raw line; the contract is appended after sort has finished"),
     ("ls | sort -t:", Rewrite, "a field separator likewise"),
-    (
-        "ls | sort -o out.txt",
-        Leave,
-        "sort can take stdout away with a FLAG rather than with `>`",
-    ),
+    ("ls | sort -o out.txt", Leave, "sort can take stdout away with a FLAG rather than with `>`"),
     ("ls | wc", Leave, "wc counts words and bytes too"),
     ("ls | wc -l -c", Leave, "-c counts bytes"),
     ("ls | head -c 200", Leave, "bytes can cut a record in half"),
-    (
-        "ls | head -qc 20",
-        Leave,
-        "the byte flag hides in a cluster",
-    ),
+    ("ls | head -qc 20", Leave, "the byte flag hides in a cluster"),
     (
         "grep -rn foo . | grep -v test",
         Rewrite,
         "the filter matches the tool's own text, never appended text, so it drops exactly the \
          lines it would have dropped",
     ),
-    (
-        "cat x | grep foo",
-        Leave,
-        "a filter over a stream has no paths",
-    ),
+    ("cat x | grep foo", Leave, "a filter over a stream has no paths"),
     // `ls` layouts whose lines mean something only IN THE ORDER PRINTED
     (
         "ls -R | sort",
@@ -244,23 +176,11 @@ const CASES: &[(&str, Want, &str)] = &[
         "the boundary of the rule above: `head` keeps a PREFIX of the stream, so every header \
          that survives still precedes the block it scoped",
     ),
-    (
-        "ls -R | cat",
-        Rewrite,
-        "and a stage that neither drops nor reorders leaves the scoping intact",
-    ),
+    ("ls -R | cat", Rewrite, "and a stage that neither drops nor reorders leaves the scoping intact"),
     // output consumed rather than read
     ("grep -rl foo . | xargs rm", Leave, "xargs is not line-safe"),
-    (
-        "ls | sort | xargs rm",
-        Leave,
-        "nor is it line-safe further down the pipe",
-    ),
-    (
-        "find . -exec grep foo {} \\;",
-        Leave,
-        "-exec is the only thing that sets consumes_args",
-    ),
+    ("ls | sort | xargs rm", Leave, "nor is it line-safe further down the pipe"),
+    ("find . -exec grep foo {} \\;", Leave, "-exec is the only thing that sets consumes_args"),
     (
         "find . -name x -ok rm {} \\;",
         Leave,
@@ -270,21 +190,9 @@ const CASES: &[(&str, Want, &str)] = &[
          find's. `consumes_args` names only two of the four",
     ),
     // separators the lexer must distinguish
-    (
-        "ls -la\ngrep -rn foo .",
-        Rewrite,
-        "a newline separates commands; agents write multi-line Bash constantly",
-    ),
-    (
-        "ls & grep -rn x .",
-        Rewrite,
-        "& is a separator, not a redirect and not &&",
-    ),
-    (
-        "grep foo < file.txt",
-        Rewrite,
-        "an INPUT redirect does not take stdout away",
-    ),
+    ("ls -la\ngrep -rn foo .", Rewrite, "a newline separates commands; agents write multi-line Bash constantly"),
+    ("ls & grep -rn x .", Rewrite, "& is a separator, not a redirect and not &&"),
+    ("grep foo < file.txt", Rewrite, "an INPUT redirect does not take stdout away"),
     // the program token must be spelled bare
     (
         "\"grep\" -rn x .",
@@ -292,49 +200,21 @@ const CASES: &[(&str, Want, &str)] = &[
         "quoting stopped mattering once nothing is substituted: the shell resolves `grep` however \
          it would have, and we only read what it printed",
     ),
-    (
-        "nice -n 10 ls",
-        Leave,
-        "a wrapper's own argument is not the program",
-    ),
+    ("nice -n 10 ls", Leave, "a wrapper's own argument is not the program"),
     // long spellings of the flags that make a downstream stage unsafe
     ("ls | head --bytes=20", Leave, "the long form of -c"),
-    (
-        "ls | sort --unique",
-        Rewrite,
-        "the long form of -u, now equally safe",
-    ),
-    (
-        "ls | wc --lines",
-        Leave,
-        "the long form of -l, and still a count rather than paths",
-    ),
+    ("ls | sort --unique", Rewrite, "the long form of -u, now equally safe"),
+    ("ls | wc --lines", Leave, "the long form of -l, and still a count rather than paths"),
     // shapes the lexer must refuse rather than model
     ("files=$(ls src)", Leave, "command substitution"),
     ("echo `ls`", Leave, "backtick substitution"),
     ("( ls; ls ) | wc -l", Leave, "subshell"),
     ("ls \"unclosed", Leave, "unbalanced double quote"),
-    (
-        "ls 'unclosed",
-        Leave,
-        "unbalanced single quote — a different lexer branch",
-    ),
+    ("ls 'unclosed", Leave, "unbalanced single quote — a different lexer branch"),
     ("ls \\", Leave, "a trailing backslash is a third"),
-    (
-        "grep \"$(cat p)\" .",
-        Leave,
-        "substitution INSIDE double quotes is its own branch",
-    ),
-    (
-        "cat > f.sh <<'SH'\nls -la\nSH",
-        Leave,
-        "a heredoc body is DATA, not commands",
-    ),
-    (
-        "cat > f.sh <<-EOF\nls\nEOF",
-        Leave,
-        "so is an indented heredoc",
-    ),
+    ("grep \"$(cat p)\" .", Leave, "substitution INSIDE double quotes is its own branch"),
+    ("cat > f.sh <<'SH'\nls -la\nSH", Leave, "a heredoc body is DATA, not commands"),
+    ("cat > f.sh <<-EOF\nls\nEOF", Leave, "so is an indented heredoc"),
     // grouping the stage model does not represent
     (
         "{ ls; ls; } > out.txt",
@@ -342,11 +222,7 @@ const CASES: &[(&str, Want, &str)] = &[
         "a brace group's redirect belongs to the GROUP, and splitting on `;` cannot see that — \
          rewriting inside would write contracts into the agent's file",
     ),
-    (
-        "{ ls; ls; } | uniq",
-        Leave,
-        "same blindness on the pipe side",
-    ),
+    ("{ ls; ls; } | uniq", Leave, "same blindness on the pipe side"),
     (
         "for f in docs\ndo\nls $f\ndone > out.txt",
         Leave,
@@ -372,17 +248,9 @@ const CASES: &[(&str, Want, &str)] = &[
         "a trailing COMMENT must fall outside the parentheses; spliced inside it commented out \
          the closing paren and the agent got a bash syntax error and no output",
     ),
-    (
-        "ls file#1",
-        Rewrite,
-        "`#` inside a word is an ordinary character, not a comment opener",
-    ),
+    ("ls file#1", Rewrite, "`#` inside a word is an ordinary character, not a comment opener"),
     // redirects on either side of the command
-    (
-        "2>/dev/null ls -la",
-        Rewrite,
-        "a LEADING redirect must be inside the parentheses — bash rejects a redirect before `(`",
-    ),
+    ("2>/dev/null ls -la", Rewrite, "a LEADING redirect must be inside the parentheses — bash rejects a redirect before `(`"),
     (
         "ls 2>&1",
         Rewrite,
@@ -398,26 +266,10 @@ const CASES: &[(&str, Want, &str)] = &[
     ),
     ("ls ~/x", Rewrite, "a tilde expands for the same reason"),
     // downstream stages that stop the lines being paths
-    (
-        "ls | sed s/alpha/beta/",
-        Leave,
-        "sed rewrites the TEXT of a line, so the path read back is not the path printed",
-    ),
-    (
-        "ls | grep -c rs",
-        Leave,
-        "a count, which is exactly why `wc` is refused",
-    ),
-    (
-        "ls | grep -o x",
-        Leave,
-        "the matched fragment, not the line",
-    ),
-    (
-        "ls | grep -l x",
-        Leave,
-        "over a STREAM this prints `(standard input)`, not a path",
-    ),
+    ("ls | sed s/alpha/beta/", Leave, "sed rewrites the TEXT of a line, so the path read back is not the path printed"),
+    ("ls | grep -c rs", Leave, "a count, which is exactly why `wc` is refused"),
+    ("ls | grep -o x", Leave, "the matched fragment, not the line"),
+    ("ls | grep -l x", Leave, "over a STREAM this prints `(standard input)`, not a path"),
     ("ls | tac -s x", Leave, "-s redefines the record separator"),
     ("ls | nl -s :", Leave, "so does nl's"),
     (
@@ -481,10 +333,7 @@ const CASES: &[(&str, Want, &str)] = &[
 /// Drive the SHIPPED surface rather than an internal function: `--check` is what a user runs to
 /// ask what would happen to a command, so freezing it freezes something observable.
 fn check(cmd: &str) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
-        .args(["bash-annotator", "--check", cmd])
-        .output()
-        .expect("spawn injector");
+    let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree")).args(["bash-annotator", "--check", cmd]).output().expect("spawn injector");
     assert_eq!(
         out.status.code(),
         Some(0),
@@ -500,51 +349,26 @@ fn the_decision_table_holds() {
     // Collect every mismatch rather than stopping at the first: one run should report everything that is wrong, not the earliest thing that is.
     let mut wrong = Vec::new();
     for (cmd, want, why) in CASES {
-        let got = if check(cmd).starts_with("(unchanged)") {
-            Leave
-        } else {
-            Rewrite
-        };
+        let got = if check(cmd).starts_with("(unchanged)") { Leave } else { Rewrite };
         if got != *want {
             wrong.push(format!("  {cmd:?}\n    want {want:?} ({why}), got {got:?}"));
         }
     }
-    assert!(
-        wrong.is_empty(),
-        "{} of {} cases decided wrongly:\n{}",
-        wrong.len(),
-        CASES.len(),
-        wrong.join("\n")
-    );
+    assert!(wrong.is_empty(), "{} of {} cases decided wrongly:\n{}", wrong.len(), CASES.len(), wrong.join("\n"));
 }
 
 #[test]
 fn the_rest_of_the_command_survives_byte_for_byte() {
     // The agent's own text — spacing, quoting, globs — must reappear verbatim inside the parens.
     let spaced = check("ls    -la");
-    assert!(
-        spaced.contains("( ls    -la | "),
-        "spacing changed: {spaced}"
-    );
+    assert!(spaced.contains("( ls    -la | "), "spacing changed: {spaced}");
     let quoted = check("grep -rn \"a\\|b\" .");
-    assert!(
-        quoted.contains("( grep -rn \"a\\|b\" . | "),
-        "a quoted pipe was treated as a pipeline: {quoted}"
-    );
+    assert!(quoted.contains("( grep -rn \"a\\|b\" . | "), "a quoted pipe was treated as a pipeline: {quoted}");
     let both = check("cd src && ls -la && grep -rn foo .");
-    assert!(
-        both.starts_with("cd src && ( ls -la | ") && both.contains("( grep -rn foo . | "),
-        "the surrounding command was altered: {both}"
-    );
+    assert!(both.starts_with("cd src && ( ls -la | ") && both.contains("( grep -rn foo . | "), "the surrounding command was altered: {both}");
     // Exit-code recovery indexes the stage last BEFORE the annotator; equivalence.rs checks the CODE itself.
-    assert!(
-        check("ls | sort").contains("__rc=${__ps[1]}"),
-        "a two-stage pipeline must re-raise stage 1, not stage 0"
-    );
-    assert!(
-        check("ls -la").contains("__rc=${__ps[0]}"),
-        "a one-stage pipeline must re-raise stage 0"
-    );
+    assert!(check("ls | sort").contains("__rc=${__ps[1]}"), "a two-stage pipeline must re-raise stage 1, not stage 0");
+    assert!(check("ls -la").contains("__rc=${__ps[0]}"), "a one-stage pipeline must re-raise stage 0");
 }
 
 #[test]

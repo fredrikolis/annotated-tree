@@ -29,118 +29,49 @@ fn check(name: &str, args: &[&str], files: &[(&str, &str)]) -> (String, i32) {
 #[test]
 fn wording_is_never_a_finding() {
     // Form only: filler words, a self-referential Non-concern, `<…>` slots — all non-empty, all PASS.
-    let (out, code) = check(
-        "wording",
-        &["--no-guide"],
-        &[
-            (
-                "filler.rs",
-                "// Concern: utils | Non-concern: none | IO: none\n",
-            ),
-            (
-                "inward.rs",
-                "// Concern: caches lookups | Non-concern: this file's own state | IO: (Key) -> Value\n",
-            ),
-            (
-                "slots.rs",
-                "// Concern: <what it does> | Non-concern: <a concern an agent would expect here but this file does NOT own> | IO: (<inputs>) -> <outputs>\n",
-            ),
-        ],
-    );
-    assert_eq!(
-        code, 0,
-        "a well-formed annotation passes whatever words it holds:\n{out}"
-    );
+    let (out, code) = check("wording", &["--no-guide"], &[("filler.rs", "// Concern: utils | Non-concern: none | IO: none\n"), ("inward.rs", "// Concern: caches lookups | Non-concern: this file's own state | IO: (Key) -> Value\n"), ("slots.rs", "// Concern: <what it does> | Non-concern: <a concern an agent would expect here but this file does NOT own> | IO: (<inputs>) -> <outputs>\n")]);
+    assert_eq!(code, 0, "a well-formed annotation passes whatever words it holds:\n{out}");
     assert!(out.contains("All 3 files passed"), "{out}");
 }
 
 #[test]
 fn the_emitted_suggestion_itself_passes() {
     // The stub is itself well-formed, so applying it clears the defect instead of stacking one.
-    let (json, code) = check(
-        "suggestion",
-        &["--format", "json"],
-        &[("gap.rs", "let x = 1;\n")],
-    );
+    let (json, code) = check("suggestion", &["--format", "json"], &[("gap.rs", "let x = 1;\n")]);
     assert_eq!(code, 1);
     let doc: serde_json::Value = serde_json::from_str(&json).expect("json parses");
-    let suggestion = doc["violations"][0]["suggestion"]
-        .as_str()
-        .expect("the violation carries a suggestion")
-        .to_string();
-    let (out, code) = check(
-        "suggestion-round-trip",
-        &["--no-guide"],
-        &[("gap.rs", &format!("{suggestion}\n"))],
-    );
-    assert_eq!(
-        code, 0,
-        "the emitted suggestion must pass the check that emitted it:\n{out}"
-    );
+    let suggestion = doc["violations"][0]["suggestion"].as_str().expect("the violation carries a suggestion").to_string();
+    let (out, code) = check("suggestion-round-trip", &["--no-guide"], &[("gap.rs", &format!("{suggestion}\n"))]);
+    assert_eq!(code, 0, "the emitted suggestion must pass the check that emitted it:\n{out}");
 }
 
 #[test]
 fn an_empty_field_fails_and_the_text_says_which() {
     // Without the detail clause, the line would claim `concern` missing while `Concern:` is visible.
-    let (out, code) = check(
-        "empty-text",
-        &["--no-guide"],
-        &[(
-            "empty.rs",
-            "// Concern:  | Non-concern: eviction | IO: (a) -> b\n",
-        )],
-    );
+    let (out, code) = check("empty-text", &["--no-guide"], &[("empty.rs", "// Concern:  | Non-concern: eviction | IO: (a) -> b\n")]);
     assert_eq!(code, 1, "an empty field is fatal:\n{out}");
-    assert!(
-        out.contains("annotation is malformed")
-            && out.contains("— the Concern field is present but empty"),
-        "the TEXT line carries the detail clause: {out}"
-    );
+    assert!(out.contains("annotation is malformed") && out.contains("— the Concern field is present but empty"), "the TEXT line carries the detail clause: {out}");
 }
 
 #[test]
 fn every_empty_field_is_named_in_the_machine_defect() {
-    let (json, code) = check(
-        "empty-json",
-        &["--format", "json"],
-        &[("empty.rs", "// Concern:  | Non-concern:  | IO: (a) -> b\n")],
-    );
+    let (json, code) = check("empty-json", &["--format", "json"], &[("empty.rs", "// Concern:  | Non-concern:  | IO: (a) -> b\n")]);
     assert_eq!(code, 1);
     let doc: serde_json::Value = serde_json::from_str(&json).expect("json parses");
     let v = &doc["violations"][0];
     assert_eq!(v["category"], serde_json::json!("malformed_annotation"));
-    assert_eq!(
-        v["defect"]["missing"],
-        serde_json::json!(["concern", "non_concern"]),
-        "both empty fields are named, not just the first: {v}"
-    );
-    assert!(
-        v.get("suggestion").is_some(),
-        "the converse of `annotation_too_long`: a malformed line DOES carry a stub: {v}"
-    );
+    assert_eq!(v["defect"]["missing"], serde_json::json!(["concern", "non_concern"]), "both empty fields are named, not just the first: {v}");
+    assert!(v.get("suggestion").is_some(), "the converse of `annotation_too_long`: a malformed line DOES carry a stub: {v}");
 }
 
 #[test]
 fn a_broken_structure_with_every_key_reports_all_three() {
-    let (json, code) = check(
-        "broken",
-        &["--format", "json"],
-        &[("broken.rs", "// Concern: a|Non-concern: b|IO: c\n")],
-    );
+    let (json, code) = check("broken", &["--format", "json"], &[("broken.rs", "// Concern: a|Non-concern: b|IO: c\n")]);
     assert_eq!(code, 1);
     let doc: serde_json::Value = serde_json::from_str(&json).expect("json parses");
     let v = &doc["violations"][0];
-    assert_eq!(
-        v["defect"]["missing"],
-        serde_json::json!(["concern", "non_concern", "io"]),
-        "no part could be extracted, so all three are reported: {v}"
-    );
-    assert!(
-        v["detail"]
-            .as_str()
-            .is_some_and(|d| d.contains("separators")),
-        "the detail explains why every key is visible yet nothing parsed: {v}"
-    );
+    assert_eq!(v["defect"]["missing"], serde_json::json!(["concern", "non_concern", "io"]), "no part could be extracted, so all three are reported: {v}");
+    assert!(v["detail"].as_str().is_some_and(|d| d.contains("separators")), "the detail explains why every key is visible yet nothing parsed: {v}");
 }
 
 #[test]
@@ -152,35 +83,18 @@ fn the_length_bound_fires_only_past_the_limit() {
     let at = body(6); // 40
     let over = body(7); // 41
 
-    let (out, code) = check(
-        "len-pass",
-        &["--no-guide", "--max-length", "40"],
-        &[("under.rs", &under), ("at.rs", &at)],
-    );
+    let (out, code) = check("len-pass", &["--no-guide", "--max-length", "40"], &[("under.rs", &under), ("at.rs", &at)]);
     assert_eq!(code, 0, "under and exactly at the bound pass:\n{out}");
 
-    let (out, code) = check(
-        "len-over",
-        &["--no-guide", "--max-length", "40"],
-        &[("over.rs", &over)],
-    );
+    let (out, code) = check("len-over", &["--no-guide", "--max-length", "40"], &[("over.rs", &over)]);
     assert_eq!(code, 1, "one character past the bound fails:\n{out}");
-    assert!(
-        out.contains("the annotation is 41 characters, over the 40 limit"),
-        "the whole annotation is counted, and named as such: {out}"
-    );
+    assert!(out.contains("the annotation is 41 characters, over the 40 limit"), "the whole annotation is counted, and named as such: {out}");
 
     // No flag, no repo config: the built-in layer supplies 200.
     let long = format!("// Concern: {} | Non-concern: b | IO: c\n", "x".repeat(250));
     let (out, code) = check("len-default", &["--no-guide"], &[("long.rs", &long)]);
-    assert_eq!(
-        code, 1,
-        "the shipped 200 bound applies with no flag:\n{out}"
-    );
-    assert!(
-        out.contains("over the 200 limit"),
-        "the default bound is 200: {out}"
-    );
+    assert_eq!(code, 1, "the shipped 200 bound applies with no flag:\n{out}");
+    assert!(out.contains("over the 200 limit"), "the default bound is 200: {out}");
 }
 
 #[test]
@@ -193,84 +107,34 @@ fn the_length_bound_is_machine_readable_and_covers_charters() {
         &[
             // Short fields, but 35 characters of line: over the bound as a whole.
             ("over.rs", "// Concern: a | Non-concern: b | IO: c\n"),
-            (
-                ".annotation",
-                &format!("Concern: {long} | Non-concern: b | IO: c\n"),
-            ),
+            (".annotation", &format!("Concern: {long} | Non-concern: b | IO: c\n")),
         ],
     );
     assert_eq!(code, 1);
     let doc: serde_json::Value = serde_json::from_str(&json).expect("json parses");
-    let v = doc["violations"]
-        .as_array()
-        .expect("violations array")
-        .iter()
-        .find(|v| v["path"] == serde_json::json!(".annotation"))
-        .expect("the over-length charter surfaces as a violation");
+    let v = doc["violations"].as_array().expect("violations array").iter().find(|v| v["path"] == serde_json::json!(".annotation")).expect("the over-length charter surfaces as a violation");
     assert_eq!(v["category"], serde_json::json!("annotation_too_long"));
     assert_eq!(v["language"], serde_json::json!("charter"));
-    assert_eq!(
-        v["defect"]["length"],
-        serde_json::json!(
-            "Concern: zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz | Non-concern: b | IO: c"
-                .chars()
-                .count()
-        ),
-        "the annotation's own length, not a field's: {v}"
-    );
-    assert_eq!(
-        v["defect"]["max"],
-        serde_json::json!(20),
-        "the bound is one number per violation: {v}"
-    );
-    assert!(
-        v["defect"]
-            .as_object()
-            .is_some_and(|d| d.len() == 2 && d.contains_key("length") && d.contains_key("max")),
-        "two numbers and nothing else — no per-field list, no empty `missing`: {v}"
-    );
-    assert!(
-        v.get("suggestion").is_none(),
-        "no stub is emitted for an over-length annotation — the key is absent, not null: {v}"
-    );
+    assert_eq!(v["defect"]["length"], serde_json::json!("Concern: zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz | Non-concern: b | IO: c".chars().count()), "the annotation's own length, not a field's: {v}");
+    assert_eq!(v["defect"]["max"], serde_json::json!(20), "the bound is one number per violation: {v}");
+    assert!(v["defect"].as_object().is_some_and(|d| d.len() == 2 && d.contains_key("length") && d.contains_key("max")), "two numbers and nothing else — no per-field list, no empty `missing`: {v}");
+    assert!(v.get("suggestion").is_none(), "no stub is emitted for an over-length annotation — the key is absent, not null: {v}");
     // Charters and files reach that suppression by separate paths; the charter alone leaves the commented-file case unguarded.
-    let file = doc["violations"]
-        .as_array()
-        .expect("violations array")
-        .iter()
-        .find(|v| v["path"] == serde_json::json!("over.rs"))
-        .expect("the over-length file annotation surfaces as a violation");
+    let file = doc["violations"].as_array().expect("violations array").iter().find(|v| v["path"] == serde_json::json!("over.rs")).expect("the over-length file annotation surfaces as a violation");
     assert_eq!(file["category"], serde_json::json!("annotation_too_long"));
-    assert!(
-        file.get("suggestion").is_none(),
-        "nor for an over-length FILE annotation — the key is absent, not null: {file}"
-    );
+    assert!(file.get("suggestion").is_none(), "nor for an over-length FILE annotation — the key is absent, not null: {file}");
 }
 
 #[test]
 fn malformed_outranks_too_long() {
     // At most one outcome per file: structure is the more basic defect, so it outranks length.
     let long = "w".repeat(40);
-    let (json, code) = check(
-        "precedence",
-        &["--format", "json", "--max-length", "10"],
-        &[(
-            "both.rs",
-            &format!("// Concern: {long} | Non-concern:  | IO: c\n"),
-        )],
-    );
+    let (json, code) = check("precedence", &["--format", "json", "--max-length", "10"], &[("both.rs", &format!("// Concern: {long} | Non-concern:  | IO: c\n"))]);
     assert_eq!(code, 1);
     let doc: serde_json::Value = serde_json::from_str(&json).expect("json parses");
     let v = &doc["violations"][0];
-    assert_eq!(
-        v["category"],
-        serde_json::json!("malformed_annotation"),
-        "structure outranks length: {v}"
-    );
-    assert!(
-        v["defect"].get("length").is_none() && v["defect"].get("max").is_none(),
-        "one violation carries one defect kind — no length numbers on a malformed line: {v}"
-    );
+    assert_eq!(v["category"], serde_json::json!("malformed_annotation"), "structure outranks length: {v}");
+    assert!(v["defect"].get("length").is_none() && v["defect"].get("max").is_none(), "one violation carries one defect kind — no length numbers on a malformed line: {v}");
 }
 
 #[test]
@@ -280,152 +144,58 @@ fn a_clean_tree_carries_no_warnings_surface() {
     let (json, code) = check("no-warn-json", &["--format", "json"], files);
     assert_eq!(code, 0);
     let doc: serde_json::Value = serde_json::from_str(&json).expect("json parses");
-    assert!(
-        doc.get("warnings").is_none(),
-        "the strict report has no `warnings` key: {json}"
-    );
+    assert!(doc.get("warnings").is_none(), "the strict report has no `warnings` key: {json}");
 
     let (out, code) = check("no-warn-text", &[], files);
     assert_eq!(code, 0);
-    assert!(
-        !out.contains("warning"),
-        "no advisory block on the TEXT surface: {out}"
-    );
+    assert!(!out.contains("warning"), "no advisory block on the TEXT surface: {out}");
 }
 
 #[test]
 fn a_comment_wrapped_charter_names_the_marker_and_suggests_the_bare_line() {
     // "Separators are missing" can't be true when they're plainly there; a stub seeded from wrapped text embeds the marker too.
-    let (out, code) = check(
-        "wrapped-charter",
-        &["--no-guide"],
-        &[
-            (
-                ".annotation",
-                "<!-- Concern: demo crate | Non-concern: y | IO: none -->\n",
-            ),
-            ("a.rs", "// Concern: a | Non-concern: b | IO: none\n"),
-        ],
-    );
+    let (out, code) = check("wrapped-charter", &["--no-guide"], &[(".annotation", "<!-- Concern: demo crate | Non-concern: y | IO: none -->\n"), ("a.rs", "// Concern: a | Non-concern: b | IO: none\n")]);
     assert_eq!(code, 1, "a wrapped charter is still malformed:\n{out}");
-    assert!(
-        out.contains("remove the `<!--` and `-->`"),
-        "the diagnosis names the marker to delete:\n{out}"
-    );
-    assert!(
-        !out.contains("field separators are missing"),
-        "and never claims the separators are missing when they are there:\n{out}"
-    );
-    assert!(
-        out.contains("suggestion: Concern: demo crate | Non-concern: y | IO: none"),
-        "the suggestion is the line from inside the wrapper — usable as printed:\n{out}"
-    );
+    assert!(out.contains("remove the `<!--` and `-->`"), "the diagnosis names the marker to delete:\n{out}");
+    assert!(!out.contains("field separators are missing"), "and never claims the separators are missing when they are there:\n{out}");
+    assert!(out.contains("suggestion: Concern: demo crate | Non-concern: y | IO: none"), "the suggestion is the line from inside the wrapper — usable as printed:\n{out}");
 }
 
 #[test]
 fn yaml_frontmatter_keeps_line_one_and_the_annotation_still_counts() {
     // Frontmatter must keep line 1: requiring the annotation above it broke shipping skills.
-    let (out, code) = check(
-        "frontmatter",
-        &["--no-guide"],
-        &[
-            (
-                "SKILL.md",
-                "---\ndescription: reviews code\n---\n<!-- Concern: the review brief | Non-concern: running it | IO: none -->\n\n# Skill\n",
-            ),
-            ("rule.md", "---\n\nopens with a horizontal rule\n"),
-        ],
-    );
+    let (out, code) = check("frontmatter", &["--no-guide"], &[("SKILL.md", "---\ndescription: reviews code\n---\n<!-- Concern: the review brief | Non-concern: running it | IO: none -->\n\n# Skill\n"), ("rule.md", "---\n\nopens with a horizontal rule\n")]);
     assert_eq!(code, 1, "only the rule-opener file fails:\n{out}");
-    assert!(
-        !out.contains("SKILL.md"),
-        "an annotation under frontmatter passes:\n{out}"
-    );
-    assert!(
-        out.contains("rule.md:1: missing annotation"),
-        "an unclosed `---` is a horizontal rule, not a prefix to skip:\n{out}"
-    );
-    assert!(
-        out.contains("1 of 2 files annotated"),
-        "the skill counts toward coverage:\n{out}"
-    );
+    assert!(!out.contains("SKILL.md"), "an annotation under frontmatter passes:\n{out}");
+    assert!(out.contains("rule.md:1: missing annotation"), "an unclosed `---` is a horizontal rule, not a prefix to skip:\n{out}");
+    assert!(out.contains("1 of 2 files annotated"), "the skill counts toward coverage:\n{out}");
 }
 
 #[test]
 fn a_toml_is_held_to_the_same_bar_as_code() {
     // A manifest is checked like any other `.toml`, not waived for stating dependency edges.
-    let (out, code) = check(
-        "toml",
-        &["--no-guide"],
-        &[
-            (
-                "annotated.toml",
-                "# Concern: the release profile | Non-concern: the code it builds | IO: none\n[profile.release]\nlto = true\n",
-            ),
-            ("Cargo.toml", "[package]\nname = \"demo\"\n"),
-        ],
-    );
+    let (out, code) = check("toml", &["--no-guide"], &[("annotated.toml", "# Concern: the release profile | Non-concern: the code it builds | IO: none\n[profile.release]\nlto = true\n"), ("Cargo.toml", "[package]\nname = \"demo\"\n")]);
     assert_eq!(code, 1, "an unannotated `.toml` fails the check:\n{out}");
-    assert!(
-        out.contains("Cargo.toml:1: missing annotation [toml]"),
-        "the manifest is reported under the toml language:\n{out}"
-    );
-    assert!(
-        out.contains("1 of 2 files annotated"),
-        "an annotated `.toml` counts toward coverage:\n{out}"
-    );
+    assert!(out.contains("Cargo.toml:1: missing annotation [toml]"), "the manifest is reported under the toml language:\n{out}");
+    assert!(out.contains("1 of 2 files annotated"), "an annotated `.toml` counts toward coverage:\n{out}");
 }
 
 #[test]
 fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
     // Stray lines reach no report surface; without the precedence rule, ONE finding prints as THREE lines.
-    let files = &[
-        ("main.rs", "// Concern: a | Non-concern: b | IO: none\n"),
-        (
-            "noisy/.annotation",
-            "Concern: NOISY | Non-concern: n | IO: none\nSTRAY-VALID-FIRST-LINE\n",
-        ),
-        (
-            "noisy/inner.rs",
-            "// Concern: c | Non-concern: d | IO: none\n",
-        ),
-        (
-            "broken/.annotation",
-            "not a charter line\nSTRAY-MALFORMED-FIRST-LINE\n",
-        ),
-        (
-            "broken/inner.rs",
-            "// Concern: e | Non-concern: f | IO: none\n",
-        ),
-        ("trials.csv", "a,b\n"),
-        (
-            "trials.csv.annotation",
-            "not even a charter line\nSTRAY-SIDECAR\n",
-        ),
-    ];
+    let files = &[("main.rs", "// Concern: a | Non-concern: b | IO: none\n"), ("noisy/.annotation", "Concern: NOISY | Non-concern: n | IO: none\nSTRAY-VALID-FIRST-LINE\n"), ("noisy/inner.rs", "// Concern: c | Non-concern: d | IO: none\n"), ("broken/.annotation", "not a charter line\nSTRAY-MALFORMED-FIRST-LINE\n"), ("broken/inner.rs", "// Concern: e | Non-concern: f | IO: none\n"), ("trials.csv", "a,b\n"), ("trials.csv.annotation", "not even a charter line\nSTRAY-SIDECAR\n")];
     let (out, code) = check("no-stray-text", &["--no-guide"], files);
     assert_eq!(code, 1, "{out}");
 
-    for stray in [
-        "STRAY-VALID-FIRST-LINE",
-        "STRAY-MALFORMED-FIRST-LINE",
-        "STRAY-SIDECAR",
-    ] {
+    for stray in ["STRAY-VALID-FIRST-LINE", "STRAY-MALFORMED-FIRST-LINE", "STRAY-SIDECAR"] {
         assert!(!out.contains(stray), "{stray} reached the report:\n{out}");
     }
 
     // Three artifacts, three findings, each located and each on ONE line. Sorted by path, so the report is deterministic regardless of walk order.
-    for located in [
-        "broken/.annotation:2: holds more than the one line",
-        "noisy/.annotation:2: holds more than the one line",
-        "trials.csv.annotation:2: holds more than the one line",
-    ] {
+    for located in ["broken/.annotation:2: holds more than the one line", "noisy/.annotation:2: holds more than the one line", "trials.csv.annotation:2: holds more than the one line"] {
         assert!(out.contains(located), "missing {located:?}:\n{out}");
     }
-    assert!(
-        out.contains("Found 3 annotation file(s) with trailing content"),
-        "{out}"
-    );
+    assert!(out.contains("Found 3 annotation file(s) with trailing content"), "{out}");
 
     // And NOTHING was diagnosed about any of their parts — including the two whose first line is malformed, which is the whole point of the precedence rule.
     assert!(
@@ -433,34 +203,22 @@ fn no_strict_report_line_ever_carries_text_from_below_an_annotation_file() {
         "no annotation violation: main.rs, noisy/inner.rs, broken/inner.rs and trials.csv are the \
          four checked files:\n{out}"
     );
-    assert!(
-        out.contains("3 of 4 files annotated"),
-        "the CSV's contract does not conform, so it is not counted as annotated:\n{out}"
-    );
+    assert!(out.contains("3 of 4 files annotated"), "the CSV's contract does not conform, so it is not counted as annotated:\n{out}");
 }
 
 /// The gate's blind spot, frozen: a pruned dot-directory reports all files passed — a green
 /// gate vouching for what it never opened. `--hidden` makes the check reach it.
 #[test]
 fn strict_check_misses_a_hidden_dir_without_the_flag() {
-    let files: &[(&str, &str)] = &[
-        ("ok.rs", "// Concern: a | Non-concern: b | IO: none\n"),
-        (".githooks/gate.sh", "#!/usr/bin/env bash\necho hi\n"),
-    ];
+    let files: &[(&str, &str)] = &[("ok.rs", "// Concern: a | Non-concern: b | IO: none\n"), (".githooks/gate.sh", "#!/usr/bin/env bash\necho hi\n")];
 
     let (out, code) = check("hidden-missed", &["--no-guide"], files);
     assert_eq!(code, 0, "the unannotated hook is never walked:\n{out}");
-    assert!(
-        out.contains("All 1 files passed"),
-        "and the report says everything passed:\n{out}"
-    );
+    assert!(out.contains("All 1 files passed"), "and the report says everything passed:\n{out}");
 
     let (out, code) = check("hidden-caught", &["--no-guide", "--hidden"], files);
     assert_eq!(code, 1, "--hidden puts the hook in scope:\n{out}");
-    assert!(
-        out.contains(".githooks/gate.sh") && out.contains("missing annotation"),
-        "and names it as the offender:\n{out}"
-    );
+    assert!(out.contains(".githooks/gate.sh") && out.contains("missing annotation"), "and names it as the offender:\n{out}");
 }
 
 /// Which extensionless files the gate reaches, as a delta: the one with a recognized `#!` is
@@ -468,112 +226,41 @@ fn strict_check_misses_a_hidden_dir_without_the_flag() {
 /// were suddenly demanded an annotation would be the failure mode of resolving by anything looser.
 #[test]
 fn an_extensionless_script_is_checked_and_a_plain_file_is_not() {
-    let (json, code) = check(
-        "shebang-scope",
-        &["--format", "json"],
-        &[
-            ("hook", "#!/usr/bin/env bash\necho hi\n"),
-            ("NOTICE", "Copyright the fixture\n"),
-            ("ok.rs", "// Concern: a | Non-concern: b | IO: none\n"),
-        ],
-    );
+    let (json, code) = check("shebang-scope", &["--format", "json"], &[("hook", "#!/usr/bin/env bash\necho hi\n"), ("NOTICE", "Copyright the fixture\n"), ("ok.rs", "// Concern: a | Non-concern: b | IO: none\n")]);
     assert_eq!(code, 1, "the unannotated script fails the check:\n{json}");
     let doc: serde_json::Value = serde_json::from_str(&json).expect("json parses");
-    assert_eq!(
-        doc["files_checked"],
-        serde_json::json!(2),
-        "the script and the .rs, never the NOTICE: {doc}"
-    );
+    assert_eq!(doc["files_checked"], serde_json::json!(2), "the script and the .rs, never the NOTICE: {doc}");
     let violations = doc["violations"].as_array().expect("violations array");
     assert_eq!(violations.len(), 1, "one offender: {doc}");
     assert_eq!(violations[0]["path"], serde_json::json!("hook"));
-    assert_eq!(
-        violations[0]["language"],
-        serde_json::json!("shell"),
-        "the shebang's interpreter is what named the language: {doc}"
-    );
+    assert_eq!(violations[0]["language"], serde_json::json!("shell"), "the shebang's interpreter is what named the language: {doc}");
 }
 
 #[test]
 fn a_yaml_is_held_to_the_same_bar_as_code() {
     // A workflow file is checked like any other, not waived for being configuration.
-    let (out, code) = check(
-        "yaml",
-        &["--no-guide"],
-        &[
-            (
-                "annotated.yml",
-                "# Concern: the checks every push must clear | Non-concern: cutting a release | IO: (push) -> pass/fail\nname: ci\n",
-            ),
-            ("bare.yaml", "name: bare\n"),
-        ],
-    );
+    let (out, code) = check("yaml", &["--no-guide"], &[("annotated.yml", "# Concern: the checks every push must clear | Non-concern: cutting a release | IO: (push) -> pass/fail\nname: ci\n"), ("bare.yaml", "name: bare\n")]);
     assert_eq!(code, 1, "an unannotated `.yaml` fails the check:\n{out}");
-    assert!(
-        out.contains("bare.yaml:1: missing annotation [yaml]"),
-        "reported under the yaml language:\n{out}"
-    );
-    assert!(
-        out.contains("1 of 2 files annotated"),
-        "and both extensions of the one language are checked:\n{out}"
-    );
+    assert!(out.contains("bare.yaml:1: missing annotation [yaml]"), "reported under the yaml language:\n{out}");
+    assert!(out.contains("1 of 2 files annotated"), "and both extensions of the one language are checked:\n{out}");
 }
 
 /// In YAML `---` starts a DOCUMENT, not the frontmatter prefix skipped for Markdown — without
 /// the distinction, line 1 `---` certifies off a comment three lines down.
 #[test]
 fn a_yaml_document_marker_is_content_not_frontmatter() {
-    let (out, code) = check(
-        "yaml-doc-marker",
-        &["--no-guide"],
-        &[
-            (
-                "above.yml",
-                "# Concern: the annotation above the marker | Non-concern: b | IO: none\n---\nname: ci\n",
-            ),
-            (
-                "multidoc.yml",
-                "---\nname: first\n---\n# Concern: buried in document two | Non-concern: b | IO: none\nname: second\n",
-            ),
-            (
-                "docstart.yml",
-                "---\n# Concern: under the marker | Non-concern: b | IO: none\nname: ci\n",
-            ),
-        ],
-    );
+    let (out, code) = check("yaml-doc-marker", &["--no-guide"], &[("above.yml", "# Concern: the annotation above the marker | Non-concern: b | IO: none\n---\nname: ci\n"), ("multidoc.yml", "---\nname: first\n---\n# Concern: buried in document two | Non-concern: b | IO: none\nname: second\n"), ("docstart.yml", "---\n# Concern: under the marker | Non-concern: b | IO: none\nname: ci\n")]);
     assert_eq!(code, 1, "two of the three fail:\n{out}");
-    assert!(
-        !out.contains("above.yml"),
-        "a line-1 annotation above the marker passes:\n{out}"
-    );
-    assert!(
-        out.contains("multidoc.yml:1: missing annotation [yaml]"),
-        "a comment past a closed `---` block is NOT this file's annotation:\n{out}"
-    );
-    assert!(
-        out.contains("docstart.yml:1: missing annotation [yaml]"),
-        "and neither is one under an opening document marker:\n{out}"
-    );
-    assert!(
-        out.contains("1 of 3 files annotated"),
-        "only the line-1 file counts:\n{out}"
-    );
+    assert!(!out.contains("above.yml"), "a line-1 annotation above the marker passes:\n{out}");
+    assert!(out.contains("multidoc.yml:1: missing annotation [yaml]"), "a comment past a closed `---` block is NOT this file's annotation:\n{out}");
+    assert!(out.contains("docstart.yml:1: missing annotation [yaml]"), "and neither is one under an opening document marker:\n{out}");
+    assert!(out.contains("1 of 3 files annotated"), "only the line-1 file counts:\n{out}");
 }
 
 /// The frontmatter prefix is untouched for every language whose files do not open with `---` as
 /// their own syntax: a Markdown skill file still carries its annotation under a closed block.
 #[test]
 fn frontmatter_still_prefixes_a_markdown_file() {
-    let (out, code) = check(
-        "frontmatter-md",
-        &["--no-guide"],
-        &[(
-            "SKILL.md",
-            "---\ndescription: reviews code\n---\n<!-- Concern: the review brief | Non-concern: running it | IO: none -->\n",
-        )],
-    );
-    assert_eq!(
-        code, 0,
-        "an annotation under frontmatter still passes:\n{out}"
-    );
+    let (out, code) = check("frontmatter-md", &["--no-guide"], &[("SKILL.md", "---\ndescription: reviews code\n---\n<!-- Concern: the review brief | Non-concern: running it | IO: none -->\n")]);
+    assert_eq!(code, 0, "an annotation under frontmatter still passes:\n{out}");
 }

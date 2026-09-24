@@ -57,137 +57,15 @@ struct Annotator {
 }
 
 /// `--color` is absent: its argument is optional, so `ls --color docs` lists `docs`.
-const LS_VALUE_LONG: &[&str] = &[
-    "--ignore",
-    "--hide",
-    "--width",
-    "--tabsize",
-    "--sort",
-    "--time",
-    "--block-size",
-    "--format",
-    "--quoting-style",
-    "--time-style",
-    "--indicator-style",
-];
+const LS_VALUE_LONG: &[&str] = &["--ignore", "--hide", "--width", "--tabsize", "--sort", "--time", "--block-size", "--format", "--quoting-style", "--time-style", "--indicator-style"];
 
 /// Without this, `--regexp`'s value in `grep --regexp PAT file` counted as a second operand.
-const GREP_VALUE_LONG: &[&str] = &[
-    "--regexp",
-    "--file",
-    "--max-count",
-    "--after-context",
-    "--before-context",
-    "--context",
-    "--binary-files",
-    "--devices",
-    "--directories",
-    "--exclude",
-    "--exclude-dir",
-    "--exclude-from",
-    "--include",
-    "--label",
-    "--group-separator",
-];
+const GREP_VALUE_LONG: &[&str] = &["--regexp", "--file", "--max-count", "--after-context", "--before-context", "--context", "--binary-files", "--devices", "--directories", "--exclude", "--exclude-dir", "--exclude-from", "--include", "--label", "--group-separator"];
 
 /// EVERY long option each tool has: `getopt_long` accepts any unambiguous abbreviation.
-const LS_LONG: &[&str] = &[
-    "--all",
-    "--almost-all",
-    "--author",
-    "--escape",
-    "--block-size",
-    "--ignore-backups",
-    "--color",
-    "--directory",
-    "--dired",
-    "--classify",
-    "--file-type",
-    "--format",
-    "--full-time",
-    "--group-directories-first",
-    "--no-group",
-    "--human-readable",
-    "--si",
-    "--dereference",
-    "--dereference-command-line",
-    "--dereference-command-line-symlink-to-dir",
-    "--hide",
-    "--hyperlink",
-    "--indicator-style",
-    "--inode",
-    "--ignore",
-    "--kibibytes",
-    "--literal",
-    "--numeric-uid-gid",
-    "--hide-control-chars",
-    "--show-control-chars",
-    "--quote-name",
-    "--quoting-style",
-    "--reverse",
-    "--recursive",
-    "--size",
-    "--sort",
-    "--time",
-    "--time-style",
-    "--tabsize",
-    "--width",
-    "--context",
-    "--zero",
-    "--version",
-    "--help",
-];
+const LS_LONG: &[&str] = &["--all", "--almost-all", "--author", "--escape", "--block-size", "--ignore-backups", "--color", "--directory", "--dired", "--classify", "--file-type", "--format", "--full-time", "--group-directories-first", "--no-group", "--human-readable", "--si", "--dereference", "--dereference-command-line", "--dereference-command-line-symlink-to-dir", "--hide", "--hyperlink", "--indicator-style", "--inode", "--ignore", "--kibibytes", "--literal", "--numeric-uid-gid", "--hide-control-chars", "--show-control-chars", "--quote-name", "--quoting-style", "--reverse", "--recursive", "--size", "--sort", "--time", "--time-style", "--tabsize", "--width", "--context", "--zero", "--version", "--help"];
 
-const GREP_LONG: &[&str] = &[
-    "--extended-regexp",
-    "--fixed-strings",
-    "--basic-regexp",
-    "--perl-regexp",
-    "--regexp",
-    "--file",
-    "--ignore-case",
-    "--no-ignore-case",
-    "--word-regexp",
-    "--line-regexp",
-    "--null-data",
-    "--no-messages",
-    "--invert-match",
-    "--version",
-    "--help",
-    "--max-count",
-    "--byte-offset",
-    "--line-number",
-    "--line-buffered",
-    "--with-filename",
-    "--no-filename",
-    "--label",
-    "--only-matching",
-    "--quiet",
-    "--silent",
-    "--binary-files",
-    "--text",
-    "--directories",
-    "--devices",
-    "--recursive",
-    "--dereference-recursive",
-    "--include",
-    "--exclude",
-    "--exclude-from",
-    "--exclude-dir",
-    "--files-without-match",
-    "--files-with-matches",
-    "--count",
-    "--initial-tab",
-    "--null",
-    "--before-context",
-    "--after-context",
-    "--context",
-    "--group-separator",
-    "--no-group-separator",
-    "--color",
-    "--colour",
-    "--binary",
-];
+const GREP_LONG: &[&str] = &["--extended-regexp", "--fixed-strings", "--basic-regexp", "--perl-regexp", "--regexp", "--file", "--ignore-case", "--no-ignore-case", "--word-regexp", "--line-regexp", "--null-data", "--no-messages", "--invert-match", "--version", "--help", "--max-count", "--byte-offset", "--line-number", "--line-buffered", "--with-filename", "--no-filename", "--label", "--only-matching", "--quiet", "--silent", "--binary-files", "--text", "--directories", "--devices", "--recursive", "--dereference-recursive", "--include", "--exclude", "--exclude-from", "--exclude-dir", "--files-without-match", "--files-with-matches", "--count", "--initial-tab", "--null", "--before-context", "--after-context", "--context", "--group-separator", "--no-group-separator", "--color", "--colour", "--binary"];
 
 fn long_names(tool: &str) -> &'static [&'static str] {
     match tool {
@@ -246,10 +124,7 @@ fn cluster_of_for(word: &str, value_letters: &str) -> Cluster {
             break;
         }
     }
-    Cluster {
-        letters,
-        takes_next,
-    }
+    Cluster { letters, takes_next }
 }
 
 struct Argv {
@@ -261,10 +136,7 @@ struct Argv {
 fn parse_argv(tool: &str, args: &[OsString]) -> Argv {
     let values = value_short(tool);
     let longs = value_long(tool);
-    let words: Vec<String> = args
-        .iter()
-        .map(|a| a.to_string_lossy().into_owned())
-        .collect();
+    let words: Vec<String> = args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
 
     let mut options: Vec<String> = Vec::new();
     let mut operands: Vec<PathBuf> = Vec::new();
@@ -283,12 +155,7 @@ fn parse_argv(tool: &str, args: &[OsString]) -> Argv {
             options.push(w.clone());
         }
     }
-    let pattern_is_positional = tool == "grep"
-        && !options.iter().any(|w| {
-            w.starts_with("--regexp")
-                || w.starts_with("--file")
-                || (!w.starts_with("--") && cluster_of_for(w, values).letters.contains(['e', 'f']))
-        });
+    let pattern_is_positional = tool == "grep" && !options.iter().any(|w| w.starts_with("--regexp") || w.starts_with("--file") || (!w.starts_with("--") && cluster_of_for(w, values).letters.contains(['e', 'f'])));
     let mut pattern_seen = !pattern_is_positional;
 
     skip_next = false;
@@ -322,22 +189,13 @@ impl Annotator {
     fn new(tool: &str, args: &[OsString]) -> Self {
         let Argv { options, operands } = parse_argv(tool, args);
         let values = value_short(tool);
-        let has = |c: char| {
-            options
-                .iter()
-                .any(|w| !w.starts_with("--") && cluster_of_for(w, values).letters.contains(c))
-        };
+        let has = |c: char| options.iter().any(|w| !w.starts_with("--") && cluster_of_for(w, values).letters.contains(c));
         let names = long_names(tool);
-        let long = |name: &str| {
-            options
-                .iter()
-                .any(|w| long_matches(w.split('=').next().unwrap_or(w), name, names))
-        };
+        let long = |name: &str| options.iter().any(|w| long_matches(w.split('=').next().unwrap_or(w), name, names));
 
         // ONE base: only `ls <onedir>` names entries relative to it.
         let lists_itself = has('d') || long("--directory");
-        let dir_relative =
-            tool == "ls" && !lists_itself && operands.len() == 1 && operands[0].is_dir();
+        let dir_relative = tool == "ls" && !lists_itself && operands.len() == 1 && operands[0].is_dir();
         let recursive = has('r') || has('R') || long("--recursive");
 
         let long_value = |name: &str| -> Option<String> {
@@ -360,48 +218,23 @@ impl Annotator {
 
         Annotator {
             contracts: Contracts::new(),
-            base: if dir_relative {
-                operands[0].clone()
-            } else {
-                PathBuf::from(".")
-            },
+            base: if dir_relative { operands[0].clone() } else { PathBuf::from(".") },
             current: None,
             seen: HashSet::new(),
             resolved: HashMap::new(),
             content_lines: shape_of(tool) == Some(Shape::Prefixed),
-            path_only: has('l')
-                || has('L')
-                || long("--files-with-matches")
-                || long("--files-without-match"),
+            path_only: has('l') || has('L') || long("--files-with-matches") || long("--files-without-match"),
             // GNU grep prints `path:` only with >1 operand or when recursing into a directory.
-            prefixed: !(has('h') || long("--no-filename"))
-                && (has('H')
-                    || long("--with-filename")
-                    || operands.len() > 1
-                    || (recursive && (operands.is_empty() || operands.iter().any(|o| o.is_dir())))),
+            prefixed: !(has('h') || long("--no-filename")) && (has('H') || long("--with-filename") || operands.len() > 1 || (recursive && (operands.is_empty() || operands.iter().any(|o| o.is_dir())))),
             // `ls` prints `<dir>:` under -R, and also given >1 operand with a directory among them.
-            block_headers: tool == "ls"
-                && (has('R')
-                    || long("--recursive")
-                    || (operands.len() > 1 && operands.iter().any(|o| o.is_dir()))),
-            multi_name: tool == "ls"
-                && (has('C')
-                    || has('x')
-                    || has('m')
-                    || format_is("across")
-                    || format_is("horizontal")
-                    || format_is("commas")
-                    || format_is("vertical")),
+            block_headers: tool == "ls" && (has('R') || long("--recursive") || (operands.len() > 1 && operands.iter().any(|o| o.is_dir()))),
+            multi_name: tool == "ls" && (has('C') || has('x') || has('m') || format_is("across") || format_is("horizontal") || format_is("commas") || format_is("vertical")),
         }
     }
 
     fn line(&mut self, raw: &[u8], out: &mut impl Write) -> std::io::Result<()> {
         let terminated = raw.last() == Some(&b'\n');
-        let body = if terminated {
-            &raw[..raw.len() - 1]
-        } else {
-            raw
-        };
+        let body = if terminated { &raw[..raw.len() - 1] } else { raw };
         let text = String::from_utf8_lossy(body);
 
         if let Some(dir) = text.strip_suffix(':').filter(|_| self.block_headers) {

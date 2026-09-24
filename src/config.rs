@@ -145,8 +145,7 @@ pub struct Language {
 
 /// A concrete, self-conforming annotation body. Per-language examples DERIVE from this
 /// plus the language's marker, never configured.
-const EXAMPLE_BODY: &str =
-    "Concern: runs the core loop | Non-concern: transport | IO: (Job) -> Result";
+const EXAMPLE_BODY: &str = "Concern: runs the core loop | Non-concern: transport | IO: (Job) -> Result";
 
 impl Language {
     pub fn example(&self) -> String {
@@ -175,8 +174,7 @@ pub struct Config {
 
 impl Config {
     pub fn load(root: &Path, cli: &CliOverrides) -> Result<Config> {
-        let mut raw: RawConfig =
-            toml::from_str(DEFAULT_CONFIG).context("built-in default config is invalid")?;
+        let mut raw: RawConfig = toml::from_str(DEFAULT_CONFIG).context("built-in default config is invalid")?;
 
         if let Some(user) = user_config_path() {
             merge(&mut raw, read_layer(&user)?);
@@ -211,9 +209,7 @@ impl Config {
 
     fn language_for_shebang(&self, path: &Path) -> Option<&Language> {
         let word = interpreter_word(&read_shebang(path)?)?;
-        self.interp_to_lang
-            .get(&interp_key(&word))
-            .map(|&i| &self.languages[i])
+        self.interp_to_lang.get(&interp_key(&word)).map(|&i| &self.languages[i])
     }
 }
 
@@ -240,15 +236,11 @@ fn interpreter_word(shebang: &str) -> Option<String> {
 }
 
 fn interp_key(word: &str) -> String {
-    word.rsplit_once('/')
-        .map_or(word, |(_, base)| base)
-        .to_lowercase()
+    word.rsplit_once('/').map_or(word, |(_, base)| base).to_lowercase()
 }
 
 fn ext_key(path: &Path) -> Option<String> {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| format!(".{}", e.to_lowercase()))
+    path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase()))
 }
 
 fn ext_table_key(ext: &str) -> String {
@@ -256,8 +248,7 @@ fn ext_table_key(ext: &str) -> String {
 }
 
 fn read_layer(path: &Path) -> Result<RawConfig> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading config {}", path.display()))?;
+    let text = std::fs::read_to_string(path).with_context(|| format!("reading config {}", path.display()))?;
     toml::from_str(&text).with_context(|| format!("parsing config {}", path.display()))
 }
 
@@ -302,28 +293,10 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
     include.extend(cli.include.iter().cloned());
     let mut ignore = disp.ignore.clone().unwrap_or_default();
     ignore.extend(cli.ignore.iter().cloned());
-    let display = Display {
-        show_age: cli.show_age.or(disp.show_age).unwrap_or(false),
-        ascii: cli.ascii.or(disp.ascii).unwrap_or(false),
-        gitignore: cli.gitignore.or(disp.gitignore).unwrap_or(true),
-        hidden: cli.hidden.or(disp.hidden).unwrap_or(false),
-        include_tests: cli.include_tests.or(disp.include_tests).unwrap_or(false),
-        max_per_node: resolve_max_per_node(cli, disp.max_per_node),
-        include,
-        ignore,
-        format: cli.format.or(disp.format).unwrap_or(Format::Text),
-        ignore_parsing_errors: cli
-            .ignore_parsing_errors
-            .or(disp.ignore_parsing_errors)
-            .unwrap_or(false),
-        no_guide: cli.no_guide.or(disp.no_guide).unwrap_or(false),
-    };
+    let display = Display { show_age: cli.show_age.or(disp.show_age).unwrap_or(false), ascii: cli.ascii.or(disp.ascii).unwrap_or(false), gitignore: cli.gitignore.or(disp.gitignore).unwrap_or(true), hidden: cli.hidden.or(disp.hidden).unwrap_or(false), include_tests: cli.include_tests.or(disp.include_tests).unwrap_or(false), max_per_node: resolve_max_per_node(cli, disp.max_per_node), include, ignore, format: cli.format.or(disp.format).unwrap_or(Format::Text), ignore_parsing_errors: cli.ignore_parsing_errors.or(disp.ignore_parsing_errors).unwrap_or(false), no_guide: cli.no_guide.or(disp.no_guide).unwrap_or(false) };
 
     let raw_limits = raw.limits.unwrap_or_default();
-    let limits = Limits {
-        max_files: resolve_max_files(cli, raw_limits.clone())?,
-        max_depth: resolve_max_depth(cli, raw_limits.max_depth),
-    };
+    let limits = Limits { max_files: resolve_max_files(cli, raw_limits.clone())?, max_depth: resolve_max_depth(cli, raw_limits.max_depth) };
 
     let rules = resolve_rules(raw.rules.unwrap_or_default(), cli);
 
@@ -345,14 +318,7 @@ fn resolve(raw: RawConfig, cli: &CliOverrides) -> Result<Config> {
         languages.push(language);
     }
 
-    Ok(Config {
-        display,
-        limits,
-        rules,
-        languages,
-        ext_to_lang,
-        interp_to_lang,
-    })
+    Ok(Config { display, limits, rules, languages, ext_to_lang, interp_to_lang })
 }
 
 /// In YAML, `---` starts a DOCUMENT, not a metadata block to skip — else such a file would
@@ -361,37 +327,18 @@ const DOCUMENT_SEPARATOR_EXTENSIONS: &[&str] = &[".yml", ".yaml"];
 
 fn to_language(name: String, raw: RawLanguage) -> Result<Language> {
     let pattern = match &raw.pattern {
-        Some(p) => Some(
-            Regex::new(p)
-                .with_context(|| format!("language '{name}': invalid extraction pattern `{p}`"))?,
-        ),
+        Some(p) => Some(Regex::new(p).with_context(|| format!("language '{name}': invalid extraction pattern `{p}`"))?),
         None => None,
     };
-    let frontmatter_prefix = !raw
-        .extensions
-        .iter()
-        .any(|ext| DOCUMENT_SEPARATOR_EXTENSIONS.contains(&ext_table_key(ext).as_str()));
-    Ok(Language {
-        frontmatter_prefix,
-        name,
-        interpreters: raw.interpreters.unwrap_or_default(),
-        line: raw.comment,
-        block: raw.block.map(|[open, close]| (open, close)),
-        docstring: raw.docstring.unwrap_or_default(),
-        pattern,
-    })
+    let frontmatter_prefix = !raw.extensions.iter().any(|ext| DOCUMENT_SEPARATOR_EXTENSIONS.contains(&ext_table_key(ext).as_str()));
+    Ok(Language { frontmatter_prefix, name, interpreters: raw.interpreters.unwrap_or_default(), line: raw.comment, block: raw.block.map(|[open, close]| (open, close)), docstring: raw.docstring.unwrap_or_default(), pattern })
 }
 
 /// Derived from [`DEFAULT_CONFIG`] so it cannot drift from the built-in grammar.
 pub(crate) fn builtin_markdown() -> Language {
-    let mut raw: RawConfig =
-        toml::from_str(DEFAULT_CONFIG).expect("built-in default config is valid TOML");
-    let markdown = raw
-        .languages
-        .remove("markdown")
-        .expect("built-in default config defines a markdown language");
-    to_language("markdown".to_string(), markdown)
-        .expect("built-in markdown language needs no pattern to compile")
+    let mut raw: RawConfig = toml::from_str(DEFAULT_CONFIG).expect("built-in default config is valid TOML");
+    let markdown = raw.languages.remove("markdown").expect("built-in default config defines a markdown language");
+    to_language("markdown".to_string(), markdown).expect("built-in markdown language needs no pattern to compile")
 }
 
 /// Derived from the same body every language's [`Language::example`] wraps, so `--help` and
@@ -401,21 +348,7 @@ pub fn builtin_example() -> String {
 }
 
 fn resolve_rules(raw: RawRules, cli: &CliOverrides) -> Rules {
-    Rules {
-        deny: raw
-            .deny
-            .unwrap_or_default()
-            .into_iter()
-            .map(|[from, to]| (from, to))
-            .collect(),
-        forbid_cycles: raw.forbid_cycles.unwrap_or(false),
-        forbid_orphans: raw.forbid_orphans.unwrap_or(false),
-        require_package_charter: raw.require_package_charter.unwrap_or(false),
-        max_annotation_length: cli
-            .max_annotation_length
-            .or(raw.max_annotation_length)
-            .filter(|&n| n > 0),
-    }
+    Rules { deny: raw.deny.unwrap_or_default().into_iter().map(|[from, to]| (from, to)).collect(), forbid_cycles: raw.forbid_cycles.unwrap_or(false), forbid_orphans: raw.forbid_orphans.unwrap_or(false), require_package_charter: raw.require_package_charter.unwrap_or(false), max_annotation_length: cli.max_annotation_length.or(raw.max_annotation_length).filter(|&n| n > 0) }
 }
 
 /// Precedence: CLI, then env `ANNOTATED_TREE_MAX_FILES`, then config, then built-in default.
@@ -425,10 +358,7 @@ fn resolve_max_files(cli: &CliOverrides, config_limits: RawLimits) -> Result<Opt
     }
     if let Some(raw) = std::env::var_os("ANNOTATED_TREE_MAX_FILES") {
         let text = raw.to_string_lossy();
-        let n: usize = text
-            .trim()
-            .parse()
-            .with_context(|| format!("ANNOTATED_TREE_MAX_FILES is not a valid count: `{text}`"))?;
+        let n: usize = text.trim().parse().with_context(|| format!("ANNOTATED_TREE_MAX_FILES is not a valid count: `{text}`"))?;
         return Ok(Some(n));
     }
     Ok(config_limits.max_files)
@@ -450,15 +380,9 @@ fn resolve_max_depth(cli: &CliOverrides, config_value: Option<usize>) -> Option<
 }
 
 fn user_config_path() -> Option<PathBuf> {
-    let env_dir = |key: &str| {
-        std::env::var_os(key)
-            .map(PathBuf::from)
-            .filter(|p| !p.as_os_str().is_empty())
-    };
+    let env_dir = |key: &str| std::env::var_os(key).map(PathBuf::from).filter(|p| !p.as_os_str().is_empty());
     // XDG (explicit) > ~/.config (unix) > %APPDATA% (windows).
-    let base = env_dir("XDG_CONFIG_HOME")
-        .or_else(|| env_dir("HOME").map(|h| h.join(".config")))
-        .or_else(|| env_dir("APPDATA"))?;
+    let base = env_dir("XDG_CONFIG_HOME").or_else(|| env_dir("HOME").map(|h| h.join(".config"))).or_else(|| env_dir("APPDATA"))?;
     let path = base.join("annotated-tree").join("config.toml");
     path.is_file().then_some(path)
 }
@@ -485,13 +409,7 @@ mod tests {
         let config = resolve(raw, &CliOverrides::default()).expect("default config resolves");
         for lang in &config.languages {
             let example = lang.example();
-            assert_eq!(
-                crate::annotation::analyze(&example, lang, None),
-                crate::annotation::Outcome::Ok,
-                "language '{}' example is not self-conforming: {:?}",
-                lang.name,
-                example,
-            );
+            assert_eq!(crate::annotation::analyze(&example, lang, None), crate::annotation::Outcome::Ok, "language '{}' example is not self-conforming: {:?}", lang.name, example,);
         }
     }
 
@@ -503,23 +421,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mkdir fixture");
 
-        let cases: &[(&str, &str, Option<&str>)] = &[
-            ("env-bash", "#!/usr/bin/env bash\n", Some("shell")),
-            ("bin-sh", "#!/bin/sh\n", Some("shell")),
-            ("env-python", "#!/usr/bin/env python3\n", Some("python")),
-            ("env-node", "#!/usr/bin/env node\n", None),
-            ("plain", "just text\n", None),
-            ("late", "text\n#!/bin/sh\n", None),
-            ("script.rs", "#!/bin/sh\nfn main() {}\n", Some("rust")),
-        ];
+        let cases: &[(&str, &str, Option<&str>)] = &[("env-bash", "#!/usr/bin/env bash\n", Some("shell")), ("bin-sh", "#!/bin/sh\n", Some("shell")), ("env-python", "#!/usr/bin/env python3\n", Some("python")), ("env-node", "#!/usr/bin/env node\n", None), ("plain", "just text\n", None), ("late", "text\n#!/bin/sh\n", None), ("script.rs", "#!/bin/sh\nfn main() {}\n", Some("rust"))];
         for (name, body, expected) in cases {
             let path = dir.join(name);
             std::fs::write(&path, body).expect("write fixture");
-            assert_eq!(
-                config.language_for_path(&path).map(|l| l.name.as_str()),
-                *expected,
-                "{name}",
-            );
+            assert_eq!(config.language_for_path(&path).map(|l| l.name.as_str()), *expected, "{name}",);
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -528,11 +434,7 @@ mod tests {
     fn builtin_example_matches_rust_derived() {
         let raw: RawConfig = toml::from_str(DEFAULT_CONFIG).unwrap();
         let config = resolve(raw, &CliOverrides::default()).unwrap();
-        let rust = config
-            .languages
-            .iter()
-            .find(|l| l.name == "rust")
-            .expect("rust language present");
+        let rust = config.languages.iter().find(|l| l.name == "rust").expect("rust language present");
         assert_eq!(builtin_example(), rust.example());
     }
 }

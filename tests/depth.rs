@@ -8,8 +8,7 @@ use clap::Parser;
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-const ANNOTATION: &str =
-    "// Concern: a depth-fixture file | Non-concern: real behavior (a test stub) | IO: none\n";
+const ANNOTATION: &str = "// Concern: a depth-fixture file | Non-concern: real behavior (a test stub) | IO: none\n";
 
 fn temp_dir(tag: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -26,11 +25,7 @@ fn run(dir: &Path, extra: &[&str]) -> (String, String, i32) {
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
     let code = annotated_tree::run(&cli, &mut out, &mut err).expect("run failed");
-    (
-        String::from_utf8(out).expect("utf8"),
-        String::from_utf8(err).expect("utf8"),
-        code,
-    )
+    (String::from_utf8(out).expect("utf8"), String::from_utf8(err).expect("utf8"), code)
 }
 
 /// Issue #15: the cap counts what the CAPPED walk visits, so 5 doesn't abort a `-L 1`
@@ -46,19 +41,10 @@ fn max_files_counts_only_what_the_capped_walk_visits() {
     std::fs::write(dir.join("top.rs"), ANNOTATION).expect("write top file");
 
     let (out, err, code) = run(&dir, &["-L", "1", "--max-files", "5"]);
-    assert_eq!(
-        code, 0,
-        "a -L 1 render of 2 rows must not trip a 5-file cap on files it never shows:\n{err}"
-    );
-    assert!(
-        out.contains("deep/"),
-        "the capped render lists deep/:\n{out}"
-    );
+    assert_eq!(code, 0, "a -L 1 render of 2 rows must not trip a 5-file cap on files it never shows:\n{err}");
+    assert!(out.contains("deep/"), "the capped render lists deep/:\n{out}");
     assert!(out.contains("top.rs"), "and the top-level file:\n{out}");
-    assert!(
-        !out.contains("f0.rs"),
-        "nothing below the cutoff is rendered:\n{out}"
-    );
+    assert!(!out.contains("f0.rs"), "nothing below the cutoff is rendered:\n{out}");
 
     // The cap still trips when the CAPPED walk exceeds it — bounded by -L, not disabled.
     let (_out, _err, code) = run(&dir, &["--max-files", "5"]);
@@ -102,45 +88,25 @@ fn a_displayed_row_keeps_its_deps_while_a_package_below_the_cutoff_is_dropped() 
     let dir = temp_dir("graph");
     let manifest = |path: &std::path::Path, name: &str, deps: &str| {
         std::fs::create_dir_all(path.join("src")).expect("mkdir pkg");
-        std::fs::write(
-            path.join("Cargo.toml"),
-            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[dependencies]{deps}"),
-        )
-        .expect("write manifest");
+        std::fs::write(path.join("Cargo.toml"), format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[dependencies]{deps}")).expect("write manifest");
         std::fs::write(path.join("src/lib.rs"), ANNOTATION).expect("write lib.rs");
     };
-    manifest(
-        &dir.join("a"),
-        "a",
-        "\nb = { path = \"../b\" }\nc = { path = \"../nested/c\" }\n",
-    );
+    manifest(&dir.join("a"), "a", "\nb = { path = \"../b\" }\nc = { path = \"../nested/c\" }\n");
     manifest(&dir.join("b"), "b", "\n");
     manifest(&dir.join("nested/c"), "c", "\n");
 
     // -L 1: both manifests read one level deeper; the edge draws both ways.
     let (shallow, _err, code) = run(&dir, &["-L", "1"]);
     assert_eq!(code, 0, "-L 1 exits clean");
-    assert!(
-        shallow.contains("used by: [a]"),
-        "a row the map DISPLAYS states its own dependency facts:\n{shallow}"
-    );
-    assert!(
-        shallow.contains("<- depends on [b"),
-        "and the forward edge between two visible rows is drawn:\n{shallow}"
-    );
+    assert!(shallow.contains("used by: [a]"), "a row the map DISPLAYS states its own dependency facts:\n{shallow}");
+    assert!(shallow.contains("<- depends on [b"), "and the forward edge between two visible rows is drawn:\n{shallow}");
     // `c` is two levels past the cutoff, never read, so its dependency resolves to nothing.
-    assert!(
-        shallow.contains("c (unresolved)"),
-        "a package below the cutoff contributes no resolved edge:\n{shallow}"
-    );
+    assert!(shallow.contains("c (unresolved)"), "a package below the cutoff contributes no resolved edge:\n{shallow}");
 
     // -L 2: `nested/c/` becomes a row, so its manifest is read and resolves.
     let (deep, _err, code) = run(&dir, &["-L", "2"]);
     assert_eq!(code, 0, "-L 2 exits clean");
-    assert!(
-        !deep.contains("c (unresolved)") && deep.contains("<- depends on [b, c]"),
-        "once c/ is displayed, the edge to it resolves:\n{deep}"
-    );
+    assert!(!deep.contains("c (unresolved)") && deep.contains("<- depends on [b, c]"), "once c/ is displayed, the edge to it resolves:\n{deep}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -155,14 +121,8 @@ fn strict_check_is_not_depth_capped() {
     std::fs::write(deep.join("unannotated.rs"), "fn f() {}\n").expect("write deep file");
 
     let (out, _err, code) = run(&dir, &["--strict-check", "--no-guide", "-L", "1"]);
-    assert_eq!(
-        code, 1,
-        "a violation below the -L cutoff still fails the gate:\n{out}"
-    );
-    assert!(
-        out.contains("unannotated.rs"),
-        "and is still named in the report:\n{out}"
-    );
+    assert_eq!(code, 1, "a violation below the -L cutoff still fails the gate:\n{out}");
+    assert!(out.contains("unannotated.rs"), "and is still named in the report:\n{out}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -180,10 +140,7 @@ fn depth_zero_is_uncapped() {
     let (uncapped, _err, ucode) = run(&dir, &[]);
     assert_eq!((zcode, ucode), (0, 0), "both exit clean");
     assert_eq!(zero, uncapped, "-L 0 is the same view as no -L at all");
-    assert!(
-        zero.contains("sub/") && zero.contains("nested.rs"),
-        "and nested.rs, below the old floor, is visited:\n{zero}"
-    );
+    assert!(zero.contains("sub/") && zero.contains("nested.rs"), "and nested.rs, below the old floor, is visited:\n{zero}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

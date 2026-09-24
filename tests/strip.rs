@@ -13,20 +13,11 @@ fn tree(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("at-strip-{}-{tag}-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let w = |name: &str, body: &str| std::fs::write(dir.join(name), body).unwrap();
-    w(
-        "ok.py",
-        "# Concern: a | Non-concern: b | IO: none\n\nx = 1\n",
-    );
+    w("ok.py", "# Concern: a | Non-concern: b | IO: none\n\nx = 1\n");
     w("prose.py", "# mentions Concern: but is not one\ny = 2\n");
     w("half.py", "# Concern: two fields only | IO: none\nz = 3\n");
-    w(
-        "inline.md",
-        "<!-- Concern: a | Non-concern: b | IO: none --><div>markup</div>\n<p>x</p>\n",
-    );
-    w(
-        "doc.py",
-        "\"\"\"Concern: a | Non-concern: b | IO: none\n\nprose\n\"\"\"\n\nq = 4\n",
-    );
+    w("inline.md", "<!-- Concern: a | Non-concern: b | IO: none --><div>markup</div>\n<p>x</p>\n");
+    w("doc.py", "\"\"\"Concern: a | Non-concern: b | IO: none\n\nprose\n\"\"\"\n\nq = 4\n");
     dir
 }
 
@@ -44,28 +35,14 @@ fn strip_removes_conforming_annotations_only_once_confirmed() {
     let root = dir.to_str().unwrap();
 
     assert_eq!(strip(&["strip", "-R", root]), 0);
-    assert!(
-        p("ok.py").starts_with("# Concern:"),
-        "--dry-run writes nothing"
-    );
+    assert!(p("ok.py").starts_with("# Concern:"), "--dry-run writes nothing");
 
     assert_eq!(strip(&["strip", "-R", "-y", root]), 0);
-    assert_eq!(
-        p("ok.py"),
-        "x = 1\n",
-        "the annotation's line goes, and the blank that separated it"
-    );
+    assert_eq!(p("ok.py"), "x = 1\n", "the annotation's line goes, and the blank that separated it");
     assert_eq!(p("prose.py"), "# mentions Concern: but is not one\ny = 2\n");
-    assert_eq!(
-        p("half.py"),
-        "# Concern: two fields only | IO: none\nz = 3\n"
-    );
+    assert_eq!(p("half.py"), "# Concern: two fields only | IO: none\nz = 3\n");
 
-    assert_eq!(
-        strip(&["strip", "-R", "-y", root]),
-        0,
-        "a second run is a no-op"
-    );
+    assert_eq!(strip(&["strip", "-R", "-y", root]), 0, "a second run is a no-op");
     assert_eq!(p("ok.py"), "x = 1\n");
 
     std::fs::remove_dir_all(&dir).ok();
@@ -80,23 +57,13 @@ fn a_line_that_is_not_wholly_an_annotation_is_left_alone() {
     let root = dir.to_str().unwrap();
 
     assert_eq!(strip(&["strip", "-R", "-y", root]), 0);
-    assert!(
-        p("inline.md").starts_with("<!-- Concern:"),
-        "markup follows the closer"
-    );
-    assert!(
-        p("doc.py").starts_with("\"\"\"Concern:"),
-        "the docstring closes on a later line"
-    );
+    assert!(p("inline.md").starts_with("<!-- Concern:"), "markup follows the closer");
+    assert!(p("doc.py").starts_with("\"\"\"Concern:"), "the docstring closes on a later line");
 
     let dup = dir.join("ok.py");
     let twice = dup.to_str().unwrap();
     assert_eq!(strip(&["strip", "-y", twice, twice]), 0);
-    assert_eq!(
-        p("ok.py"),
-        "x = 1\n",
-        "the second pass must not take the next line"
-    );
+    assert_eq!(p("ok.py"), "x = 1\n", "the second pass must not take the next line");
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -108,16 +75,10 @@ fn the_json_report_is_emitted_for_success_as_well_as_failure() {
     let root = dir.to_str().unwrap();
     let mut out = Vec::new();
     let cli = Cli::parse_from(["annotated-tree", "--format", "json", "strip", "-R", root]);
-    assert_eq!(
-        annotated_tree::run(&cli, &mut out, &mut Vec::new()).unwrap(),
-        0
-    );
+    assert_eq!(annotated_tree::run(&cli, &mut out, &mut Vec::new()).unwrap(), 0);
     let doc: serde_json::Value = serde_json::from_slice(&out).expect("stdout parses as JSON");
     assert_eq!(doc["schema"], 1);
-    assert_eq!(
-        doc["strip"]["applied"], false,
-        "the listing pass wrote nothing"
-    );
+    assert_eq!(doc["strip"]["applied"], false, "the listing pass wrote nothing");
     assert_eq!(doc["strip"]["files"][0]["code"], serde_json::Value::Null);
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -130,29 +91,12 @@ fn each_root_uses_its_own_config() {
     let (a, b) = (dir.join("a"), dir.join("b"));
     std::fs::create_dir_all(&a).unwrap();
     std::fs::create_dir_all(&b).unwrap();
-    std::fs::write(
-        a.join(".annotated-tree.toml"),
-        "[languages.zz]\nextensions = [\".zz\"]\ncomment = \"//\"\n",
-    )
-    .unwrap();
+    std::fs::write(a.join(".annotated-tree.toml"), "[languages.zz]\nextensions = [\".zz\"]\ncomment = \"//\"\n").unwrap();
     let zz = a.join("f.zz");
     std::fs::write(&zz, "// Concern: a | Non-concern: b | IO: none\nx();\n").unwrap();
-    std::fs::write(
-        b.join("g.py"),
-        "# Concern: a | Non-concern: b | IO: none\ny=1\n",
-    )
-    .unwrap();
+    std::fs::write(b.join("g.py"), "# Concern: a | Non-concern: b | IO: none\ny=1\n").unwrap();
 
-    assert_eq!(
-        strip(&[
-            "strip",
-            "-R",
-            "-y",
-            b.to_str().unwrap(),
-            a.to_str().unwrap()
-        ]),
-        0
-    );
+    assert_eq!(strip(&["strip", "-R", "-y", b.to_str().unwrap(), a.to_str().unwrap()]), 0);
     assert_eq!(std::fs::read_to_string(&zz).unwrap(), "x();\n");
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -195,24 +139,12 @@ fn a_skipped_path_is_reported_and_does_not_hide_its_target() {
 
     let (r, l) = (real.to_str().unwrap(), dir.join("link.py"));
     assert_eq!(strip(&["strip", "-y", l.to_str().unwrap(), r]), 0);
-    assert_eq!(
-        std::fs::read_to_string(&real).unwrap(),
-        "x = 1\n",
-        "the named symlink is skipped, but its target is still stripped"
-    );
+    assert_eq!(std::fs::read_to_string(&real).unwrap(), "x = 1\n", "the named symlink is skipped, but its target is still stripped");
 
     let keep = dir.join("keep.py");
     std::fs::write(&keep, "# Concern: a | Non-concern: b | IO: none\ny = 2\n").unwrap();
-    assert_eq!(
-        strip(&["-I", "keep.py", "strip", "-y", keep.to_str().unwrap()]),
-        0
-    );
-    assert!(
-        std::fs::read_to_string(&keep)
-            .unwrap()
-            .starts_with("# Concern:"),
-        "-I narrows an explicitly named file, not only the -R walk"
-    );
+    assert_eq!(strip(&["-I", "keep.py", "strip", "-y", keep.to_str().unwrap()]), 0);
+    assert!(std::fs::read_to_string(&keep).unwrap().starts_with("# Concern:"), "-I narrows an explicitly named file, not only the -R walk");
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -221,9 +153,7 @@ fn a_skipped_path_is_reported_and_does_not_hide_its_target() {
 fn a_directory_without_recursive_is_a_usage_error() {
     let dir = tree("norecurse");
     assert_eq!(strip(&["strip", "-y", dir.to_str().unwrap()]), 2);
-    assert!(std::fs::read_to_string(dir.join("ok.py"))
-        .unwrap()
-        .starts_with("# Concern:"));
+    assert!(std::fs::read_to_string(dir.join("ok.py")).unwrap().starts_with("# Concern:"));
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -236,18 +166,10 @@ fn strip_reaches_an_extensionless_script() {
     let dir = std::env::temp_dir().join(format!("at-strip-{}-shebang-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let hook = dir.join("pre-commit");
-    std::fs::write(
-        &hook,
-        "#!/usr/bin/env bash\n# Concern: a | Non-concern: b | IO: none\n\nset -e\n",
-    )
-    .unwrap();
+    std::fs::write(&hook, "#!/usr/bin/env bash\n# Concern: a | Non-concern: b | IO: none\n\nset -e\n").unwrap();
 
     assert_eq!(strip(&["strip", "-R", "-y", dir.to_str().unwrap()]), 0);
-    assert_eq!(
-        std::fs::read_to_string(&hook).unwrap(),
-        "#!/usr/bin/env bash\nset -e\n",
-        "the annotation and its blank line go; the shebang stays on line 1"
-    );
+    assert_eq!(std::fs::read_to_string(&hook).unwrap(), "#!/usr/bin/env bash\nset -e\n", "the annotation and its blank line go; the shebang stays on line 1");
 
     std::fs::remove_dir_all(&dir).ok();
 }

@@ -50,12 +50,7 @@ impl Target {
     fn new(given: PathBuf, config: usize) -> Self {
         let canonical = given.canonicalize().unwrap_or_else(|_| given.clone());
         let is_symlink = given.is_symlink();
-        Self {
-            given,
-            canonical,
-            is_symlink,
-            config,
-        }
+        Self { given, canonical, is_symlink, config }
     }
 }
 
@@ -64,22 +59,13 @@ pub(crate) fn base_of(path: &Path) -> PathBuf {
     if path.is_dir() {
         path.to_path_buf()
     } else {
-        path.parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or(Path::new("."))
-            .to_path_buf()
+        path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")).to_path_buf()
     }
 }
 
 /// Nothing is written without `-y`: the default reports and stops. No prompt, since a report
 /// that depended on a terminal would not be determined by its inputs.
-pub fn dispatch(
-    args: &cli::Strip,
-    overrides: &CliOverrides,
-    bootstrap_format: Format,
-    out: &mut impl Write,
-    err: &mut impl Write,
-) -> i32 {
+pub fn dispatch(args: &cli::Strip, overrides: &CliOverrides, bootstrap_format: Format, out: &mut impl Write, err: &mut impl Write) -> i32 {
     let mut targets: Vec<Target> = Vec::new();
     let mut configs: Vec<Config> = Vec::new();
     let mut excludes: Vec<globset::GlobSet> = Vec::new();
@@ -88,15 +74,11 @@ pub fn dispatch(
         let resolved = match Config::load(&base_of(path), overrides) {
             Ok(c) => c,
             Err(e) => {
-                let format = configs
-                    .first()
-                    .map_or(bootstrap_format, |c| c.display.format);
+                let format = configs.first().map_or(bootstrap_format, |c| c.display.format);
                 return precondition(out, err, format, &e);
             }
         };
-        let format = configs
-            .first()
-            .map_or(resolved.display.format, |c| c.display.format);
+        let format = configs.first().map_or(resolved.display.format, |c| c.display.format);
         let path_excludes = match crate::util::build_globset(&resolved.display.ignore) {
             Ok(g) => g,
             Err(e) => return precondition(out, err, format, &e),
@@ -116,28 +98,14 @@ pub fn dispatch(
                 Ok(files) => targets.extend(files.into_iter().map(|f| Target::new(f, idx))),
                 Err(_) => {
                     let m = format!("{}: exceeds the file cap", path.display());
-                    return fail(
-                        out,
-                        err,
-                        format,
-                        exit::code::SCOPE_EXCEEDED,
-                        exit::RUNAWAY_SCOPE,
-                        &m,
-                    );
+                    return fail(out, err, format, exit::code::SCOPE_EXCEEDED, exit::RUNAWAY_SCOPE, &m);
                 }
             }
         } else if path.is_file() || path.is_symlink() {
             targets.push(Target::new(path.clone(), idx));
         } else {
             let m = format!("{}: no such file or directory", path.display());
-            return fail(
-                out,
-                err,
-                format,
-                exit::code::NOT_FOUND,
-                exit::PRECONDITION,
-                &m,
-            );
+            return fail(out, err, format, exit::code::NOT_FOUND, exit::PRECONDITION, &m);
         }
         configs.push(resolved);
         excludes.push(path_excludes);
@@ -150,26 +118,14 @@ pub fn dispatch(
 }
 
 /// Report only after the write pass, so a run that half-succeeded says so on the surface parsed.
-fn run(
-    args: &cli::Strip,
-    format: Format,
-    targets: &[Target],
-    configs: &[Config],
-    excludes: &[globset::GlobSet],
-    out: &mut impl Write,
-    err: &mut impl Write,
-) -> i32 {
+fn run(args: &cli::Strip, format: Format, targets: &[Target], configs: &[Config], excludes: &[globset::GlobSet], out: &mut impl Write, err: &mut impl Write) -> i32 {
     let mut results: Vec<(&Target, Outcome)> = Vec::new();
     let mut artifacts = 0usize;
 
     for target in targets {
         if is_annotation_artifact(&target.canonical) {
             artifacts += 1;
-            let _ = writeln!(
-                err,
-                "strip: {}: whole file is its annotation",
-                target.given.display()
-            );
+            let _ = writeln!(err, "strip: {}: whole file is its annotation", target.given.display());
             continue;
         }
         if target.is_symlink {
@@ -190,10 +146,7 @@ fn run(
     }
 
     if artifacts > 0 {
-        let _ = writeln!(
-            err,
-            "strip: delete those {artifacts} `.annotation` files to remove them"
-        );
+        let _ = writeln!(err, "strip: delete those {artifacts} `.annotation` files to remove them");
     }
     report(&results, args.yes, targets.len(), format, out, err);
     if results.iter().any(|(_, o)| o.is_failure()) {
@@ -203,21 +156,9 @@ fn run(
     }
 }
 
-fn report(
-    results: &[(&Target, Outcome)],
-    applied: bool,
-    scanned: usize,
-    format: Format,
-    out: &mut impl Write,
-    err: &mut impl Write,
-) {
+fn report(results: &[(&Target, Outcome)], applied: bool, scanned: usize, format: Format, out: &mut impl Write, err: &mut impl Write) {
     if format == Format::Json {
-        let files: Vec<_> = results
-            .iter()
-            .map(|(t, o)| {
-                serde_json::json!({ "path": t.given.display().to_string(), "code": o.code() })
-            })
-            .collect();
+        let files: Vec<_> = results.iter().map(|(t, o)| serde_json::json!({ "path": t.given.display().to_string(), "code": o.code() })).collect();
         let doc = serde_json::json!({
             "schema": 1,
             "strip": { "applied": applied, "scanned": scanned, "files": files },
@@ -241,20 +182,9 @@ fn report(
 }
 
 /// The caller pairs the code with its exit integer; `exit.rs` owns that taxonomy.
-fn fail(
-    out: &mut impl Write,
-    err: &mut impl Write,
-    format: Format,
-    code: &'static str,
-    exit_code: i32,
-    message: &str,
-) -> i32 {
+fn fail(out: &mut impl Write, err: &mut impl Write, format: Format, code: &'static str, exit_code: i32, message: &str) -> i32 {
     if format == Format::Json {
-        let _ = writeln!(
-            out,
-            "{}",
-            crate::render::json::render_error(code, message, None)
-        );
+        let _ = writeln!(out, "{}", crate::render::json::render_error(code, message, None));
     } else {
         let _ = writeln!(err, "strip: {message}");
     }
@@ -264,33 +194,16 @@ fn fail(
 /// Matched against the file name AND the path as written, unlike `walk::keep_entry`'s
 /// root-relative match — this direction over-skips rather than over-strips.
 fn excluded(excludes: &globset::GlobSet, path: &Path) -> bool {
-    !excludes.is_empty()
-        && (path
-            .file_name()
-            .is_some_and(|n| excludes.is_match(Path::new(n)))
-            || excludes.is_match(path))
+    !excludes.is_empty() && (path.file_name().is_some_and(|n| excludes.is_match(Path::new(n))) || excludes.is_match(path))
 }
 
-fn precondition(
-    out: &mut impl Write,
-    err: &mut impl Write,
-    format: Format,
-    e: &anyhow::Error,
-) -> i32 {
-    fail(
-        out,
-        err,
-        format,
-        exit::code::PRECONDITION,
-        exit::PRECONDITION,
-        &format!("{e:#}"),
-    )
+fn precondition(out: &mut impl Write, err: &mut impl Write, format: Format, e: &anyhow::Error) -> i32 {
+    fail(out, err, format, exit::code::PRECONDITION, exit::PRECONDITION, &format!("{e:#}"))
 }
 
 /// Removing it means deleting the file — a different act than editing one, left to the caller.
 fn is_annotation_artifact(path: &Path) -> bool {
-    path.file_name().is_some_and(|n| n == ".annotation")
-        || path.extension().is_some_and(|e| e == "annotation")
+    path.file_name().is_some_and(|n| n == ".annotation") || path.extension().is_some_and(|e| e == "annotation")
 }
 
 /// Read fresh every call: the same path can reach here twice, and the first removal
@@ -322,10 +235,7 @@ fn strip_file(path: &Path, config: &Config) -> Outcome {
 /// Written beside the file and renamed over it, so an interrupted write cannot leave the
 /// source file half-erased.
 fn write_atomically(path: &Path, body: &str) -> Outcome {
-    let tmp = path.with_file_name(format!(
-        ".{}.strip-tmp",
-        path.file_name().unwrap_or_default().to_string_lossy()
-    ));
+    let tmp = path.with_file_name(format!(".{}.strip-tmp", path.file_name().unwrap_or_default().to_string_lossy()));
     if std::fs::write(&tmp, body).is_err() {
         let _ = std::fs::remove_file(&tmp);
         return Outcome::Unwritable;

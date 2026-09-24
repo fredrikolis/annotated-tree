@@ -191,11 +191,7 @@ pub struct BashAnnotator {
     pub annotate_tool_output: bool,
 
     /// A settings FILE, the CMDs to check, or the producer's argv.
-    #[arg(
-        trailing_var_arg = true,
-        allow_hyphen_values = true,
-        value_name = "ARGS"
-    )]
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true, value_name = "ARGS")]
     pub args: Vec<std::ffi::OsString>,
 }
 
@@ -234,11 +230,7 @@ EXIT CODES:
 /// via [`crate::guide::essence`] and the EXIT CODES block from the [`exit`] constants,
 /// keeping help and enforcement in lockstep.
 pub fn parse() -> Cli {
-    let command = Cli::command().after_help(format!(
-        "{EXAMPLES}\n\n{}\n\n{}",
-        crate::guide::essence(),
-        exit_codes_block()
-    ));
+    let command = Cli::command().after_help(format!("{EXAMPLES}\n\n{}\n\n{}", crate::guide::essence(), exit_codes_block()));
     let matches = command.get_matches();
     Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit())
 }
@@ -248,9 +240,7 @@ impl Cli {
     /// `--since <REF>` (which wins), else `HEAD` when `--changed` is set, else
     /// `None` (no filtering — behaviour is unchanged).
     pub fn since_ref(&self) -> Option<String> {
-        self.since
-            .clone()
-            .or_else(|| self.changed.then(|| "HEAD".to_string()))
+        self.since.clone().or_else(|| self.changed.then(|| "HEAD".to_string()))
     }
 
     pub fn overrides(&self) -> CliOverrides {
@@ -268,17 +258,9 @@ impl Cli {
             no_guide: self.no_guide.then_some(true),
             config_file: self.config.clone(),
             // `--no-limit`/`--force` wins over `--max-files`; either present means the CLI spoke (outer Some), so env/config are not consulted.
-            max_files: if self.no_limit {
-                Some(None)
-            } else {
-                self.max_files.map(Some)
-            },
+            max_files: if self.no_limit { Some(None) } else { self.max_files.map(Some) },
             // `--full` wins over `--max-per-node`; either present means the CLI spoke (outer Some), so config/default are not consulted.
-            max_per_node: if self.full {
-                Some(None)
-            } else {
-                self.max_per_node.map(Some)
-            },
+            max_per_node: if self.full { Some(None) } else { self.max_per_node.map(Some) },
             max_annotation_length: self.max_length,
         }
     }

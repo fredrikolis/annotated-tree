@@ -4,9 +4,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use annotated_tree::config::{CliOverrides, Config};
-use annotated_tree::{
-    annotation, build_globset, for_format, walk, CodebaseMap, DirNode, FileNode, Format,
-};
+use annotated_tree::{annotation, build_globset, for_format, walk, CodebaseMap, DirNode, FileNode, Format};
 use globset::GlobSet;
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -16,16 +14,8 @@ fn temp_tree(tag: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("at-libapi-{}-{tag}-{n}", std::process::id()));
     std::fs::create_dir_all(dir.join("src")).unwrap();
-    std::fs::write(
-        dir.join("src").join("lib.rs"),
-        "// Concern: the recognized entry fixture | Non-concern: real behavior (a test stub) | IO: none\n",
-    )
-    .unwrap();
-    std::fs::write(
-        dir.join("runbook.ops"),
-        "# Concern: an unrecognized-extension runbook | Non-concern: real behavior (a test stub) | IO: none\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("src").join("lib.rs"), "// Concern: the recognized entry fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
+    std::fs::write(dir.join("runbook.ops"), "# Concern: an unrecognized-extension runbook | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
     dir
 }
 
@@ -39,30 +29,16 @@ fn public_primitives_compose_config_walk_and_extraction() {
     let recognized = walk::collect_code_files(&dir, &config, &empty, &empty).expect("walk");
     assert_eq!(recognized.len(), 1, "recognized walk sees only src/lib.rs");
     let lib_rs = &recognized[0];
-    let lang = config
-        .language_for_path(lib_rs)
-        .expect("a .rs file resolves the rust language");
-    assert_eq!(
-        annotation::extract(lib_rs, lang).as_deref(),
-        Some("Concern: the recognized entry fixture | Non-concern: real behavior (a test stub) | IO: none"),
-    );
+    let lang = config.language_for_path(lib_rs).expect("a .rs file resolves the rust language");
+    assert_eq!(annotation::extract(lib_rs, lang).as_deref(), Some("Concern: the recognized entry fixture | Non-concern: real behavior (a test stub) | IO: none"),);
 
     // A caller-supplied include GlobSet (compiled with the exposed helper) widens the walk to the unrecognized file, whose annotation the marker-agnostic extractor reads with no `Language`.
     let include = build_globset(&["*.ops".to_string()]).expect("glob compiles");
     let widened = walk::collect_code_files(&dir, &config, &empty, &include).expect("walk");
     assert_eq!(widened.len(), 2, "the selector adds runbook.ops");
-    let runbook = widened
-        .iter()
-        .find(|p| p.extension().is_some_and(|e| e == "ops"))
-        .expect("runbook.ops is in the widened set");
-    assert!(
-        config.language_for_path(runbook).is_none(),
-        ".ops maps to no configured language",
-    );
-    assert_eq!(
-        annotation::extract_any(runbook).as_deref(),
-        Some("Concern: an unrecognized-extension runbook | Non-concern: real behavior (a test stub) | IO: none"),
-    );
+    let runbook = widened.iter().find(|p| p.extension().is_some_and(|e| e == "ops")).expect("runbook.ops is in the widened set");
+    assert!(config.language_for_path(runbook).is_none(), ".ops maps to no configured language",);
+    assert_eq!(annotation::extract_any(runbook).as_deref(), Some("Concern: an unrecognized-extension runbook | Non-concern: real behavior (a test stub) | IO: none"),);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -72,55 +48,18 @@ fn configured_walk_is_directly_usable() {
     // The raw `ignore`-based walker is exposed too, so a consumer can apply its OWN keep policy (e.g. for extensionless files or symlinks) instead of `collect_code_files`'s.
     let dir = temp_tree("raw-walk");
     let empty = GlobSet::empty();
-    let filter = walk::WalkFilter {
-        gitignore: true,
-        hidden: false,
-        include_tests: false,
-        excludes: &empty,
-    };
-    let names: Vec<String> = walk::configured_walk(&dir, filter)
-        .build()
-        .flatten()
-        .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .collect();
+    let filter = walk::WalkFilter { gitignore: true, hidden: false, include_tests: false, excludes: &empty };
+    let names: Vec<String> = walk::configured_walk(&dir, filter).build().flatten().filter(|e| e.file_type().is_some_and(|t| t.is_file())).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
     assert!(names.contains(&"lib.rs".to_string()));
-    assert!(
-        names.contains(&"runbook.ops".to_string()),
-        "the raw walker yields every file, recognized or not: {names:?}",
-    );
+    assert!(names.contains(&"runbook.ops".to_string()), "the raw walker yields every file, recognized or not: {names:?}",);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn a_hand_built_map_renders_through_the_exposed_renderer() {
     // Proves the map and render surface is usable WITHOUT the internal build pipeline.
-    let map = CodebaseMap {
-        roots: vec![DirNode {
-            name: "root".into(),
-            charter: None,
-            deps: None,
-            dirs: Vec::new(),
-            files: vec![FileNode {
-                name: "cell.q".into(),
-                annotation: Some(
-                    "Concern: a hand-built node | Non-concern: the walk | IO: none".into(),
-                ),
-                age_secs: None,
-                sidecar: false,
-            }],
-            elided_dirs: 0,
-            elided_files: 0,
-        }],
-        warnings: Vec::new(),
-    };
+    let map = CodebaseMap { roots: vec![DirNode { name: "root".into(), charter: None, deps: None, dirs: Vec::new(), files: vec![FileNode { name: "cell.q".into(), annotation: Some("Concern: a hand-built node | Non-concern: the walk | IO: none".into()), age_secs: None, sidecar: false }], elided_dirs: 0, elided_files: 0 }], warnings: Vec::new() };
     let out = for_format(Format::Text, false).render(&map);
-    assert!(
-        out.contains("cell.q"),
-        "renders the hand-built file node:\n{out}"
-    );
-    assert!(
-        out.contains("Concern: a hand-built node"),
-        "renders the consumer-set annotation:\n{out}"
-    );
+    assert!(out.contains("cell.q"), "renders the hand-built file node:\n{out}");
+    assert!(out.contains("Concern: a hand-built node"), "renders the consumer-set annotation:\n{out}");
 }

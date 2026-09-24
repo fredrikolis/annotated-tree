@@ -15,11 +15,7 @@ pub struct Contracts {
 
 impl Contracts {
     pub fn new() -> Self {
-        Contracts {
-            config: Config::load(Path::new("."), &CliOverrides::default()).ok(),
-            files: HashMap::new(),
-            dirs: HashMap::new(),
-        }
+        Contracts { config: Config::load(Path::new("."), &CliOverrides::default()).ok(), files: HashMap::new(), dirs: HashMap::new() }
     }
 
     /// `None` rather than a placeholder, so a "(none)" doesn't bury the entries that do speak.
@@ -35,12 +31,7 @@ impl Contracts {
         if let Some(hit) = self.files.get(path) {
             return hit.clone();
         }
-        let found = self
-            .config
-            .as_ref()
-            .and_then(|c| c.language_for_path(path))
-            .and_then(|lang| annotation::extract(path, lang))
-            .or_else(|| annotation::extract_any(path));
+        let found = self.config.as_ref().and_then(|c| c.language_for_path(path)).and_then(|lang| annotation::extract(path, lang)).or_else(|| annotation::extract_any(path));
         self.files.insert(path.to_path_buf(), found.clone());
         found
     }
@@ -49,11 +40,7 @@ impl Contracts {
         if let Some(hit) = self.dirs.get(dir) {
             return hit.clone();
         }
-        let found = self
-            .config
-            .as_ref()
-            .and_then(|c| crate::charter::resolve_from_fs(dir, c))
-            .map(|c| c.line());
+        let found = self.config.as_ref().and_then(|c| crate::charter::resolve_from_fs(dir, c)).map(|c| c.line());
         self.dirs.insert(dir.to_path_buf(), found.clone());
         found
     }

@@ -33,10 +33,7 @@ fn age_flag_puts_a_relative_age_token_on_every_file_line() {
     let file_lines: Vec<&str> = out.lines().filter(|l| l.contains(".py")).collect();
     assert_eq!(file_lines.len(), 2, "both files should be listed:\n{out}");
     for line in &file_lines {
-        assert!(
-            line.contains(" ago)"),
-            "each file line must carry a `(… ago)` relative-age token:\n{line}"
-        );
+        assert!(line.contains(" ago)"), "each file line must carry a `(… ago)` relative-age token:\n{line}");
     }
 
     let _ = std::fs::remove_dir_all(&dir);

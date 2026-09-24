@@ -15,11 +15,7 @@ fn temp_tree(tag: &str, n_files: usize) -> PathBuf {
     let src = dir.join("src");
     std::fs::create_dir_all(&src).unwrap();
     for i in 0..n_files {
-        std::fs::write(
-            src.join(format!("f{i}.py")),
-            "# Concern: does f for the limits fixture | Non-concern: real behavior (a test stub) | IO: none\n",
-        )
-        .unwrap();
+        std::fs::write(src.join(format!("f{i}.py")), "# Concern: does f for the limits fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
     }
     dir
 }
@@ -34,11 +30,7 @@ fn run_capture(dir: &Path, extra: &[&str]) -> (String, String, i32) {
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
     let code = annotated_tree::run(&cli, &mut out, &mut err).expect("run failed");
-    (
-        String::from_utf8(out).unwrap(),
-        String::from_utf8(err).unwrap(),
-        code,
-    )
+    (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
 }
 
 #[test]
@@ -46,30 +38,12 @@ fn over_cap_aborts_empty_stdout_and_no_limit_completes() {
     let dir = temp_tree("over", 5);
 
     let (out, err, code) = run_capture(&dir, &["--max-files", "3"]);
-    assert_eq!(
-        code, 3,
-        "over-cap run must exit 3 (RUNAWAY_SCOPE):\nstderr={err}"
-    );
-    assert!(
-        out.is_empty(),
-        "stdout MUST be empty on abort (agent/JSON safety), got:\n{out}"
-    );
-    assert!(
-        err.contains("more than 3"),
-        "stderr names the limit:\n{err}"
-    );
-    assert!(
-        err.contains("--max-files"),
-        "stderr names --max-files:\n{err}"
-    );
-    assert!(
-        err.contains("--no-limit"),
-        "stderr names --no-limit:\n{err}"
-    );
-    assert!(
-        err.contains(&dir.to_string_lossy().into_owned()),
-        "stderr names the offending path:\n{err}"
-    );
+    assert_eq!(code, 3, "over-cap run must exit 3 (RUNAWAY_SCOPE):\nstderr={err}");
+    assert!(out.is_empty(), "stdout MUST be empty on abort (agent/JSON safety), got:\n{out}");
+    assert!(err.contains("more than 3"), "stderr names the limit:\n{err}");
+    assert!(err.contains("--max-files"), "stderr names --max-files:\n{err}");
+    assert!(err.contains("--no-limit"), "stderr names --no-limit:\n{err}");
+    assert!(err.contains(&dir.to_string_lossy().into_owned()), "stderr names the offending path:\n{err}");
 
     let (out2, _err2, code2) = run_capture(&dir, &["--no-limit"]);
     assert_eq!(code2, 0, "--no-limit must complete");

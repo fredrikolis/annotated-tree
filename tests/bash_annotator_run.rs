@@ -8,17 +8,9 @@ fn fixture(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("at-run-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("sub")).expect("mkdir fixture");
-    std::fs::write(
-        dir.join("declared.rs"),
-        "// Concern: the annotated one | Non-concern: the other | IO: none\nfn a() {}\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("declared.rs"), "// Concern: the annotated one | Non-concern: the other | IO: none\nfn a() {}\n").unwrap();
     std::fs::write(dir.join("silent.rs"), "fn b() {}\n").unwrap();
-    std::fs::write(
-        dir.join("sub/nested.rs"),
-        "// Concern: nested | Non-concern: flat | IO: none\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("sub/nested.rs"), "// Concern: nested | Non-concern: flat | IO: none\n").unwrap();
     dir
 }
 
@@ -33,41 +25,22 @@ fn run(dir: &Path, args: &[&str]) -> String {
 /// The same, kept as BYTES: a path that is not valid UTF-8, a CRLF ending and a missing final
 /// newline are all invisible once the output has been through `from_utf8_lossy`.
 fn run_bytes(dir: &Path, args: &[&str]) -> Vec<u8> {
-    let mut tool = Command::new(args[0])
-        .args(&args[1..])
-        .current_dir(dir)
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("spawn tool");
-    let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
-        .args(["bash-annotator", "--annotate-tool-output"])
-        .args(args)
-        .current_dir(dir)
-        .stdin(Stdio::from(tool.stdout.take().expect("tool stdout")))
-        .output()
-        .expect("spawn the annotator");
+    let mut tool = Command::new(args[0]).args(&args[1..]).current_dir(dir).stdout(Stdio::piped()).spawn().expect("spawn tool");
+    let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree")).args(["bash-annotator", "--annotate-tool-output"]).args(args).current_dir(dir).stdin(Stdio::from(tool.stdout.take().expect("tool stdout"))).output().expect("spawn the annotator");
     // Reap the producer. A shell would have done this; leaving it a zombie makes a long test run leak processes.
     let _ = tool.wait();
     out.stdout
 }
 
 fn native(dir: &Path, tool: &str, args: &[&str]) -> String {
-    let out = Command::new(tool)
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .expect("spawn native tool");
+    let out = Command::new(tool).args(args).current_dir(dir).output().expect("spawn native tool");
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
 /// `ls` exists on every platform this is expected to run on, but not on Windows. Skip loudly.
 fn have_ls() -> bool {
     // `--version` must SUCCEED: BSD `ls` on macOS spawns then fails, and lacks `-I`/`--color`.
-    let ok = Command::new("ls")
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    let ok = Command::new("ls").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
     if !ok {
         eprintln!("SKIPPED: no GNU `ls` on this host");
     }
@@ -81,21 +54,12 @@ fn one_line_in_one_line_out() {
     }
     let dir = fixture("lines");
     // The invariant every downstream line-unit modifier depends on.
-    for args in [
-        vec!["ls"],
-        vec!["ls", "-l"],
-        vec!["ls", "-R"],
-        vec!["ls", "-a"],
-    ] {
+    for args in [vec!["ls"], vec!["ls", "-l"], vec!["ls", "-R"], vec!["ls", "-a"]] {
         let mut with = vec!["ls"];
         with.extend(args.iter().skip(1));
         let wrapped = run(&dir, &with);
         let plain = native(&dir, "ls", &args[1..]);
-        assert_eq!(
-            wrapped.lines().count(),
-            plain.lines().count(),
-            "line count changed for {args:?}"
-        );
+        assert_eq!(wrapped.lines().count(), plain.lines().count(), "line count changed for {args:?}");
     }
 }
 
@@ -112,33 +76,17 @@ fn the_tools_own_bytes_are_reproduced_verbatim() {
         let raw = std::ffi::OsStr::from_bytes(b"bad\xffname.rs");
         std::fs::write(dir.join(raw), "x\n").unwrap();
     }
-    std::fs::write(
-        dir.join("plain.rs"),
-        "// Concern: p | Non-concern: q | IO: none\n",
-    )
-    .unwrap();
-    let native = Command::new("ls")
-        .current_dir(&dir)
-        .output()
-        .expect("spawn ls")
-        .stdout;
+    std::fs::write(dir.join("plain.rs"), "// Concern: p | Non-concern: q | IO: none\n").unwrap();
+    let native = Command::new("ls").current_dir(&dir).output().expect("spawn ls").stdout;
     let wrapped = run_bytes(&dir, &["ls"]);
     let n: Vec<&[u8]> = native.split(|b| *b == b'\n').collect();
     let w: Vec<&[u8]> = wrapped.split(|b| *b == b'\n').collect();
     assert_eq!(n.len(), w.len(), "line count changed");
     for (a, b) in n.iter().zip(w.iter()) {
-        assert!(
-            b.starts_with(a),
-            "bytes were altered, not appended to: {:?} vs {:?}",
-            String::from_utf8_lossy(a),
-            String::from_utf8_lossy(b)
-        );
+        assert!(b.starts_with(a), "bytes were altered, not appended to: {:?} vs {:?}", String::from_utf8_lossy(a), String::from_utf8_lossy(b));
     }
     #[cfg(unix)]
-    assert!(
-        wrapped.windows(2).any(|w| w == [b'd', 0xff]),
-        "the invalid byte was rewritten rather than passed through"
-    );
+    assert!(wrapped.windows(2).any(|w| w == [b'd', 0xff]), "the invalid byte was rewritten rather than passed through");
 }
 
 #[test]
@@ -147,24 +95,12 @@ fn a_crlf_line_keeps_its_carriage_return_last() {
         return;
     }
     let dir = fixture("crlf");
-    std::fs::write(
-        dir.join("z.rs"),
-        "// Concern: CR | Non-concern: n | IO: none\r\nhit\r\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("z.rs"), "// Concern: CR | Non-concern: n | IO: none\r\nhit\r\n").unwrap();
     // `-rn .`, not `-n z.rs`: a single file operand prints no `path:` prefix, so no contract lands.
     let out = run_bytes(&dir, &["grep", "-rn", "Concern", "."]);
     // A contract appended AFTER the `\r` makes a terminal overwrite the line it describes. Pick the CRLF file's own line: the fixture holds other files, and `-r` visits them all.
-    let line = out
-        .split(|b| *b == b'\n')
-        .find(|l| l.starts_with(b"./z.rs:"))
-        .expect("z.rs was not in the grep output");
-    assert_eq!(
-        line.last(),
-        Some(&b'\r'),
-        "the carriage return must stay last: {:?}",
-        String::from_utf8_lossy(line)
-    );
+    let line = out.split(|b| *b == b'\n').find(|l| l.starts_with(b"./z.rs:")).expect("z.rs was not in the grep output");
+    assert_eq!(line.last(), Some(&b'\r'), "the carriage return must stay last: {:?}", String::from_utf8_lossy(line));
 }
 
 #[test]
@@ -174,18 +110,9 @@ fn a_final_line_without_a_newline_does_not_gain_one() {
     }
     let dir = fixture("noeol");
     // `find -print0` emits no trailing newline; inventing one changes the byte stream and a hand-rolled line count.
-    let native = Command::new("find")
-        .args([".", "-name", "*.rs", "-print0"])
-        .current_dir(&dir)
-        .output()
-        .expect("spawn find")
-        .stdout;
+    let native = Command::new("find").args([".", "-name", "*.rs", "-print0"]).current_dir(&dir).output().expect("spawn find").stdout;
     let wrapped = run_bytes(&dir, &["find", ".", "-name", "*.rs", "-print0"]);
-    assert_eq!(
-        native.last() == Some(&b'\n'),
-        wrapped.last() == Some(&b'\n'),
-        "trailing-newline presence changed"
-    );
+    assert_eq!(native.last() == Some(&b'\n'), wrapped.last() == Some(&b'\n'), "trailing-newline presence changed");
 }
 
 #[test]
@@ -195,22 +122,10 @@ fn a_declared_file_gains_its_contract_and_a_silent_one_does_not() {
     }
     let dir = fixture("contracts");
     let out = run(&dir, &["ls"]);
-    let declared = out
-        .lines()
-        .find(|l| l.starts_with("declared.rs"))
-        .expect("declared.rs listed");
-    assert!(
-        declared.contains("Concern: the annotated one"),
-        "contract not appended: {declared}"
-    );
-    let silent = out
-        .lines()
-        .find(|l| l.starts_with("silent.rs"))
-        .expect("silent.rs listed");
-    assert_eq!(
-        silent, "silent.rs",
-        "a file declaring nothing must print exactly what the tool printed"
-    );
+    let declared = out.lines().find(|l| l.starts_with("declared.rs")).expect("declared.rs listed");
+    assert!(declared.contains("Concern: the annotated one"), "contract not appended: {declared}");
+    let silent = out.lines().find(|l| l.starts_with("silent.rs")).expect("silent.rs listed");
+    assert_eq!(silent, "silent.rs", "a file declaring nothing must print exactly what the tool printed");
 }
 
 #[test]
@@ -233,42 +148,14 @@ fn the_rewritten_pipeline_reraises_the_tools_own_exit_code() {
     // A naive `tool | annotator` loses `grep`'s exit 1 to the annotator's own status; run it via a real shell.
     let dir = fixture("exit");
     let status = |cmd: &str| {
-        let rewritten = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
-            .args(["bash-annotator", "--check", cmd])
-            .current_dir(&dir)
-            .output()
-            .expect("spawn injector");
-        let rewritten = String::from_utf8_lossy(&rewritten.stdout)
-            .trim_end()
-            .to_string();
-        assert!(
-            !rewritten.starts_with("(unchanged)"),
-            "{cmd:?} must be rewritten for this to test anything: {rewritten}"
-        );
-        Command::new("bash")
-            .args(["-c", &rewritten])
-            .current_dir(&dir)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .expect("spawn bash")
-            .code()
+        let rewritten = Command::new(env!("CARGO_BIN_EXE_annotated-tree")).args(["bash-annotator", "--check", cmd]).current_dir(&dir).output().expect("spawn injector");
+        let rewritten = String::from_utf8_lossy(&rewritten.stdout).trim_end().to_string();
+        assert!(!rewritten.starts_with("(unchanged)"), "{cmd:?} must be rewritten for this to test anything: {rewritten}");
+        Command::new("bash").args(["-c", &rewritten]).current_dir(&dir).stdout(Stdio::null()).stderr(Stdio::null()).status().expect("spawn bash").code()
     };
-    assert_eq!(
-        status("ls declared.rs"),
-        Some(0),
-        "a success became a failure"
-    );
-    assert_ne!(
-        status("ls no-such-entry"),
-        Some(0),
-        "a failing tool must fail the pipeline"
-    );
-    assert_eq!(
-        status("grep -rl zzzznomatch ."),
-        Some(1),
-        "grep's no-match exit 1 was swallowed by the appended annotator"
-    );
+    assert_eq!(status("ls declared.rs"), Some(0), "a success became a failure");
+    assert_ne!(status("ls no-such-entry"), Some(0), "a failing tool must fail the pipeline");
+    assert_eq!(status("grep -rl zzzznomatch ."), Some(1), "grep's no-match exit 1 was swallowed by the appended annotator");
 }
 
 /// A listed path is OPENED to read its first line; a FIFO or character device blocks until it has
@@ -280,25 +167,12 @@ fn a_path_that_is_not_a_regular_file_is_never_read() {
         return;
     }
     let dir = fixture("fifo");
-    if !Command::new("mkfifo")
-        .arg(dir.join("pipe.fifo"))
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-    {
+    if !Command::new("mkfifo").arg(dir.join("pipe.fifo")).status().map(|s| s.success()).unwrap_or(false) {
         eprintln!("SKIPPED: no `mkfifo` on this host");
         return;
     }
-    let cmd = format!(
-        "ls | timeout 5 '{}' bash-annotator --annotate-tool-output ls > /dev/null",
-        env!("CARGO_BIN_EXE_annotated-tree")
-    );
-    let code = Command::new("bash")
-        .args(["-c", &cmd])
-        .current_dir(&dir)
-        .status()
-        .expect("spawn bash")
-        .code();
+    let cmd = format!("ls | timeout 5 '{}' bash-annotator --annotate-tool-output ls > /dev/null", env!("CARGO_BIN_EXE_annotated-tree"));
+    let code = Command::new("bash").args(["-c", &cmd]).current_dir(&dir).status().expect("spawn bash").code();
     assert_ne!(
         code,
         Some(124),
@@ -319,36 +193,11 @@ struct Shape {
 }
 
 const SHAPES: &[Shape] = &[
-    Shape {
-        args: &["ls", "docs"],
-        must: &["DOCS-X"],
-        must_not: &["ROOT-X"],
-        why: "`ls <onedir>` names entries relative to that directory",
-    },
-    Shape {
-        args: &["ls", "x.rs", "docs"],
-        must: &["ROOT-X"],
-        must_not: &[],
-        why: "a file operand is cwd-relative even beside a directory operand",
-    },
-    Shape {
-        args: &["grep", "-rn", "hit", "sub"],
-        must: &["OUTER", "INNER"],
-        must_not: &[],
-        why: "grep paths already carry the operand; joining it again picks the nested twin",
-    },
-    Shape {
-        args: &["grep", "-rl", "hit", "sub"],
-        must: &["OUTER"],
-        must_not: &[],
-        why: "same for the path-only shape",
-    },
-    Shape {
-        args: &["find", "sub", "-name", "n.rs"],
-        must: &["OUTER", "INNER"],
-        must_not: &[],
-        why: "find prints cwd-relative paths too",
-    },
+    Shape { args: &["ls", "docs"], must: &["DOCS-X"], must_not: &["ROOT-X"], why: "`ls <onedir>` names entries relative to that directory" },
+    Shape { args: &["ls", "x.rs", "docs"], must: &["ROOT-X"], must_not: &[], why: "a file operand is cwd-relative even beside a directory operand" },
+    Shape { args: &["grep", "-rn", "hit", "sub"], must: &["OUTER", "INNER"], must_not: &[], why: "grep paths already carry the operand; joining it again picks the nested twin" },
+    Shape { args: &["grep", "-rl", "hit", "sub"], must: &["OUTER"], must_not: &[], why: "same for the path-only shape" },
+    Shape { args: &["find", "sub", "-name", "n.rs"], must: &["OUTER", "INNER"], must_not: &[], why: "find prints cwd-relative paths too" },
     Shape {
         args: &["grep", "docs:", "Makefile"],
         must: &[],
@@ -357,86 +206,29 @@ const SHAPES: &[Shape] = &[
               from argv put a pattern's or a flag value's contract on every line, so the line now \
               carries nothing rather than something wrong",
     },
-    Shape {
-        args: &["grep", "beta.rs is", "delta.rs"],
-        must: &[],
-        must_not: &["BETA"],
-        why: "given one file, grep prints no prefix — the subject is that file",
-    },
-    Shape {
-        args: &["grep", "-rh", "beta.rs is", "."],
-        must: &[],
-        must_not: &["BETA"],
-        why: "with the filename suppressed there is no subject at all",
-    },
-    Shape {
-        args: &["grep", "-rn", "Concern", "beta.rs"],
-        must: &["BETA"],
-        must_not: &[],
-        why: "a prefix that IS printed is read from the line, not guessed from argv",
-    },
-    Shape {
-        args: &["ls"],
-        must: &["SPACED"],
-        must_not: &[],
-        why: "a filename containing spaces is one name, not three tokens",
-    },
-    Shape {
-        args: &["ls", "-l"],
-        must: &["PLAIN"],
-        must_not: &[],
-        why: "the long format puts the name last",
-    },
-    Shape {
-        args: &["ls"],
-        must: &["TWOSPACE", "TABBED"],
-        must_not: &[],
-        why: "a name may hold two spaces or a tab; rebuilding it from tokens loses both",
-    },
-    Shape {
-        args: &["ls", "-l"],
-        must: &["TWOSPACE", "TABBED"],
-        must_not: &[],
-        why: "the same, where the name is the line's trailing run",
-    },
-    Shape {
-        args: &["ls", "-l", "plain.rs"],
-        must: &["PLAIN"],
-        must_not: &["TEN"],
-        why: "a timestamp field must never be read as a path, even when a file is named `10`",
-    },
-    Shape {
-        args: &["ls"],
-        must: &["DOCS-CHARTER"],
-        must_not: &[],
-        why: "a directory entry shows its charter, not nothing",
-    },
-    Shape {
-        args: &["ls", "-I", "sub"],
-        must: &["ROOT-X"],
-        must_not: &["DOCS-X"],
-        why: "an excluded pattern is a flag's VALUE, not the directory being listed",
-    },
-    Shape {
-        args: &["ls", "-aI", "docs"],
-        must: &["ROOT-X"],
-        must_not: &["DOCS-X"],
-        why: "the value flag ENDS a cluster — whole-token matching missed this and took docs/",
-    },
+    Shape { args: &["grep", "beta.rs is", "delta.rs"], must: &[], must_not: &["BETA"], why: "given one file, grep prints no prefix — the subject is that file" },
+    Shape { args: &["grep", "-rh", "beta.rs is", "."], must: &[], must_not: &["BETA"], why: "with the filename suppressed there is no subject at all" },
+    Shape { args: &["grep", "-rn", "Concern", "beta.rs"], must: &["BETA"], must_not: &[], why: "a prefix that IS printed is read from the line, not guessed from argv" },
+    Shape { args: &["ls"], must: &["SPACED"], must_not: &[], why: "a filename containing spaces is one name, not three tokens" },
+    Shape { args: &["ls", "-l"], must: &["PLAIN"], must_not: &[], why: "the long format puts the name last" },
+    Shape { args: &["ls"], must: &["TWOSPACE", "TABBED"], must_not: &[], why: "a name may hold two spaces or a tab; rebuilding it from tokens loses both" },
+    Shape { args: &["ls", "-l"], must: &["TWOSPACE", "TABBED"], must_not: &[], why: "the same, where the name is the line's trailing run" },
+    Shape { args: &["ls", "-l", "plain.rs"], must: &["PLAIN"], must_not: &["TEN"], why: "a timestamp field must never be read as a path, even when a file is named `10`" },
+    Shape { args: &["ls"], must: &["DOCS-CHARTER"], must_not: &[], why: "a directory entry shows its charter, not nothing" },
+    Shape { args: &["ls", "-I", "sub"], must: &["ROOT-X"], must_not: &["DOCS-X"], why: "an excluded pattern is a flag's VALUE, not the directory being listed" },
+    Shape { args: &["ls", "-aI", "docs"], must: &["ROOT-X"], must_not: &["DOCS-X"], why: "the value flag ENDS a cluster — whole-token matching missed this and took docs/" },
     Shape {
         args: &["ls", "-Idist", "docs"],
         must: &["DOCS-X"],
         must_not: &["ROOT-X"],
-        why:
-            "the value is ATTACHED to -I, so `dist` is not more option letters and docs/ is still \
+        why: "the value is ATTACHED to -I, so `dist` is not more option letters and docs/ is still \
               the operand — scanning the token for a bare `d` read this as -d",
     },
     Shape {
         args: &["ls", "-Iw", "docs"],
         must: &["DOCS-X"],
         must_not: &["ROOT-X"],
-        why:
-            "the attached value happens to spell another value option; only the FIRST one counts, \
+        why: "the attached value happens to spell another value option; only the FIRST one counts, \
               so -I still does not reach past its own token to eat the operand",
     },
     Shape {
@@ -465,36 +257,11 @@ const SHAPES: &[Shape] = &[
         why: "a column layout puts many names on one line, and one line takes at most one \
               contract — appending anything would attribute one file's contract to all of them",
     },
-    Shape {
-        args: &["ls", "--color", "docs"],
-        must: &["DOCS-X"],
-        must_not: &["ROOT-X"],
-        why: "--color takes an OPTIONAL argument, so it never consumes the operand after it",
-    },
-    Shape {
-        args: &["ls", "-d", "docs"],
-        must: &["DOCS-CHARTER"],
-        must_not: &[],
-        why: "under -d the operand is the entry printed, not a directory to resolve against",
-    },
-    Shape {
-        args: &["ls", "-R", "sub"],
-        must: &["OUTER", "INNER"],
-        must_not: &[],
-        why: "each -R block resolves against its own header, not the first one",
-    },
-    Shape {
-        args: &["grep", "-rn", "beta.rs", "."],
-        must: &["GAMMA"],
-        must_not: &["BETA"],
-        why: "a PATTERN that happens to name a file is not an operand",
-    },
-    Shape {
-        args: &["grep", "-rn", "-f", "pats.txt", "sub"],
-        must: &["OUTER", "INNER"],
-        must_not: &[],
-        why: "nor is a pattern FILE — annotations must not vanish because -f was used",
-    },
+    Shape { args: &["ls", "--color", "docs"], must: &["DOCS-X"], must_not: &["ROOT-X"], why: "--color takes an OPTIONAL argument, so it never consumes the operand after it" },
+    Shape { args: &["ls", "-d", "docs"], must: &["DOCS-CHARTER"], must_not: &[], why: "under -d the operand is the entry printed, not a directory to resolve against" },
+    Shape { args: &["ls", "-R", "sub"], must: &["OUTER", "INNER"], must_not: &[], why: "each -R block resolves against its own header, not the first one" },
+    Shape { args: &["grep", "-rn", "beta.rs", "."], must: &["GAMMA"], must_not: &["BETA"], why: "a PATTERN that happens to name a file is not an operand" },
+    Shape { args: &["grep", "-rn", "-f", "pats.txt", "sub"], must: &["OUTER", "INNER"], must_not: &[], why: "nor is a pattern FILE — annotations must not vanish because -f was used" },
     Shape {
         args: &["ls", "docs", "sub"],
         must: &["DOCS-X"],
@@ -510,12 +277,7 @@ const SHAPES: &[Shape] = &[
         why: "`-h` suppresses the path prefix, so a line of PROSE that names a file with a colon \
               after it has no subject — trying every colon gave it that file's contract",
     },
-    Shape {
-        args: &["grep", "-rn", "Concern", "a file name.rs"],
-        must: &["SPACED"],
-        must_not: &[],
-        why: "a grep prefix may itself contain spaces",
-    },
+    Shape { args: &["grep", "-rn", "Concern", "a file name.rs"], must: &["SPACED"], must_not: &[], why: "a grep prefix may itself contain spaces" },
     Shape {
         args: &["grep", "-r", "beta.rs", "notes.md"],
         must: &[],
@@ -632,11 +394,7 @@ fn every_printed_shape_names_the_file_its_line_is_about() {
     std::fs::write(dir.join("x.rs"), ann("ROOT-X")).unwrap();
     std::fs::write(dir.join("prose.md"), "docs/x.rs is the docs entry point\n").unwrap();
     std::fs::write(dir.join("docs/x.rs"), ann("DOCS-X")).unwrap();
-    std::fs::write(
-        dir.join("docs/.annotation"),
-        "Concern: DOCS-CHARTER | Non-concern: n | IO: none\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("docs/.annotation"), "Concern: DOCS-CHARTER | Non-concern: n | IO: none\n").unwrap();
     std::fs::write(dir.join("sub/n.rs"), format!("{}hit\n", ann("OUTER"))).unwrap();
     std::fs::write(dir.join("sub/sub/n.rs"), format!("{}hit\n", ann("INNER"))).unwrap();
     std::fs::write(dir.join("Makefile"), format!("{}docs: build\n", ann("MK"))).unwrap();
@@ -656,28 +414,14 @@ fn every_printed_shape_names_the_file_its_line_is_about() {
     std::fs::write(dir.join("1"), ann("ONE-BLOCK")).unwrap();
     // A pattern FILE, so `-f` has an argv token that exists but is not an operand.
     std::fs::write(dir.join("pats.txt"), "hit\n").unwrap();
-    std::fs::write(
-        dir.join("gamma.rs"),
-        format!("{}see beta.rs\n", ann("GAMMA")),
-    )
-    .unwrap();
+    std::fs::write(dir.join("gamma.rs"), format!("{}see beta.rs\n", ann("GAMMA"))).unwrap();
     std::fs::write(dir.join("plain.rs"), ann("PLAIN")).unwrap();
     // `.annotation` with a charter line plus prose resolves to no charter, so no contract lands.
     std::fs::create_dir_all(dir.join("noisy")).unwrap();
-    std::fs::write(
-        dir.join("noisy/.annotation"),
-        "Concern: NOISY-CHARTER | Non-concern: n | IO: none\nSTRAY-PROSE about this directory\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("noisy/.annotation"), "Concern: NOISY-CHARTER | Non-concern: n | IO: none\nSTRAY-PROSE about this directory\n").unwrap();
 
     let mut wrong = Vec::new();
-    for Shape {
-        args,
-        must,
-        must_not,
-        why,
-    } in SHAPES
-    {
+    for Shape { args, must, must_not, why } in SHAPES {
         let text = run(&dir, args);
         for m in must.iter() {
             if !text.contains(m) {
@@ -686,17 +430,9 @@ fn every_printed_shape_names_the_file_its_line_is_about() {
         }
         for m in must_not.iter() {
             if text.contains(m) {
-                wrong.push(format!(
-                    "  {args:?}\n    should NOT contain {m:?} ({why})\n{text}"
-                ));
+                wrong.push(format!("  {args:?}\n    should NOT contain {m:?} ({why})\n{text}"));
             }
         }
     }
-    assert!(
-        wrong.is_empty(),
-        "{} of {} shapes wrong:\n{}",
-        wrong.len(),
-        SHAPES.len(),
-        wrong.join("\n")
-    );
+    assert!(wrong.is_empty(), "{} of {} shapes wrong:\n{}", wrong.len(), SHAPES.len(), wrong.join("\n"));
 }

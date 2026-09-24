@@ -6,19 +6,9 @@ use std::process::Command;
 #[test]
 fn nonexistent_directory_exits_precondition_with_error_on_stderr() {
     let bin = env!("CARGO_BIN_EXE_annotated-tree");
-    let output = Command::new(bin)
-        .arg("/no/such/directory/annotated-tree-does-not-exist-xyz")
-        .output()
-        .expect("spawn binary");
+    let output = Command::new(bin).arg("/no/such/directory/annotated-tree-does-not-exist-xyz").output().expect("spawn binary");
 
-    assert_eq!(
-        output.status.code(),
-        Some(4),
-        "a missing root dir must exit 4 (PRECONDITION), which scripts branch on"
-    );
+    assert_eq!(output.status.code(), Some(4), "a missing root dir must exit 4 (PRECONDITION), which scripts branch on");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("error:"),
-        "stderr must carry the `error:` prefix, got: {stderr}"
-    );
+    assert!(stderr.contains("error:"), "stderr must carry the `error:` prefix, got: {stderr}");
 }

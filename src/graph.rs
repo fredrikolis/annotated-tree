@@ -70,10 +70,7 @@ pub fn build(roots: &[PathBuf], filter: WalkFilter<'_>, max_depth: Option<usize>
     let mut names_by_eco: HashMap<Ecosystem, HashSet<String>> = HashMap::new();
     for (eco, _, m) in &raw {
         if let Some(name) = &m.name {
-            names_by_eco
-                .entry(*eco)
-                .or_default()
-                .insert(canonicalize(*eco, name));
+            names_by_eco.entry(*eco).or_default().insert(canonicalize(*eco, name));
         }
     }
 
@@ -88,10 +85,7 @@ pub fn build(roots: &[PathBuf], filter: WalkFilter<'_>, max_depth: Option<usize>
             let resolved = known.is_some_and(|k| k.contains(&canon));
             let is_internal = dep.local || resolved;
             if is_internal {
-                internal.push(InternalDep {
-                    name: canon,
-                    resolved,
-                });
+                internal.push(InternalDep { name: canon, resolved });
             } else {
                 external.push(dep.name);
             }
@@ -100,23 +94,14 @@ pub fn build(roots: &[PathBuf], filter: WalkFilter<'_>, max_depth: Option<usize>
         internal.dedup();
         external.sort();
         external.dedup();
-        packages.push(Package {
-            ecosystem: eco,
-            name: canonicalize(eco, &name),
-            dir,
-            internal,
-            external,
-        });
+        packages.push(Package { ecosystem: eco, name: canonicalize(eco, &name), dir, internal, external });
     }
 
     // Unresolved deps have no target package in the tree, so no reverse edge.
     let mut used_by: HashMap<(Ecosystem, String), Vec<String>> = HashMap::new();
     for pkg in &packages {
         for dep in pkg.internal.iter().filter(|d| d.resolved) {
-            used_by
-                .entry((pkg.ecosystem, dep.name.clone()))
-                .or_default()
-                .push(pkg.name.clone());
+            used_by.entry((pkg.ecosystem, dep.name.clone())).or_default().push(pkg.name.clone());
         }
     }
     for names in used_by.values_mut() {
@@ -124,36 +109,14 @@ pub fn build(roots: &[PathBuf], filter: WalkFilter<'_>, max_depth: Option<usize>
         names.dedup();
     }
 
-    let package_edges = packages
-        .iter()
-        .map(|pkg| PackageEdges {
-            name: pkg.name.clone(),
-            ecosystem: pkg.ecosystem,
-            internal: pkg.internal.clone(),
-            dir: canon_dir(&pkg.dir),
-        })
-        .collect();
+    let package_edges = packages.iter().map(|pkg| PackageEdges { name: pkg.name.clone(), ecosystem: pkg.ecosystem, internal: pkg.internal.clone(), dir: canon_dir(&pkg.dir) }).collect();
 
     let mut out = HashMap::new();
     for pkg in packages {
-        let used = used_by
-            .get(&(pkg.ecosystem, pkg.name.clone()))
-            .cloned()
-            .unwrap_or_default();
-        out.insert(
-            canon_dir(&pkg.dir),
-            DirDeps {
-                used_by: used,
-                internal: pkg.internal,
-                external: pkg.external,
-            },
-        );
+        let used = used_by.get(&(pkg.ecosystem, pkg.name.clone())).cloned().unwrap_or_default();
+        out.insert(canon_dir(&pkg.dir), DirDeps { used_by: used, internal: pkg.internal, external: pkg.external });
     }
-    Graph {
-        dir_deps: out,
-        packages: package_edges,
-        warnings,
-    }
+    Graph { dir_deps: out, packages: package_edges, warnings }
 }
 
 impl Graph {
@@ -188,19 +151,12 @@ impl Graph {
                 }
             }
         }
-        self.packages
-            .iter()
-            .filter(|p| affected.contains(&(p.ecosystem, p.name.clone())))
-            .map(|p| p.dir.clone())
-            .collect()
+        self.packages.iter().filter(|p| affected.contains(&(p.ecosystem, p.name.clone()))).map(|p| p.dir.clone()).collect()
     }
 
     /// The *deepest* ancestor package wins, so a nested package is attributed to itself.
     fn owning_package(&self, file: &Path) -> Option<&PackageEdges> {
-        self.packages
-            .iter()
-            .filter(|p| file.starts_with(&p.dir))
-            .max_by_key(|p| p.dir.components().count())
+        self.packages.iter().filter(|p| file.starts_with(&p.dir)).max_by_key(|p| p.dir.components().count())
     }
 }
 
@@ -210,13 +166,7 @@ struct WalkScope<'a> {
     max_depth: Option<usize>,
 }
 
-fn collect_manifests(
-    root: &Path,
-    scope: &WalkScope<'_>,
-    parsers: &[Box<dyn ManifestParser>],
-    out: &mut Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)>,
-    warnings: &mut Vec<Warning>,
-) {
+fn collect_manifests(root: &Path, scope: &WalkScope<'_>, parsers: &[Box<dyn ManifestParser>], out: &mut Vec<(Ecosystem, PathBuf, crate::manifest::ParsedManifest)>, warnings: &mut Vec<Warning>) {
     let mut builder = crate::walk::configured_walk(root, scope.filter);
     crate::walk::cap_manifest_depth(&mut builder, scope.max_depth);
     let walker = builder.build();
@@ -230,11 +180,7 @@ fn collect_manifests(
         match parser.parse(path) {
             Ok(parsed) => out.push((parser.ecosystem(), dir.to_path_buf(), parsed)),
             // `path` is also a structured field, for the JSON `warnings` array to dispatch on.
-            Err(err) => warnings.push(Warning {
-                code: crate::exit::code::MANIFEST_PARSE_ERROR,
-                path: path.display().to_string(),
-                message: format!("could not parse manifest: {err:#}"),
-            }),
+            Err(err) => warnings.push(Warning { code: crate::exit::code::MANIFEST_PARSE_ERROR, path: path.display().to_string(), message: format!("could not parse manifest: {err:#}") }),
         }
     }
 }
@@ -252,18 +198,7 @@ impl DirDeps {
             parts.push(format!("used by: [{}]", self.used_by.join(", ")));
         }
         if !self.internal.is_empty() {
-            let deps = self
-                .internal
-                .iter()
-                .map(|d| {
-                    if d.resolved {
-                        d.name.clone()
-                    } else {
-                        format!("{} (unresolved)", d.name)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
+            let deps = self.internal.iter().map(|d| if d.resolved { d.name.clone() } else { format!("{} (unresolved)", d.name) }).collect::<Vec<_>>().join(", ");
             parts.push(format!("<- depends on [{deps}]"));
         }
         if !parts.is_empty() {
@@ -288,33 +223,12 @@ mod tests {
 
     /// Directories/`dir_deps` stay empty — irrelevant to `reverse_closure`.
     fn graph(edges: &[(&str, &[&str])]) -> Graph {
-        let packages = edges
-            .iter()
-            .map(|(name, deps)| PackageEdges {
-                name: name.to_string(),
-                ecosystem: Ecosystem::Cargo,
-                internal: deps
-                    .iter()
-                    .map(|d| InternalDep {
-                        name: d.to_string(),
-                        resolved: true,
-                    })
-                    .collect(),
-                dir: PathBuf::new(),
-            })
-            .collect();
-        Graph {
-            dir_deps: HashMap::new(),
-            packages,
-            warnings: Vec::new(),
-        }
+        let packages = edges.iter().map(|(name, deps)| PackageEdges { name: name.to_string(), ecosystem: Ecosystem::Cargo, internal: deps.iter().map(|d| InternalDep { name: d.to_string(), resolved: true }).collect(), dir: PathBuf::new() }).collect();
+        Graph { dir_deps: HashMap::new(), packages, warnings: Vec::new() }
     }
 
     fn closure(g: &Graph, pkg: &str) -> Vec<String> {
-        let mut v: Vec<String> = g
-            .reverse_closure(pkg, Ecosystem::Cargo)
-            .into_iter()
-            .collect();
+        let mut v: Vec<String> = g.reverse_closure(pkg, Ecosystem::Cargo).into_iter().collect();
         v.sort();
         v
     }
@@ -322,28 +236,15 @@ mod tests {
     #[test]
     fn transitive_closure_excludes_seed() {
         // core <- api <- gateway ; core <- worker
-        let g = graph(&[
-            ("core", &[]),
-            ("api", &["core"]),
-            ("worker", &["core"]),
-            ("gateway", &["api"]),
-        ]);
+        let g = graph(&[("core", &[]), ("api", &["core"]), ("worker", &["core"]), ("gateway", &["api"])]);
         assert_eq!(closure(&g, "core"), vec!["api", "gateway", "worker"]);
-        assert!(
-            closure(&g, "gateway").is_empty(),
-            "a leaf nothing depends on has an empty radius"
-        );
+        assert!(closure(&g, "gateway").is_empty(), "a leaf nothing depends on has an empty radius");
     }
 
     #[test]
     fn diamond_dedupes_shared_dependents() {
         // core <- {left, right} <- top (a diamond): top reached via two paths, once.
-        let g = graph(&[
-            ("core", &[]),
-            ("left", &["core"]),
-            ("right", &["core"]),
-            ("top", &["left", "right"]),
-        ]);
+        let g = graph(&[("core", &[]), ("left", &["core"]), ("right", &["core"]), ("top", &["left", "right"])]);
         assert_eq!(closure(&g, "core"), vec!["left", "right", "top"]);
     }
 

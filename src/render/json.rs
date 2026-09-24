@@ -43,16 +43,7 @@ fn slice_is_empty<T>(s: &&[T]) -> bool {
 impl Renderer for JsonRenderer {
     fn render(&self, map: &CodebaseMap) -> String {
         let coverage = map.coverage();
-        let document = Document {
-            schema: SCHEMA_VERSION,
-            roots: &map.roots,
-            coverage: coverage.is_incomplete().then_some(CoverageReport {
-                code: "annotations_incomplete",
-                annotated: coverage.annotated,
-                total: coverage.total,
-            }),
-            warnings: &map.warnings,
-        };
+        let document = Document { schema: SCHEMA_VERSION, roots: &map.roots, coverage: coverage.is_incomplete().then_some(CoverageReport { code: "annotations_incomplete", annotated: coverage.annotated, total: coverage.total }), warnings: &map.warnings };
         serde_json::to_string_pretty(&document).expect("canonical map serializes to JSON")
     }
 }
@@ -72,13 +63,6 @@ struct ErrorBody<'a> {
 }
 
 pub fn render_error(code: &str, message: &str, path: Option<&str>) -> String {
-    let document = ErrorDocument {
-        schema: SCHEMA_VERSION,
-        error: ErrorBody {
-            code,
-            message,
-            path,
-        },
-    };
+    let document = ErrorDocument { schema: SCHEMA_VERSION, error: ErrorBody { code, message, path } };
     serde_json::to_string_pretty(&document).expect("error envelope serializes to JSON")
 }

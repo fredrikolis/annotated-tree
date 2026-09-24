@@ -18,11 +18,7 @@ fn temp_tree(tag: &str) -> PathBuf {
     std::fs::create_dir_all(&tests).unwrap();
     std::fs::write(src.join("keep.rs"), "// Concern: a file that stays for the filter fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
     std::fs::write(src.join("skip.rs"), "// Concern: a file excluded by the filter fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
-    std::fs::write(
-        tests.join("checks.rs"),
-        "// Concern: a test file for the tests-dir toggle fixture | Non-concern: real behavior (a test stub) | IO: none\n",
-    )
-    .unwrap();
+    std::fs::write(tests.join("checks.rs"), "// Concern: a test file for the tests-dir toggle fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
     dir
 }
 
@@ -51,16 +47,8 @@ fn temp_tree_mixed(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("at-include-{}-{tag}-{n}", std::process::id()));
     let src = dir.join("src");
     std::fs::create_dir_all(&src).unwrap();
-    std::fs::write(
-        src.join("main.rs"),
-        "// Concern: the entry point fixture | Non-concern: real behavior (a test stub) | IO: none\nfn main() {}\n",
-    )
-    .unwrap();
-    std::fs::write(
-        dir.join("deploy.zsh"),
-        "#!/bin/zsh\n# Concern: an unrecognized-extension file the selector opts in | Non-concern: real behavior (a test stub) | IO: (artifact) -> none\necho hi\n",
-    )
-    .unwrap();
+    std::fs::write(src.join("main.rs"), "// Concern: the entry point fixture | Non-concern: real behavior (a test stub) | IO: none\nfn main() {}\n").unwrap();
+    std::fs::write(dir.join("deploy.zsh"), "#!/bin/zsh\n# Concern: an unrecognized-extension file the selector opts in | Non-concern: real behavior (a test stub) | IO: (artifact) -> none\necho hi\n").unwrap();
     std::fs::write(dir.join("data.bin"), "raw bytes, no annotation\n").unwrap();
     dir
 }
@@ -71,18 +59,12 @@ fn temp_tree_mixed(tag: &str) -> PathBuf {
 fn temp_tree_hidden(tag: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("at-hidden-{}-{tag}-{n}", std::process::id()));
-    let annotated = |what: &str| {
-        format!("// Concern: {what} for the hidden-walk fixture | Non-concern: real behavior (a test stub) | IO: none\n")
-    };
+    let annotated = |what: &str| format!("// Concern: {what} for the hidden-walk fixture | Non-concern: real behavior (a test stub) | IO: none\n");
     for sub in [".ci", ".git", ".secret"] {
         std::fs::create_dir_all(dir.join(sub)).unwrap();
     }
     std::fs::write(dir.join("plain.rs"), annotated("a visible file")).unwrap();
-    std::fs::write(
-        dir.join(".ci/deploy.sh"),
-        "#!/usr/bin/env bash\n# Concern: a dot-directory script for the hidden-walk fixture | Non-concern: real behavior (a test stub) | IO: none\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join(".ci/deploy.sh"), "#!/usr/bin/env bash\n# Concern: a dot-directory script for the hidden-walk fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
     std::fs::write(dir.join(".git/config.rs"), annotated("a file in .git")).unwrap();
     std::fs::write(dir.join(".secret/hush.rs"), annotated("a gitignored file")).unwrap();
     std::fs::write(dir.join(".gitignore"), ".secret/\n").unwrap();
@@ -95,11 +77,7 @@ fn temp_tree_script(tag: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("at-shebang-{}-{tag}-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("deploy"),
-        "#!/usr/bin/env bash\n# Concern: an extensionless script for the shebang fixture | Non-concern: real behavior (a test stub) | IO: none\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("deploy"), "#!/usr/bin/env bash\n# Concern: an extensionless script for the shebang fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
     std::fs::write(dir.join("NOTICE"), "Copyright the fixture\n").unwrap();
     std::fs::write(dir.join("keep.rs"), "// Concern: a file that stays for the filter fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
     dir
@@ -110,18 +88,9 @@ fn an_extensionless_script_is_listed_without_include() {
     // A hook or a bin/ script carries its language in its shebang and nowhere else, and `--include` widens the VIEW only, so it could never be the way such a file enters the gate.
     let dir = temp_tree_script("listed");
     let out = run(&dir, &[]);
-    assert!(
-        out.contains("deploy"),
-        "a `#!/usr/bin/env bash` script is listed with no flag at all:\n{out}"
-    );
-    assert!(
-        out.contains("Concern: an extensionless script"),
-        "and its annotation is read through the shell marker:\n{out}"
-    );
-    assert!(
-        !out.contains("NOTICE"),
-        "while an extensionless file with no shebang stays unlisted:\n{out}"
-    );
+    assert!(out.contains("deploy"), "a `#!/usr/bin/env bash` script is listed with no flag at all:\n{out}");
+    assert!(out.contains("Concern: an extensionless script"), "and its annotation is read through the shell marker:\n{out}");
+    assert!(!out.contains("NOTICE"), "while an extensionless file with no shebang stays unlisted:\n{out}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -130,20 +99,11 @@ fn an_extensionless_script_is_listed_without_include() {
 fn hidden_dir_invisible_by_default_and_revealed_by_flag() {
     let dir = temp_tree_hidden("toggle");
     let default = run(&dir, &[]);
-    assert!(
-        default.contains("plain.rs"),
-        "baseline lists the visible file:\n{default}"
-    );
-    assert!(
-        !default.contains("deploy.sh"),
-        "a dot-directory is pruned by default:\n{default}"
-    );
+    assert!(default.contains("plain.rs"), "baseline lists the visible file:\n{default}");
+    assert!(!default.contains("deploy.sh"), "a dot-directory is pruned by default:\n{default}");
 
     let shown = run(&dir, &["--hidden"]);
-    assert!(
-        shown.contains("deploy.sh"),
-        "--hidden reveals .ci/deploy.sh:\n{shown}"
-    );
+    assert!(shown.contains("deploy.sh"), "--hidden reveals .ci/deploy.sh:\n{shown}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -152,16 +112,9 @@ fn hidden_dir_invisible_by_default_and_revealed_by_flag() {
 fn hidden_never_descends_into_dot_git() {
     // `.git` was safe only because every dot-directory was pruned; the name-prune must hold with `--hidden` on, even under `--no-gitignore`.
     let dir = temp_tree_hidden("dot-git");
-    for args in [
-        &["--hidden"][..],
-        &["--hidden", "--no-gitignore"][..],
-        &["--hidden", "--include", "*"][..],
-    ] {
+    for args in [&["--hidden"][..], &["--hidden", "--no-gitignore"][..], &["--hidden", "--include", "*"][..]] {
         let out = run(&dir, args);
-        assert!(
-            !out.contains("config.rs"),
-            "{args:?} must never reach .git/config.rs:\n{out}"
-        );
+        assert!(!out.contains("config.rs"), "{args:?} must never reach .git/config.rs:\n{out}");
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -171,16 +124,10 @@ fn hidden_respects_gitignore() {
     // The two switches are orthogonal: `--hidden` reveals a dot-directory, it does not overrule .gitignore, so a path both hidden and ignored needs both flags.
     let dir = temp_tree_hidden("gitignored");
     let hidden_only = run(&dir, &["--hidden"]);
-    assert!(
-        !hidden_only.contains("hush.rs"),
-        "--hidden alone leaves a gitignored dot-directory pruned:\n{hidden_only}"
-    );
+    assert!(!hidden_only.contains("hush.rs"), "--hidden alone leaves a gitignored dot-directory pruned:\n{hidden_only}");
 
     let both = run(&dir, &["--hidden", "--no-gitignore"]);
-    assert!(
-        both.contains("hush.rs"),
-        "--hidden --no-gitignore reveals .secret/hush.rs:\n{both}"
-    );
+    assert!(both.contains("hush.rs"), "--hidden --no-gitignore reveals .secret/hush.rs:\n{both}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -193,14 +140,8 @@ fn ignore_glob_excludes_the_matched_file() {
     assert!(base.contains("skip.rs"), "baseline lists skip.rs:\n{base}");
 
     let filtered = run(&dir, &["-I", "skip.rs"]);
-    assert!(
-        !filtered.contains("skip.rs"),
-        "-I 'skip.rs' must exclude skip.rs:\n{filtered}"
-    );
-    assert!(
-        filtered.contains("keep.rs"),
-        "-I 'skip.rs' must not affect the sibling keep.rs:\n{filtered}"
-    );
+    assert!(!filtered.contains("skip.rs"), "-I 'skip.rs' must exclude skip.rs:\n{filtered}");
+    assert!(filtered.contains("keep.rs"), "-I 'skip.rs' must not affect the sibling keep.rs:\n{filtered}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -209,16 +150,10 @@ fn ignore_glob_excludes_the_matched_file() {
 fn tests_dir_hidden_by_default_and_revealed_by_flag() {
     let dir = temp_tree("tests-toggle");
     let default = run(&dir, &[]);
-    assert!(
-        !default.contains("checks.rs"),
-        "tests/ is hidden by default:\n{default}"
-    );
+    assert!(!default.contains("checks.rs"), "tests/ is hidden by default:\n{default}");
 
     let shown = run(&dir, &["--include-tests"]);
-    assert!(
-        shown.contains("checks.rs"),
-        "--include-tests reveals tests/checks.rs:\n{shown}"
-    );
+    assert!(shown.contains("checks.rs"), "--include-tests reveals tests/checks.rs:\n{shown}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -229,29 +164,14 @@ fn include_glob_adds_unrecognized_files_with_marker_agnostic_annotation() {
 
     let base = run(&dir, &[]);
     assert!(base.contains("main.rs"), "baseline lists main.rs:\n{base}");
-    assert!(
-        !base.contains("deploy.zsh"),
-        "an unrecognized extension is hidden by default:\n{base}"
-    );
+    assert!(!base.contains("deploy.zsh"), "an unrecognized extension is hidden by default:\n{base}");
 
     // `--include '*.zsh'` ADDS the file; its annotation reads marker-agnostically, no `.zsh` language needed.
     let included = run(&dir, &["--include", "*.zsh"]);
-    assert!(
-        included.contains("main.rs"),
-        "--include is additive — recognized files remain:\n{included}"
-    );
-    assert!(
-        included.contains("deploy.zsh"),
-        "--include '*.zsh' surfaces the unrecognized file:\n{included}"
-    );
-    assert!(
-        included.contains("Concern: an unrecognized-extension file the selector opts in"),
-        "the marker-agnostic annotation is shown:\n{included}"
-    );
-    assert!(
-        !included.contains("data.bin"),
-        "--include '*.zsh' must not pull in the unmatched data.bin:\n{included}"
-    );
+    assert!(included.contains("main.rs"), "--include is additive — recognized files remain:\n{included}");
+    assert!(included.contains("deploy.zsh"), "--include '*.zsh' surfaces the unrecognized file:\n{included}");
+    assert!(included.contains("Concern: an unrecognized-extension file the selector opts in"), "the marker-agnostic annotation is shown:\n{included}");
+    assert!(!included.contains("data.bin"), "--include '*.zsh' must not pull in the unmatched data.bin:\n{included}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -262,13 +182,7 @@ fn strict_check_stays_recognized_only_under_include() {
     // `--include` governs the TREE view alone; `--strict-check` still lints recognized languages only.
     let (code, out) = run_raw(&dir, &["--strict-check", "--include", "*"]);
     assert_eq!(code, 0, "the one recognized file is annotated:\n{out}");
-    assert!(
-        out.contains("All 1 files passed"),
-        "strict-check examined only the recognized file, not the opted-in ones:\n{out}"
-    );
-    assert!(
-        !out.contains("deploy.zsh") && !out.contains("data.bin"),
-        "strict-check must not reach --include files:\n{out}"
-    );
+    assert!(out.contains("All 1 files passed"), "strict-check examined only the recognized file, not the opted-in ones:\n{out}");
+    assert!(!out.contains("deploy.zsh") && !out.contains("data.bin"), "strict-check must not reach --include files:\n{out}");
     let _ = std::fs::remove_dir_all(&dir);
 }

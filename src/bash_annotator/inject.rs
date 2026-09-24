@@ -7,10 +7,7 @@ fn wrapper_command() -> Option<String> {
     // Absolute: `PATH` may have changed, and failing to start gives the producer SIGPIPE (exit 141).
     let found = std::env::current_exe().ok()?;
     let path = found.to_string_lossy().into_owned();
-    Some(format!(
-        "'{}' bash-annotator --annotate-tool-output",
-        path.replace('\'', "'\\''")
-    ))
+    Some(format!("'{}' bash-annotator --annotate-tool-output", path.replace('\'', "'\\''")))
 }
 
 /// Stages that leave the output still a list of path-bearing lines.
@@ -30,10 +27,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         return None;
     }
 
-    const COMPOUND: &[&str] = &[
-        "{", "}", "for", "while", "until", "if", "then", "else", "elif", "fi", "do", "done",
-        "case", "esac", "select", "function",
-    ];
+    const COMPOUND: &[&str] = &["{", "}", "for", "while", "until", "if", "then", "else", "elif", "fi", "do", "done", "case", "esac", "select", "function"];
     if split_stages(&lexed.tokens).iter().any(|st| {
         st.words.first().is_some_and(|t| match &t.kind {
             Kind::Word(w) => COMPOUND.contains(&w.as_str()),
@@ -82,48 +76,31 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         }) {
             continue;
         }
-        if pipe
-            .iter()
-            .any(|&i| stages[i].redirected || stages[i].consumes_args)
-        {
+        if pipe.iter().any(|&i| stages[i].redirected || stages[i].consumes_args) {
             continue;
         }
-        if pipe[1..]
-            .iter()
-            .any(|&i| match program_of(&stages[i].words) {
-                Some((_, p)) => !line_safe(&p, &stages[i].words),
+        if pipe[1..].iter().any(|&i| match program_of(&stages[i].words) {
+            Some((_, p)) => !line_safe(&p, &stages[i].words),
+            None => true,
+        }) {
+            continue;
+        }
+        // Dropping or reordering a line detaches a `<dir>:` header from the entries it scoped.
+        if header_scoped(&prog, &producer.words)
+            && pipe[1..].iter().any(|&i| match program_of(&stages[i].words) {
+                Some((_, p)) => !ORDER_PRESERVING.contains(&p.as_str()),
                 None => true,
             })
         {
             continue;
         }
-        // Dropping or reordering a line detaches a `<dir>:` header from the entries it scoped.
-        if header_scoped(&prog, &producer.words)
-            && pipe[1..]
-                .iter()
-                .any(|&i| match program_of(&stages[i].words) {
-                    Some((_, p)) => !ORDER_PRESERVING.contains(&p.as_str()),
-                    None => true,
-                })
-        {
-            continue;
-        }
 
-        let (Some(from), Some(to)) = (
-            pipe.iter().filter_map(|&i| stages[i].start).min(),
-            pipe.iter().map(|&i| stages[i].end).max(),
-        ) else {
+        let (Some(from), Some(to)) = (pipe.iter().filter_map(|&i| stages[i].start).min(), pipe.iter().map(|&i| stages[i].end).max()) else {
             continue;
         };
 
         // Raw source text, not re-quoted: re-quoting once turned `ls "$d"` into literal `'$d'`.
-        let argv: Vec<&str> = producer
-            .words
-            .iter()
-            .filter(|t| t.start >= tok.start)
-            .filter(|t| matches!(t.kind, Kind::Word(_)))
-            .map(|t| &command[t.start..t.end])
-            .collect();
+        let argv: Vec<&str> = producer.words.iter().filter(|t| t.start >= tok.start).filter(|t| matches!(t.kind, Kind::Word(_))).map(|t| &command[t.start..t.end]).collect();
 
         // `PIPESTATUS` is captured FIRST because any later command replaces it.
         let n = pipe.len() - 1;
@@ -167,36 +144,15 @@ fn header_scoped(prog: &str, words: &[&Token]) -> bool {
         })
         .collect();
     // `--recur` IS `--recursive` to getopt_long.
-    let recursive = args.iter().any(|w| {
-        *w == "--recursive"
-            || (w.len() >= 5 && "--recursive".starts_with(*w))
-            || (w.starts_with('-') && !w.starts_with("--") && w.contains('R'))
-    });
+    let recursive = args.iter().any(|w| *w == "--recursive" || (w.len() >= 5 && "--recursive".starts_with(*w)) || (w.starts_with('-') && !w.starts_with("--") && w.contains('R')));
     let operands: Vec<&&str> = args.iter().filter(|w| !w.starts_with('-')).collect();
-    let may_expand = operands
-        .iter()
-        .any(|w| w.contains(['*', '?', '[', '{', '$', '~']));
+    let may_expand = operands.iter().any(|w| w.contains(['*', '?', '[', '{', '$', '~']));
     recursive || may_expand || operands.len() > 1
 }
 
 fn nul_delimited(prog: &str, w: &str) -> bool {
-    let long = matches!(
-        w.split('=').next().unwrap_or(w),
-        "--null" | "--null-data" | "--print0" | "--zero" | "--zero-terminated"
-    );
-    long || (prog == "find"
-        && matches!(
-            w,
-            "-print0"
-                | "-printf"
-                | "-printx"
-                | "-fprintf"
-                | "-fprint"
-                | "-fprint0"
-                | "-ls"
-                | "-fls"
-        ))
-        || (w.starts_with('-') && !w.starts_with("--") && w.contains(['Z', 'z']))
+    let long = matches!(w.split('=').next().unwrap_or(w), "--null" | "--null-data" | "--print0" | "--zero" | "--zero-terminated");
+    long || (prog == "find" && matches!(w, "-print0" | "-printf" | "-printx" | "-fprintf" | "-fprint" | "-fprint0" | "-ls" | "-fls")) || (w.starts_with('-') && !w.starts_with("--") && w.contains(['Z', 'z']))
 }
 
 struct Stage<'a> {
@@ -266,15 +222,7 @@ fn split_stages<'a>(tokens: &'a [Token]) -> Vec<Stage<'a>> {
 }
 
 fn new_stage<'a>() -> Stage<'a> {
-    Stage {
-        words: Vec::new(),
-        start: None,
-        end: 0,
-        piped_out: false,
-        piped_in: false,
-        redirected: false,
-        consumes_args: false,
-    }
+    Stage { words: Vec::new(), start: None, end: 0, piped_out: false, piped_in: false, redirected: false, consumes_args: false }
 }
 
 fn line_safe(prog: &str, words: &[&Token]) -> bool {
@@ -289,17 +237,10 @@ fn line_safe(prog: &str, words: &[&Token]) -> bool {
             _ => None,
         })
         .collect();
-    let short_has = |c: char| {
-        flags
-            .iter()
-            .any(|f| f.starts_with('-') && !f.starts_with("--") && f.contains(c))
-    };
+    let short_has = |c: char| flags.iter().any(|f| f.starts_with('-') && !f.starts_with("--") && f.contains(c));
     let diverts_or_reframes = |f: &&str| -> bool {
         let name = f.split('=').next().unwrap_or(f);
-        matches!(
-            name,
-            "-o" | "--output" | "-z" | "--zero-terminated" | "--null-data"
-        ) || short_has('z')
+        matches!(name, "-o" | "--output" | "-z" | "--zero-terminated" | "--null-data") || short_has('z')
     };
     if flags.iter().any(diverts_or_reframes) {
         return false;
@@ -309,21 +250,8 @@ fn line_safe(prog: &str, words: &[&Token]) -> bool {
         "head" | "tail" => !short_has('c') && !flags.iter().any(|f| f.starts_with("--bytes")),
         "cat" => flags.is_empty(),
         // `-l`/`-L` over a stream emit the literal `(standard input)`, not a path.
-        "grep" => {
-            !short_has('c')
-                && !short_has('o')
-                && !short_has('l')
-                && !short_has('L')
-                && !flags.iter().any(|f| {
-                    f.starts_with("--count")
-                        || f.starts_with("--only-matching")
-                        || f.starts_with("--files-with")
-                        || f.starts_with("--files-without")
-                })
-        }
-        "tac" | "nl" => !flags
-            .iter()
-            .any(|f| f.starts_with("-s") || f.starts_with("--separator")),
+        "grep" => !short_has('c') && !short_has('o') && !short_has('l') && !short_has('L') && !flags.iter().any(|f| f.starts_with("--count") || f.starts_with("--only-matching") || f.starts_with("--files-with") || f.starts_with("--files-without")),
+        "tac" | "nl" => !flags.iter().any(|f| f.starts_with("-s") || f.starts_with("--separator")),
         _ => true,
     }
 }
@@ -356,8 +284,7 @@ fn is_assignment(w: &str) -> bool {
         None | Some(0) => false,
         Some(p) => {
             let name = &w[..p];
-            name.starts_with(|c: char| c.is_alphabetic() || c == '_')
-                && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+            name.starts_with(|c: char| c.is_alphabetic() || c == '_') && name.chars().all(|c| c.is_alphanumeric() || c == '_')
         }
     }
 }

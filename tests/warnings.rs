@@ -24,31 +24,20 @@ fn run_capture(dir: &Path, extra: &[&str]) -> (String, String, i32) {
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
     let code = annotated_tree::run(&cli, &mut out, &mut err).expect("run failed");
-    (
-        String::from_utf8(out).unwrap(),
-        String::from_utf8(err).unwrap(),
-        code,
-    )
+    (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
 }
 
 #[test]
 fn corrupt_manifest_warns_and_continues() {
     let dir = temp_dir("corrupt");
     // Annotated, so the only thing on stderr can be the parse warning under test: a `.toml` is a listed file like any other, and an unannotated one would add the coverage note.
-    std::fs::write(
-        dir.join("pyproject.toml"),
-        "# Concern: the corrupt manifest the parse warning fires on | Non-concern: the warning text (the graph owns it) | IO: none\n[project\nname = \"oops\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("pyproject.toml"), "# Concern: the corrupt manifest the parse warning fires on | Non-concern: the warning text (the graph owns it) | IO: none\n[project\nname = \"oops\n").unwrap();
     std::fs::write(dir.join("src/x.py"), "# Concern: does x for the warnings fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
 
     let (out, err, code) = run_capture(&dir, &[]);
     assert_eq!(code, 0, "a corrupt manifest must not abort the run");
     assert!(out.contains("x.py"), "the tree still renders files:\n{out}");
-    assert!(
-        err.contains("warning:") && err.contains("pyproject.toml"),
-        "stderr should name the unparseable manifest:\n{err}"
-    );
+    assert!(err.contains("warning:") && err.contains("pyproject.toml"), "stderr should name the unparseable manifest:\n{err}");
 
     // --ignore-parsing-errors silences the warning; stdout is unchanged.
     let (out2, err2, code2) = run_capture(&dir, &["--ignore-parsing-errors"]);
@@ -63,19 +52,12 @@ fn corrupt_manifest_warns_and_continues() {
 fn valid_manifest_without_package_is_silent() {
     let dir = temp_dir("noproject");
     // Valid TOML, just no [project] table — not an error worth warning about.
-    std::fs::write(
-        dir.join("pyproject.toml"),
-        "# Concern: the fixture's tool settings, in a manifest that parses | Non-concern: package metadata (deliberately absent) | IO: none\n[tool.black]\nline-length = 88\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("pyproject.toml"), "# Concern: the fixture's tool settings, in a manifest that parses | Non-concern: package metadata (deliberately absent) | IO: none\n[tool.black]\nline-length = 88\n").unwrap();
     std::fs::write(dir.join("src/y.py"), "# Concern: does y for the warnings fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
 
     let (_out, err, code) = run_capture(&dir, &[]);
     assert_eq!(code, 0);
-    assert!(
-        err.is_empty(),
-        "a valid pyproject without [project] must not warn:\n{err}"
-    );
+    assert!(err.is_empty(), "a valid pyproject without [project] must not warn:\n{err}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -137,11 +137,7 @@ fn fixture(tag: &str) -> PathBuf {
     std::fs::write(dir.join("2"), ann("TWO")).unwrap();
     // A colon in prose, not a grep prefix.
     std::fs::write(dir.join("Makefile"), "a.rs: src/a.rs\n\tcp src/a.rs a.rs\n").unwrap();
-    std::fs::write(
-        dir.join("crlf.rs"),
-        "// Concern: CR | Non-concern: n | IO: none\r\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("crlf.rs"), "// Concern: CR | Non-concern: n | IO: none\r\n").unwrap();
     // Dangling: `exists()` used to send resolution to the cwd.
     #[cfg(unix)]
     let _ = std::os::unix::fs::symlink("nowhere.rs", dir.join("docs/a2.rs"));
@@ -149,30 +145,16 @@ fn fixture(tag: &str) -> PathBuf {
 }
 
 fn have_bash() -> bool {
-    Command::new("bash")
-        .arg("-c")
-        .arg("true")
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    Command::new("bash").arg("-c").arg("true").status().map(|s| s.success()).unwrap_or(false)
 }
 
 fn shell(dir: &Path, cmd: &str) -> (Vec<u8>, Option<i32>) {
-    let out = Command::new("bash")
-        .args(["-c", cmd])
-        .current_dir(dir)
-        .stderr(Stdio::null())
-        .output()
-        .expect("spawn bash");
+    let out = Command::new("bash").args(["-c", cmd]).current_dir(dir).stderr(Stdio::null()).output().expect("spawn bash");
     (out.stdout, out.status.code())
 }
 
 fn rewritten(dir: &Path, cmd: &str) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree"))
-        .args(["bash-annotator", "--check", cmd])
-        .current_dir(dir)
-        .output()
-        .expect("spawn injector");
+    let out = Command::new(env!("CARGO_BIN_EXE_annotated-tree")).args(["bash-annotator", "--check", cmd]).current_dir(dir).output().expect("spawn injector");
     let text = String::from_utf8_lossy(&out.stdout).trim_end().to_string();
     match text.strip_prefix("(unchanged) ") {
         Some(rest) => rest.to_string(),
@@ -219,43 +201,25 @@ fn every_rewritten_command_agrees_with_the_command_the_agent_wrote() {
         let (new_out, new_code) = shell(&new_dir, &sub);
 
         if raw_code != new_code {
-            wrong.push(format!(
-                "  {cmd:?}\n    exit code {raw_code:?} -> {new_code:?}"
-            ));
+            wrong.push(format!("  {cmd:?}\n    exit code {raw_code:?} -> {new_code:?}"));
             continue;
         }
         let raw_lines: Vec<&[u8]> = raw_out.split(|b| *b == b'\n').collect();
         let new_lines: Vec<&[u8]> = new_out.split(|b| *b == b'\n').collect();
         if raw_lines.len() != new_lines.len() {
-            wrong.push(format!(
-                "  {cmd:?}\n    line count {} -> {}\n    raw: {:?}\n    new: {:?}",
-                raw_lines.len(),
-                new_lines.len(),
-                String::from_utf8_lossy(&raw_out),
-                String::from_utf8_lossy(&new_out)
-            ));
+            wrong.push(format!("  {cmd:?}\n    line count {} -> {}\n    raw: {:?}\n    new: {:?}", raw_lines.len(), new_lines.len(), String::from_utf8_lossy(&raw_out), String::from_utf8_lossy(&new_out)));
             continue;
         }
         for (r, n) in raw_lines.iter().zip(new_lines.iter()) {
             if !same_line(r, n) {
-                wrong.push(format!(
-                    "  {cmd:?}\n    line changed, not appended to:\n      raw: {:?}\n      new: {:?}",
-                    String::from_utf8_lossy(r),
-                    String::from_utf8_lossy(n)
-                ));
+                wrong.push(format!("  {cmd:?}\n    line changed, not appended to:\n      raw: {:?}\n      new: {:?}", String::from_utf8_lossy(r), String::from_utf8_lossy(n)));
                 break;
             }
         }
         let _ = std::fs::remove_dir_all(&raw_dir);
         let _ = std::fs::remove_dir_all(&new_dir);
     }
-    assert!(
-        wrong.is_empty(),
-        "{} of {} commands did not survive the rewrite:\n{}",
-        wrong.len(),
-        COMMANDS.len(),
-        wrong.join("\n")
-    );
+    assert!(wrong.is_empty(), "{} of {} commands did not survive the rewrite:\n{}", wrong.len(), COMMANDS.len(), wrong.join("\n"));
     // Guards against passing while testing `bash` rather than the annotator.
     assert!(
         actually_rewritten >= 25,

@@ -11,20 +11,15 @@ fn main() {
         return;
     };
     let claude_dir = home.join(".claude");
-    println!(
-        "cargo:rerun-if-changed={}",
-        claude_dir.join("settings.json").display()
-    );
+    println!("cargo:rerun-if-changed={}", claude_dir.join("settings.json").display());
 
-    let on_path = std::env::var_os("PATH")
-        .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join("claude").is_file()));
+    let on_path = std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join("claude").is_file()));
     if !claude_dir.is_dir() && !on_path {
         return;
     }
 
     // Substring match, not JSON parse: a build script shouldn't take a JSON dependency.
-    let installed = std::fs::read_to_string(claude_dir.join("settings.json"))
-        .is_ok_and(|s| s.contains("--rewrite-tool-call") && s.contains("--session-announcement"));
+    let installed = std::fs::read_to_string(claude_dir.join("settings.json")).is_ok_and(|s| s.contains("--rewrite-tool-call") && s.contains("--session-announcement"));
     if installed {
         return;
     }

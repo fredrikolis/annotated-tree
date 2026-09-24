@@ -12,11 +12,7 @@ pub struct TextRenderer {
 impl Renderer for TextRenderer {
     fn render(&self, map: &CodebaseMap) -> String {
         let glyphs = Glyphs::new(self.ascii);
-        map.roots
-            .iter()
-            .map(|root| render_root(root, &glyphs))
-            .collect::<Vec<_>>()
-            .join("\n\n")
+        map.roots.iter().map(|root| render_root(root, &glyphs)).collect::<Vec<_>>().join("\n\n")
     }
 }
 
@@ -30,19 +26,9 @@ struct Glyphs {
 impl Glyphs {
     fn new(ascii: bool) -> Self {
         if ascii {
-            Glyphs {
-                tee: "|-- ",
-                elbow: "`-- ",
-                pipe: "|   ",
-                blank: "    ",
-            }
+            Glyphs { tee: "|-- ", elbow: "`-- ", pipe: "|   ", blank: "    " }
         } else {
-            Glyphs {
-                tee: "├── ",
-                elbow: "└── ",
-                pipe: "│   ",
-                blank: "    ",
-            }
+            Glyphs { tee: "├── ", elbow: "└── ", pipe: "│   ", blank: "    " }
         }
     }
 }
@@ -79,10 +65,7 @@ fn render_node(node: &DirNode, prefix: &str, glyphs: &Glyphs, out: &mut String) 
         let connector = if is_last { glyphs.elbow } else { glyphs.tee };
         let age = age_suffix(file.age_secs);
         let annotation = file_annotation(file.annotation.as_deref());
-        out.push_str(&format!(
-            "{prefix}{connector}{}{age}{annotation}\n",
-            file.name
-        ));
+        out.push_str(&format!("{prefix}{connector}{}{age}{annotation}\n", file.name));
     }
 
     // Always the final child (counted into `child_count`), so it takes the elbow connector.

@@ -45,19 +45,8 @@ pub(crate) fn dispatch(args: &EditHook, out: &mut impl Write, err: &mut impl Wri
 }
 
 fn written(event: &Value) -> Option<PathBuf> {
-    let cwd = event
-        .pointer("/cwd")
-        .and_then(Value::as_str)
-        .map_or_else(|| PathBuf::from("."), PathBuf::from);
-    [
-        "/tool_input/file_path",
-        "/tool_response/filePath",
-        "/tool_input/notebook_path",
-    ]
-    .iter()
-    .filter_map(|p| event.pointer(p).and_then(Value::as_str))
-    .map(|p| cwd.join(p))
-    .find(|p| p.is_file())
+    let cwd = event.pointer("/cwd").and_then(Value::as_str).map_or_else(|| PathBuf::from("."), PathBuf::from);
+    ["/tool_input/file_path", "/tool_response/filePath", "/tool_input/notebook_path"].iter().filter_map(|p| event.pointer(p).and_then(Value::as_str)).map(|p| cwd.join(p)).find(|p| p.is_file())
 }
 
 fn git_root(file: &Path) -> Option<PathBuf> {
@@ -81,20 +70,12 @@ fn findings(file: &Path) -> Result<Option<String>, String> {
     if !config_path.is_file() {
         return Ok(None);
     }
-    let overrides = CliOverrides {
-        config_file: Some(config_path),
-        ..CliOverrides::default()
-    };
-    let config =
-        Config::load(&root, &overrides).map_err(|e| format!("couldn't read {CONFIG_FILE}: {e}"))?;
-    let excludes = util::build_globset(&config.display.ignore)
-        .map_err(|e| format!("couldn't build the [display] ignore matcher: {e}"))?;
+    let overrides = CliOverrides { config_file: Some(config_path), ..CliOverrides::default() };
+    let config = Config::load(&root, &overrides).map_err(|e| format!("couldn't read {CONFIG_FILE}: {e}"))?;
+    let excludes = util::build_globset(&config.display.ignore).map_err(|e| format!("couldn't build the [display] ignore matcher: {e}"))?;
     let filter = walk::WalkFilter::from_config(&config, &excludes);
-    let walked = walk::collect_tree(&root, &config, filter, &GlobSet::empty(), None)
-        .map_err(|e| e.to_string())?;
-    let canon = file
-        .canonicalize()
-        .map_err(|e| format!("couldn't resolve {}: {e}", file.display()))?;
+    let walked = walk::collect_tree(&root, &config, filter, &GlobSet::empty(), None).map_err(|e| e.to_string())?;
+    let canon = file.canonicalize().map_err(|e| format!("couldn't resolve {}: {e}", file.display()))?;
 
     let Some(subject) = subject(file, &canon, &root, &walked) else {
         return Ok(None);
@@ -115,48 +96,28 @@ fn subject(file: &Path, canon: &Path, root: &Path, walked: &WalkedTree) -> Optio
     if file.file_name().is_some_and(|n| n == CHARTER_FILE) {
         let dir_canon = file.parent()?.canonicalize().ok()?;
         let root_canon = root.canonicalize().ok()?;
-        let reached = dir_canon == root_canon
-            || walked
-                .dirs
-                .iter()
-                .any(|d| d.canonicalize().is_ok_and(|c| c == dir_canon));
+        let reached = dir_canon == root_canon || walked.dirs.iter().any(|d| d.canonicalize().is_ok_and(|c| c == dir_canon));
         // `check_file`'s charter check walks ancestors of whatever it's handed, so the charter's own path works.
         return reached.then(|| canon.to_path_buf());
     }
     if let Some(target) = sidecar::named_target(file) {
         let target_canon = target.canonicalize().ok()?;
-        return walked
-            .files
-            .iter()
-            .find(|p| p.canonicalize().is_ok_and(|c| c == target_canon))
-            .cloned();
+        return walked.files.iter().find(|p| p.canonicalize().is_ok_and(|c| c == target_canon)).cloned();
     }
-    walked
-        .files
-        .iter()
-        .find(|p| p.canonicalize().is_ok_and(|c| c == *canon))
-        .cloned()
+    walked.files.iter().find(|p| p.canonicalize().is_ok_and(|c| c == *canon)).cloned()
 }
 
 fn envelope(root: &Path, violations: &[AnnotationViolation], config: &Config) -> String {
-    let headline =
-        "annotated-tree: this file's annotation is malformed, missing, or over the bound — \
+    let headline = "annotated-tree: this file's annotation is malformed, missing, or over the bound — \
          --strict-check reports it.";
-    let lines: Vec<String> = violations
-        .iter()
-        .map(AnnotationViolation::message)
-        .collect();
+    let lines: Vec<String> = violations.iter().map(AnnotationViolation::message).collect();
 
     let mut body = String::new();
     let _ = writeln!(body, "# paths relative to {}", root.display());
     for l in &lines {
         let _ = writeln!(body, "{l}");
     }
-    let guide = if config.display.no_guide {
-        String::new()
-    } else {
-        format!("\n{}", guide::full())
-    };
+    let guide = if config.display.no_guide { String::new() } else { format!("\n{}", guide::full()) };
     let context = format!(
         "{headline}\n\n{body}{guide}\nDeleting the annotation is not a fix, and neither is \
          raising [rules] max_annotation_length.",
@@ -226,16 +187,9 @@ mod tests {
         std::fs::write(&file, "fn main() {}\n").unwrap();
         let out = findings(&file).unwrap().expect("a violation was expected");
         let v: Value = serde_json::from_str(&out).unwrap();
-        assert!(v["systemMessage"]
-            .as_str()
-            .is_some_and(|s| s.contains("annotation")));
-        assert!(!v["systemMessage"]
-            .as_str()
-            .unwrap()
-            .contains("pre-commit hook will refuse"));
-        assert!(v["hookSpecificOutput"]["additionalContext"]
-            .as_str()
-            .is_some_and(|s| s.contains("f.rs")));
+        assert!(v["systemMessage"].as_str().is_some_and(|s| s.contains("annotation")));
+        assert!(!v["systemMessage"].as_str().unwrap().contains("pre-commit hook will refuse"));
+        assert!(v["hookSpecificOutput"]["additionalContext"].as_str().is_some_and(|s| s.contains("f.rs")));
     }
 
     #[test]
@@ -243,11 +197,7 @@ mod tests {
         let dir = tmp("conforming");
         init_repo(&dir);
         let file = dir.join("f.rs");
-        std::fs::write(
-            &file,
-            "// Concern: a fixture | Non-concern: real behavior | IO: none\nfn main() {}\n",
-        )
-        .unwrap();
+        std::fs::write(&file, "// Concern: a fixture | Non-concern: real behavior | IO: none\nfn main() {}\n").unwrap();
         assert_eq!(findings(&file), Ok(None));
     }
 
@@ -271,13 +221,9 @@ mod tests {
         std::fs::create_dir_all(&sub).unwrap();
         let charter = sub.join(CHARTER_FILE);
         std::fs::write(&charter, "not an annotation\n").unwrap();
-        let out = findings(&charter)
-            .unwrap()
-            .expect("a violation was expected");
+        let out = findings(&charter).unwrap().expect("a violation was expected");
         let v: Value = serde_json::from_str(&out).unwrap();
-        assert!(v["hookSpecificOutput"]["additionalContext"]
-            .as_str()
-            .is_some_and(|s| s.contains("pkg")));
+        assert!(v["hookSpecificOutput"]["additionalContext"].as_str().is_some_and(|s| s.contains("pkg")));
     }
 
     #[test]
@@ -287,11 +233,7 @@ mod tests {
         let sub = dir.join("pkg");
         std::fs::create_dir_all(&sub).unwrap();
         let charter = sub.join(CHARTER_FILE);
-        std::fs::write(
-            &charter,
-            "Concern: a fixture | Non-concern: real behavior | IO: none\n",
-        )
-        .unwrap();
+        std::fs::write(&charter, "Concern: a fixture | Non-concern: real behavior | IO: none\n").unwrap();
         assert_eq!(findings(&charter), Ok(None));
     }
 
@@ -305,9 +247,7 @@ mod tests {
         std::fs::write(&side, "not an annotation\n").unwrap();
         let out = findings(&side).unwrap().expect("a violation was expected");
         let v: Value = serde_json::from_str(&out).unwrap();
-        assert!(v["hookSpecificOutput"]["additionalContext"]
-            .as_str()
-            .is_some_and(|s| s.contains("data.csv")));
+        assert!(v["hookSpecificOutput"]["additionalContext"].as_str().is_some_and(|s| s.contains("data.csv")));
     }
 
     #[test]
@@ -317,11 +257,7 @@ mod tests {
         let target = dir.join("data.csv");
         std::fs::write(&target, "a,b\n1,2\n").unwrap();
         let side = sidecar::path_for(&target);
-        std::fs::write(
-            &side,
-            "Concern: a fixture | Non-concern: real behavior | IO: none\n",
-        )
-        .unwrap();
+        std::fs::write(&side, "Concern: a fixture | Non-concern: real behavior | IO: none\n").unwrap();
         assert_eq!(findings(&side), Ok(None));
     }
 
@@ -344,9 +280,7 @@ mod tests {
         std::fs::write(&file, "fn main() {}\n").unwrap();
         let out = findings(&file).unwrap().expect("a violation was expected");
         let v: Value = serde_json::from_str(&out).unwrap();
-        let ctx = v["hookSpecificOutput"]["additionalContext"]
-            .as_str()
-            .unwrap();
+        let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
         assert!(!ctx.contains(guide::full().lines().next().unwrap()));
     }
 }

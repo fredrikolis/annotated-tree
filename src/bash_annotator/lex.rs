@@ -76,10 +76,7 @@ pub fn lex(src: &str) -> Lexed {
         }
 
         // `get`, not `&src[i..i + 2]`: a byte index inside a multi-byte character panics.
-        if matches!(
-            src.get(i..i + 2),
-            Some("||") | Some("&&") | Some(";;") | Some("|&")
-        ) {
+        if matches!(src.get(i..i + 2), Some("||") | Some("&&") | Some(";;") | Some("|&")) {
             tokens.push(op(src, start, i + 2));
             i += 2;
             continue;
@@ -95,9 +92,7 @@ pub fn lex(src: &str) -> Lexed {
         let mut text: Vec<u8> = Vec::new();
         while i < b.len() {
             let c = b[i];
-            if c.is_ascii_whitespace()
-                || matches!(c, b'|' | b';' | b'&' | b'(' | b')' | b'<' | b'>')
-            {
+            if c.is_ascii_whitespace() || matches!(c, b'|' | b';' | b'&' | b'(' | b')' | b'<' | b'>') {
                 break;
             }
             match c {
@@ -132,8 +127,7 @@ pub fn lex(src: &str) -> Lexed {
                             i += 2;
                             continue;
                         }
-                        substitution |=
-                            b[i] == b'`' || (b[i] == b'$' && b.get(i + 1) == Some(&b'('));
+                        substitution |= b[i] == b'`' || (b[i] == b'$' && b.get(i + 1) == Some(&b'('));
                         text.push(b[i]);
                         i += 1;
                     }
@@ -162,26 +156,12 @@ pub fn lex(src: &str) -> Lexed {
         if i == start {
             i += 1; // never stall on a byte no branch consumed
         }
-        tokens.push(Token {
-            kind: Kind::Word(String::from_utf8_lossy(&text).into_owned()),
-            start,
-            end: i,
-        });
+        tokens.push(Token { kind: Kind::Word(String::from_utf8_lossy(&text).into_owned()), start, end: i });
     }
 
-    Lexed {
-        tokens,
-        substitution,
-        subshell,
-        unbalanced,
-        heredoc,
-    }
+    Lexed { tokens, substitution, subshell, unbalanced, heredoc }
 }
 
 fn op(src: &str, start: usize, end: usize) -> Token {
-    Token {
-        kind: Kind::Op(src[start..end].to_string()),
-        start,
-        end,
-    }
+    Token { kind: Kind::Op(src[start..end].to_string()), start, end }
 }

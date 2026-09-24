@@ -82,15 +82,7 @@ struct Invocation<'a> {
 
 impl<'a> Invocation<'a> {
     fn from_cli(cli: &'a Cli) -> Self {
-        Invocation {
-            paths: &cli.paths,
-            strict_check: cli.strict_check,
-            schema: cli.schema,
-            githook_guide: cli.githook_guide,
-            annotation_guide: cli.annotation_guide,
-            since_ref: cli.since_ref(),
-            command: &cli.command,
-        }
+        Invocation { paths: &cli.paths, strict_check: cli.strict_check, schema: cli.schema, githook_guide: cli.githook_guide, annotation_guide: cli.annotation_guide, since_ref: cli.since_ref(), command: &cli.command }
     }
 }
 
@@ -103,41 +95,22 @@ pub(crate) struct Failure {
 
 impl Failure {
     fn not_a_directory(message: String) -> Self {
-        Failure {
-            exit_code: exit::PRECONDITION,
-            code: exit::code::NOT_A_DIRECTORY,
-            message,
-            path: None,
-        }
+        Failure { exit_code: exit::PRECONDITION, code: exit::code::NOT_A_DIRECTORY, message, path: None }
     }
 
     fn git(message: String) -> Self {
-        Failure {
-            exit_code: exit::PRECONDITION,
-            code: exit::code::GIT_ERROR,
-            message,
-            path: None,
-        }
+        Failure { exit_code: exit::PRECONDITION, code: exit::code::GIT_ERROR, message, path: None }
     }
 
     fn precondition(message: String) -> Self {
-        Failure {
-            exit_code: exit::PRECONDITION,
-            code: exit::code::PRECONDITION,
-            message,
-            path: None,
-        }
+        Failure { exit_code: exit::PRECONDITION, code: exit::code::PRECONDITION, message, path: None }
     }
 
     /// Under `--format json` this returns the exit code with the error already written to
     /// stdout; otherwise it returns `Err` so the binary renders `error:` prose on stderr.
     fn dispatch(self, out: &mut impl Write, format: Format) -> Result<i32> {
         if format == Format::Json {
-            writeln!(
-                out,
-                "{}",
-                render::json::render_error(self.code, &self.message, self.path.as_deref())
-            )?;
+            writeln!(out, "{}", render::json::render_error(self.code, &self.message, self.path.as_deref()))?;
             Ok(self.exit_code)
         } else {
             Err(anyhow!(self.message))
@@ -153,13 +126,7 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
     let bootstrap_format = overrides.format.unwrap_or(Format::Text);
 
     if let Some(cli::Command::Strip(args)) = invocation.command {
-        return Ok(strip::dispatch(
-            args,
-            &overrides,
-            bootstrap_format,
-            out,
-            err,
-        ));
+        return Ok(strip::dispatch(args, &overrides, bootstrap_format, out, err));
     }
     if let Some(cli::Command::BashAnnotator(args)) = invocation.command {
         return bash_annotator::dispatch(args, out, err);
@@ -185,16 +152,12 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
     let roots = if invocation.strict_check {
         match resolve_lint_targets(invocation.paths) {
             Ok(roots) => roots,
-            Err(e) => {
-                return Failure::not_a_directory(format!("{e:#}")).dispatch(out, bootstrap_format)
-            }
+            Err(e) => return Failure::not_a_directory(format!("{e:#}")).dispatch(out, bootstrap_format),
         }
     } else {
         match resolve_roots(invocation.paths) {
             Ok(roots) => roots,
-            Err(e) => {
-                return Failure::not_a_directory(format!("{e:#}")).dispatch(out, bootstrap_format)
-            }
+            Err(e) => return Failure::not_a_directory(format!("{e:#}")).dispatch(out, bootstrap_format),
         }
     };
 
@@ -209,23 +172,13 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
                 let config = match Config::load(&parent, &overrides) {
                     Ok(config) => config,
                     Err(e) => {
-                        let format = primary
-                            .as_ref()
-                            .map_or(bootstrap_format, |c| c.display.format);
+                        let format = primary.as_ref().map_or(bootstrap_format, |c| c.display.format);
                         return Failure::precondition(format!("{e:#}")).dispatch(out, format);
                     }
                 };
                 if config.language_for_path(target).is_none() {
-                    let reason = if target.extension().is_some() {
-                        "its extension maps to no configured language"
-                    } else {
-                        "it opens with no recognized `#!` interpreter"
-                    };
-                    return Failure::precondition(format!(
-                        "not a lintable code file: {} — {reason}",
-                        target.display()
-                    ))
-                    .dispatch(out, config.display.format);
+                    let reason = if target.extension().is_some() { "its extension maps to no configured language" } else { "it opens with no recognized `#!` interpreter" };
+                    return Failure::precondition(format!("not a lintable code file: {} — {reason}", target.display())).dispatch(out, config.display.format);
                 }
                 let files = vec![target.clone()];
                 let report = strict::check_file(&parent, &files, &config);
@@ -238,26 +191,18 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
                 let config = match Config::load(target, &overrides) {
                     Ok(config) => config,
                     Err(e) => {
-                        let format = primary
-                            .as_ref()
-                            .map_or(bootstrap_format, |c| c.display.format);
+                        let format = primary.as_ref().map_or(bootstrap_format, |c| c.display.format);
                         return Failure::precondition(format!("{e:#}")).dispatch(out, format);
                     }
                 };
                 let excludes = match util::build_globset(&config.display.ignore) {
                     Ok(excludes) => excludes,
-                    Err(e) => {
-                        return Failure::precondition(format!("{e:#}"))
-                            .dispatch(out, config.display.format)
-                    }
+                    Err(e) => return Failure::precondition(format!("{e:#}")).dispatch(out, config.display.format),
                 };
-                let files =
-                    match walk::collect_code_files(target, &config, &excludes, &GlobSet::empty()) {
-                        Ok(files) => files,
-                        Err(e) => {
-                            return report_limit_exceeded(out, err, config.display.format, &e)
-                        }
-                    };
+                let files = match walk::collect_code_files(target, &config, &excludes, &GlobSet::empty()) {
+                    Ok(files) => files,
+                    Err(e) => return report_limit_exceeded(out, err, config.display.format, &e),
+                };
                 let report = strict::check_structured(target, &files, &config, &excludes);
                 let max_per_node = config.display.max_per_node;
                 if primary.is_none() {
@@ -274,11 +219,7 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
                 report.merge(r);
             }
             writeln!(out, "{}", report.to_json())?;
-            return Ok(if report.passed {
-                exit::SUCCESS
-            } else {
-                exit::STRICT_FAILURE
-            });
+            return Ok(if report.passed { exit::SUCCESS } else { exit::STRICT_FAILURE });
         }
         let mut code = exit::SUCCESS;
         for (report, max_per_node) in &reports {
@@ -292,20 +233,12 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
         return Ok(code);
     }
 
-    let (map, primary) =
-        match build_codebase_map(&roots, &overrides, invocation.since_ref.as_deref()) {
-            Ok(built) => built,
-            Err(BuildError::Limit(e, format)) => {
-                return report_limit_exceeded(out, err, format, &e)
-            }
-            Err(BuildError::Git(e, format)) => {
-                return Failure::git(format!("{e:#}")).dispatch(out, format)
-            }
-            Err(BuildError::Other(e, format)) => {
-                return Failure::precondition(format!("{e:#}"))
-                    .dispatch(out, format.unwrap_or(bootstrap_format))
-            }
-        };
+    let (map, primary) = match build_codebase_map(&roots, &overrides, invocation.since_ref.as_deref()) {
+        Ok(built) => built,
+        Err(BuildError::Limit(e, format)) => return report_limit_exceeded(out, err, format, &e),
+        Err(BuildError::Git(e, format)) => return Failure::git(format!("{e:#}")).dispatch(out, format),
+        Err(BuildError::Other(e, format)) => return Failure::precondition(format!("{e:#}")).dispatch(out, format.unwrap_or(bootstrap_format)),
+    };
     // `--ignore-parsing-errors` governs only the stderr echo; the JSON envelope carries warnings regardless.
     if !primary.display.ignore_parsing_errors {
         for warning in &map.warnings {
@@ -337,22 +270,14 @@ pub fn run(cli: &Cli, out: &mut impl Write, err: &mut impl Write) -> Result<i32>
 
 /// `max_depth`-capped so nothing below the deepest displayable level is visited, counted or
 /// graphed. Returns the map and the primary root's resolved `Config`.
-pub(crate) fn build_codebase_map(
-    roots: &[PathBuf],
-    overrides: &CliOverrides,
-    since: Option<&str>,
-) -> std::result::Result<(model::CodebaseMap, Config), BuildError> {
+pub(crate) fn build_codebase_map(roots: &[PathBuf], overrides: &CliOverrides, since: Option<&str>) -> std::result::Result<(model::CodebaseMap, Config), BuildError> {
     let mut configs = Vec::with_capacity(roots.len());
     let mut ignore_globs = Vec::with_capacity(roots.len());
     for root in roots {
         let known_format = configs.first().map(|c: &Config| c.display.format);
-        let config =
-            Config::load(root, overrides).map_err(|e| BuildError::Other(e, known_format))?;
+        let config = Config::load(root, overrides).map_err(|e| BuildError::Other(e, known_format))?;
         let format = config.display.format;
-        ignore_globs.push(
-            util::build_globset(&config.display.ignore)
-                .map_err(|e| BuildError::Other(e, Some(format)))?,
-        );
+        ignore_globs.push(util::build_globset(&config.display.ignore).map_err(|e| BuildError::Other(e, Some(format)))?);
         configs.push(config);
     }
     // `-L` caps the walk for every root alike, so the primary root settles it.
@@ -363,8 +288,7 @@ pub(crate) fn build_codebase_map(
     // All roots are walked up front so a runaway trips before any graph build or render.
     let mut walked_roots = Vec::new();
     for ((root, config), excludes) in roots.iter().zip(&configs).zip(&ignore_globs) {
-        let include = util::build_globset(&config.display.include)
-            .map_err(|e| BuildError::Other(e, Some(format)))?;
+        let include = util::build_globset(&config.display.include).map_err(|e| BuildError::Other(e, Some(format)))?;
         let filter = walk::WalkFilter::from_config(config, excludes);
         match walk::collect_tree(root, config, filter, &include, max_depth) {
             Ok(walked) => walked_roots.push((root, config, walked, filter)),
@@ -378,9 +302,7 @@ pub(crate) fn build_codebase_map(
     if let Some(since) = since {
         let mut changed = std::collections::HashSet::new();
         for (root, _, _, _) in &walked_roots {
-            changed.extend(
-                changed::changed_files(root, since).map_err(|e| BuildError::Git(e, format))?,
-            );
+            changed.extend(changed::changed_files(root, since).map_err(|e| BuildError::Git(e, format))?);
         }
         let blast = graph.blast_radius_dirs(&changed);
         let in_change_set = |p: &PathBuf| {
@@ -393,33 +315,13 @@ pub(crate) fn build_codebase_map(
         }
     }
 
-    let map = model::CodebaseMap {
-        roots: walked_roots
-            .iter()
-            .map(|(root, config, walked, _)| {
-                model::build(
-                    root,
-                    &walked.files,
-                    &walked.dirs,
-                    &graph.dir_deps,
-                    config,
-                    max_depth,
-                )
-            })
-            .collect(),
-        warnings: graph.warnings,
-    };
+    let map = model::CodebaseMap { roots: walked_roots.iter().map(|(root, config, walked, _)| model::build(root, &walked.files, &walked.dirs, &graph.dir_deps, config, max_depth)).collect(), warnings: graph.warnings };
     Ok((map, primary))
 }
 
 /// Stdout stays empty either way; under `--format json` the abort is emitted as the structured
 /// error envelope on stdout instead of the human note going to `err`.
-fn report_limit_exceeded(
-    out: &mut impl Write,
-    err: &mut impl Write,
-    format: Format,
-    e: &LimitExceeded,
-) -> Result<i32> {
+fn report_limit_exceeded(out: &mut impl Write, err: &mut impl Write, format: Format, e: &LimitExceeded) -> Result<i32> {
     if format == Format::Json {
         let message = format!(
             "'{}' has more than {} code files (limit --max-files {}); nothing written. \
@@ -428,15 +330,7 @@ fn report_limit_exceeded(
             e.limit,
             e.limit,
         );
-        writeln!(
-            out,
-            "{}",
-            render::json::render_error(
-                exit::code::SCOPE_EXCEEDED,
-                &message,
-                Some(&e.root.display().to_string()),
-            )
-        )?;
+        writeln!(out, "{}", render::json::render_error(exit::code::SCOPE_EXCEEDED, &message, Some(&e.root.display().to_string()),))?;
     } else {
         writeln!(
             err,
@@ -453,12 +347,7 @@ fn report_limit_exceeded(
 /// Both strings are the SAME text embedded in those modules' rustdoc, so the wire contract
 /// cannot drift into a second copy.
 fn print_schema(out: &mut impl Write) -> Result<i32> {
-    write!(
-        out,
-        "annotated-tree — JSON output schema (schema version 1)\n\n{}\n{}",
-        render::json::SCHEMA_DOC,
-        strict::SCHEMA_DOC,
-    )?;
+    write!(out, "annotated-tree — JSON output schema (schema version 1)\n\n{}\n{}", render::json::SCHEMA_DOC, strict::SCHEMA_DOC,)?;
     Ok(exit::SUCCESS)
 }
 
@@ -467,11 +356,7 @@ pub(crate) fn resolve_roots(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     if paths.is_empty() {
         return Ok(vec![PathBuf::from(".")]);
     }
-    let invalid: Vec<String> = paths
-        .iter()
-        .filter(|p| !p.is_dir())
-        .map(|p| p.display().to_string())
-        .collect();
+    let invalid: Vec<String> = paths.iter().filter(|p| !p.is_dir()).map(|p| p.display().to_string()).collect();
     if !invalid.is_empty() {
         bail!("not an existing directory: {}", invalid.join(", "));
     }
@@ -486,11 +371,7 @@ pub(crate) fn resolve_lint_targets(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     if paths.is_empty() {
         return Ok(vec![PathBuf::from(".")]);
     }
-    let invalid: Vec<String> = paths
-        .iter()
-        .filter(|p| !p.exists())
-        .map(|p| p.display().to_string())
-        .collect();
+    let invalid: Vec<String> = paths.iter().filter(|p| !p.exists()).map(|p| p.display().to_string()).collect();
     if !invalid.is_empty() {
         bail!("not an existing file or directory: {}", invalid.join(", "));
     }

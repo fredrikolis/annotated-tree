@@ -38,10 +38,7 @@ impl CodebaseMap {
     }
 
     pub fn coverage(&self) -> Coverage {
-        let mut coverage = Coverage {
-            annotated: 0,
-            total: 0,
-        };
+        let mut coverage = Coverage { annotated: 0, total: 0 };
         for root in &self.roots {
             accumulate_coverage(root, &mut coverage);
         }
@@ -107,14 +104,7 @@ struct RawNode {
 }
 
 /// Every WALKED directory gets a node whether or not a listable file lies beneath it.
-pub fn build(
-    root: &Path,
-    files: &[PathBuf],
-    dirs: &[PathBuf],
-    graph: &HashMap<PathBuf, DirDeps>,
-    config: &Config,
-    max_depth: Option<usize>,
-) -> DirNode {
+pub fn build(root: &Path, files: &[PathBuf], dirs: &[PathBuf], graph: &HashMap<PathBuf, DirDeps>, config: &Config, max_depth: Option<usize>) -> DirNode {
     let mut raw = RawNode::default();
     for dir in dirs {
         if let Ok(rel) = dir.strip_prefix(root) {
@@ -142,10 +132,7 @@ fn insert_dir(node: &mut RawNode, rel: &Path) {
 }
 
 fn insert(node: &mut RawNode, rel: &Path, abs: &Path) {
-    let components: Vec<_> = rel
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect();
+    let components: Vec<_> = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
     let Some((file, dirs)) = components.split_last() else {
         return;
     };
@@ -156,62 +143,24 @@ fn insert(node: &mut RawNode, rel: &Path, abs: &Path) {
     cursor.files.insert(file.clone(), abs.to_path_buf());
 }
 
-fn convert(
-    node: &RawNode,
-    abs_dir: &Path,
-    graph: &HashMap<PathBuf, DirDeps>,
-    config: &Config,
-    now: SystemTime,
-    max_depth: Option<usize>,
-    depth: usize,
-) -> DirNode {
+fn convert(node: &RawNode, abs_dir: &Path, graph: &HashMap<PathBuf, DirDeps>, config: &Config, now: SystemTime, max_depth: Option<usize>, depth: usize) -> DirNode {
     let deps = dir_deps(abs_dir, graph);
-    let name = abs_dir
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let name = abs_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
 
     let pruned = max_depth.is_some_and(|limit| depth >= limit);
     if pruned {
         // A `.annotation` breadcrumb still resolves (no children needed); entry-file promotion cannot.
-        return DirNode {
-            name,
-            charter: charter::read_charter_file(abs_dir).and_then(|c| charter::from_file_body(&c)),
-            deps,
-            dirs: Vec::new(),
-            files: Vec::new(),
-            elided_dirs: 0,
-            elided_files: 0,
-        };
+        return DirNode { name, charter: charter::read_charter_file(abs_dir).and_then(|c| charter::from_file_body(&c)), deps, dirs: Vec::new(), files: Vec::new(), elided_dirs: 0, elided_files: 0 };
     }
 
-    let dirs: Vec<DirNode> = node
-        .dirs
-        .iter()
-        .map(|(child, sub)| {
-            convert(
-                sub,
-                &abs_dir.join(child),
-                graph,
-                config,
-                now,
-                max_depth,
-                depth + 1,
-            )
-        })
-        .collect();
+    let dirs: Vec<DirNode> = node.dirs.iter().map(|(child, sub)| convert(sub, &abs_dir.join(child), graph, config, now, max_depth, depth + 1)).collect();
 
     let files: Vec<FileNode> = node
         .files
         .iter()
         .map(|(name, abs)| {
             let (annotation, sidecar) = file_annotation(abs, config);
-            FileNode {
-                name: name.clone(),
-                annotation,
-                age_secs: age_secs(abs, now, config),
-                sidecar,
-            }
+            FileNode { name: name.clone(), annotation, age_secs: age_secs(abs, now, config), sidecar }
         })
         .collect();
 
@@ -222,15 +171,7 @@ fn convert(
     let (dirs, elided_dirs) = truncate(dirs, cap);
     let (files, elided_files) = truncate(files, cap);
 
-    DirNode {
-        name,
-        charter,
-        deps,
-        dirs,
-        files,
-        elided_dirs,
-        elided_files,
-    }
+    DirNode { name, charter, deps, dirs, files, elided_dirs, elided_files }
 }
 
 /// A `.annotation` breadcrumb overrides even when malformed; else the promoted entry file.
@@ -249,13 +190,7 @@ fn resolve_charter(abs_dir: &Path, dirs: &[DirNode], files: &[FileNode]) -> Opti
 }
 
 fn promote_first(files: &[FileNode], names: &[&str]) -> Option<Charter> {
-    names.iter().find_map(|name| {
-        files
-            .iter()
-            .find(|f| f.name == *name)
-            .and_then(|f| f.annotation.as_deref())
-            .and_then(charter::from_line)
-    })
+    names.iter().find_map(|name| files.iter().find(|f| f.name == *name).and_then(|f| f.annotation.as_deref()).and_then(charter::from_line))
 }
 
 fn truncate<T>(mut items: Vec<T>, cap: Option<usize>) -> (Vec<T>, u32) {
@@ -294,9 +229,5 @@ fn age_secs(abs: &Path, now: SystemTime, config: &Config) -> Option<i64> {
         return None;
     }
     let modified = abs.metadata().and_then(|m| m.modified()).ok()?;
-    Some(
-        now.duration_since(modified)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(-1),
-    )
+    Some(now.duration_since(modified).map(|d| d.as_secs() as i64).unwrap_or(-1))
 }

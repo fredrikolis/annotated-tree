@@ -12,10 +12,7 @@ pub fn changed_files(root: &Path, since: &str) -> Result<HashSet<PathBuf>> {
     let toplevel = PathBuf::from(toplevel.trim());
 
     let diff = git(root, &["diff", "--name-only", since])?;
-    let untracked = git(
-        root,
-        &["ls-files", "--others", "--exclude-standard", "--full-name"],
-    )?;
+    let untracked = git(root, &["ls-files", "--others", "--exclude-standard", "--full-name"])?;
 
     let mut out = HashSet::new();
     for line in diff.lines().chain(untracked.lines()) {
@@ -31,25 +28,10 @@ pub fn changed_files(root: &Path, since: &str) -> Result<HashSet<PathBuf>> {
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-        .with_context(|| {
-            format!(
-                "failed to run `git {}` — is git installed and on PATH?",
-                args.join(" ")
-            )
-        })?;
+    let output = Command::new("git").arg("-C").arg(root).args(args).output().with_context(|| format!("failed to run `git {}` — is git installed and on PATH?", args.join(" ")))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "`git {}` failed in {}: {}",
-            args.join(" "),
-            root.display(),
-            stderr.trim()
-        );
+        bail!("`git {}` failed in {}: {}", args.join(" "), root.display(), stderr.trim());
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }

@@ -52,15 +52,7 @@ pub struct Expected {
 }
 
 /// `pub(crate)` so the embedded annotation guide renders the SAME template the checker enforces.
-pub(crate) const EXPECTED: Expected = Expected {
-    template: "Concern: {the file's ONE job, verb-led} | Non-concern: {a concern an agent would expect here but this file does NOT own} | IO: (in) -> out  OR  none",
-    required: &[
-        crate::annotation::PART_CONCERN,
-        crate::annotation::PART_NON_CONCERN,
-        crate::annotation::PART_IO,
-    ],
-    recommended: &[],
-};
+pub(crate) const EXPECTED: Expected = Expected { template: "Concern: {the file's ONE job, verb-led} | Non-concern: {a concern an agent would expect here but this file does NOT own} | IO: (in) -> out  OR  none", required: &[crate::annotation::PART_CONCERN, crate::annotation::PART_NON_CONCERN, crate::annotation::PART_IO], recommended: &[] };
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Defect {
@@ -98,10 +90,7 @@ impl AnnotationViolation {
     pub(crate) fn message(&self) -> String {
         match self.category {
             Category::MissingAnnotation => {
-                let mut msg = format!(
-                    "{}:{}: missing annotation [{}] — add a `{}` comment.",
-                    self.path, self.line, self.language, self.marker,
-                );
+                let mut msg = format!("{}:{}: missing annotation [{}] — add a `{}` comment.", self.path, self.line, self.language, self.marker,);
                 if let Some(suggestion) = &self.suggestion {
                     msg.push_str(&format!(" suggestion: {suggestion}"));
                 }
@@ -116,30 +105,13 @@ impl AnnotationViolation {
                     Some(detail) => format!("{detail}; "),
                     None => String::new(),
                 };
-                let mut msg = format!(
-                    "{}:{}: annotation is malformed [{}] — {}expected '{}'. found: '{}'.",
-                    self.path,
-                    self.line,
-                    self.language,
-                    diagnosis,
-                    self.expected.template,
-                    self.found.as_deref().unwrap_or(""),
-                );
+                let mut msg = format!("{}:{}: annotation is malformed [{}] — {}expected '{}'. found: '{}'.", self.path, self.line, self.language, diagnosis, self.expected.template, self.found.as_deref().unwrap_or(""),);
                 if let Some(suggestion) = &self.suggestion {
                     msg.push_str(&format!(" suggestion: {suggestion}"));
                 }
                 msg
             }
-            Category::AnnotationTooLong => format!(
-                "{}:{}: annotation is too long [{}] — {}. found: '{}'",
-                self.path,
-                self.line,
-                self.language,
-                self.detail
-                    .as_deref()
-                    .expect("TooLong always carries a rendered detail"),
-                self.found.as_deref().unwrap_or(""),
-            ),
+            Category::AnnotationTooLong => format!("{}:{}: annotation is too long [{}] — {}. found: '{}'", self.path, self.line, self.language, self.detail.as_deref().expect("TooLong always carries a rendered detail"), self.found.as_deref().unwrap_or(""),),
         }
     }
 }
@@ -187,16 +159,7 @@ pub struct StrictReport {
 impl StrictReport {
     /// The identity for [`merge`](Self::merge).
     pub fn empty() -> Self {
-        StrictReport {
-            passed: true,
-            error_count: 0,
-            files_checked: 0,
-            annotated_count: 0,
-            violations: Vec::new(),
-            orphan_sidecars: Vec::new(),
-            trailing_content: Vec::new(),
-            rule_violations: Vec::new(),
-        }
+        StrictReport { passed: true, error_count: 0, files_checked: 0, annotated_count: 0, violations: Vec::new(), orphan_sidecars: Vec::new(), trailing_content: Vec::new(), rule_violations: Vec::new() }
     }
 
     pub fn merge(&mut self, other: StrictReport) {
@@ -213,70 +176,32 @@ impl StrictReport {
     /// `max_per_node` caps each list for humans via the `[+N more …]` idiom; JSON is never capped.
     pub fn to_text(&self, max_per_node: Option<usize>) -> (String, i32) {
         let mut out = String::new();
-        push_capped(&mut out, &self.violations, max_per_node, "error", |v| {
-            v.message()
-        });
+        push_capped(&mut out, &self.violations, max_per_node, "error", |v| v.message());
         let mut code = crate::exit::SUCCESS;
         if self.violations.is_empty() {
             out.push_str(&format!("All {} files passed\n", self.files_checked));
         } else {
-            out.push_str(&format!(
-                "\nFound {} error(s) in {} files checked\n",
-                self.violations.len(),
-                self.files_checked
-            ));
+            out.push_str(&format!("\nFound {} error(s) in {} files checked\n", self.violations.len(), self.files_checked));
             // Once per report; repeating this per violation would drown the findings.
             if let Some(max) = self.violations.iter().find_map(|v| v.defect.max) {
-                out.push_str(&format!(
-                    "note: the annotation length bound is {max} — change it with `[rules] max_annotation_length = <N>` or `--max-length <N>`, or disable it with `--max-length 0`\n"
-                ));
+                out.push_str(&format!("note: the annotation length bound is {max} — change it with `[rules] max_annotation_length = <N>` or `--max-length <N>`, or disable it with `--max-length 0`\n"));
             }
             code = crate::exit::STRICT_FAILURE;
         }
-        out.push_str(&format!(
-            "{} of {} files annotated\n",
-            self.annotated_count, self.files_checked
-        ));
+        out.push_str(&format!("{} of {} files annotated\n", self.annotated_count, self.files_checked));
         if !self.orphan_sidecars.is_empty() {
-            push_capped(
-                &mut out,
-                &self.orphan_sidecars,
-                max_per_node,
-                "orphan sidecar",
-                |s| format!("{}: {}", s.path, s.message),
-            );
-            out.push_str(&format!(
-                "\nFound {} orphan sidecar(s)\n",
-                self.orphan_sidecars.len()
-            ));
+            push_capped(&mut out, &self.orphan_sidecars, max_per_node, "orphan sidecar", |s| format!("{}: {}", s.path, s.message));
+            out.push_str(&format!("\nFound {} orphan sidecar(s)\n", self.orphan_sidecars.len()));
             code = crate::exit::STRICT_FAILURE;
         }
         if !self.trailing_content.is_empty() {
-            push_capped(
-                &mut out,
-                &self.trailing_content,
-                max_per_node,
-                "trailing-content finding",
-                |t| format!("{}:{}: {}", t.path, t.line, t.message),
-            );
-            out.push_str(&format!(
-                "\nFound {} annotation file(s) with trailing content\n",
-                self.trailing_content.len()
-            ));
+            push_capped(&mut out, &self.trailing_content, max_per_node, "trailing-content finding", |t| format!("{}:{}: {}", t.path, t.line, t.message));
+            out.push_str(&format!("\nFound {} annotation file(s) with trailing content\n", self.trailing_content.len()));
             code = crate::exit::STRICT_FAILURE;
         }
         if !self.rule_violations.is_empty() {
-            push_capped(
-                &mut out,
-                &self.rule_violations,
-                max_per_node,
-                "rule violation",
-                |v| format!("rule: {}", v.message),
-            );
-            out.push_str(&format!(
-                "\nFound {} rule violation(s)\n",
-                self.rule_violations.len()
-            ));
+            push_capped(&mut out, &self.rule_violations, max_per_node, "rule violation", |v| format!("rule: {}", v.message));
+            out.push_str(&format!("\nFound {} rule violation(s)\n", self.rule_violations.len()));
             code = crate::exit::STRICT_FAILURE;
         }
         (out, code)
@@ -288,13 +213,7 @@ impl StrictReport {
 }
 
 /// `cap` is never `Some(0)`, so a non-empty list always shows at least one line.
-fn push_capped<T>(
-    out: &mut String,
-    items: &[T],
-    cap: Option<usize>,
-    noun: &str,
-    line: impl Fn(&T) -> String,
-) {
+fn push_capped<T>(out: &mut String, items: &[T], cap: Option<usize>, noun: &str, line: impl Fn(&T) -> String) {
     let shown = cap.map_or(items.len(), |c| items.len().min(c));
     for item in &items[..shown] {
         out.push_str(&line(item));
@@ -302,89 +221,38 @@ fn push_capped<T>(
     }
     let hidden = items.len() - shown;
     if hidden > 0 {
-        out.push_str(&format!(
-            "[+{hidden} more {noun}(s) — full list in --format json]\n"
-        ));
+        out.push_str(&format!("[+{hidden} more {noun}(s) — full list in --format json]\n"));
     }
 }
 
 /// The graph build is skipped entirely when no rule is active.
-pub(crate) fn check_structured(
-    root: &Path,
-    files: &[PathBuf],
-    config: &Config,
-    excludes: &GlobSet,
-) -> StrictReport {
+pub(crate) fn check_structured(root: &Path, files: &[PathBuf], config: &Config, excludes: &GlobSet) -> StrictReport {
     let (violations, annotated_count, annotated_files) = check_annotations(root, files, config);
     let orphan_sidecars = orphan_sidecars(root, files);
     let trailing_content = trailing_contents(root, files, config);
     let mut rule_violations = Vec::new();
     if config.rules.is_active() {
         // UNCAPPED by depth: `-L` never shrinks what `--strict-check` evaluates.
-        let graph = graph::build(
-            &[root.to_path_buf()],
-            crate::walk::WalkFilter::from_config(config, excludes),
-            None,
-        );
+        let graph = graph::build(&[root.to_path_buf()], crate::walk::WalkFilter::from_config(config, excludes), None);
         let root_canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-        rule_violations = rules::evaluate(&graph.packages, &config.rules)
-            .into_iter()
-            .map(|v| RuleViolation {
-                code: v.code,
-                message: v.message,
-                packages: v.packages,
-                path: v
-                    .dir
-                    .map(|d| crate::util::to_unix_path(d.strip_prefix(&root_canon).unwrap_or(&d))),
-            })
-            .collect();
+        rule_violations = rules::evaluate(&graph.packages, &config.rules).into_iter().map(|v| RuleViolation { code: v.code, message: v.message, packages: v.packages, path: v.dir.map(|d| crate::util::to_unix_path(d.strip_prefix(&root_canon).unwrap_or(&d))) }).collect();
         // Modeled on `forbid_orphans`: a `[rules]` toggle yielding a fatal `RuleViolation`.
         if config.rules.require_package_charter {
-            rule_violations.extend(package_charter_violations(
-                &graph,
-                &root_canon,
-                &annotated_files,
-                config,
-            ));
+            rule_violations.extend(package_charter_violations(&graph, &root_canon, &annotated_files, config));
             rule_violations.sort_by(|a, b| a.message.cmp(&b.message));
         }
     }
-    StrictReport {
-        passed: violations.is_empty()
-            && orphan_sidecars.is_empty()
-            && trailing_content.is_empty()
-            && rule_violations.is_empty(),
-        error_count: violations.len(),
-        files_checked: files.len(),
-        annotated_count,
-        violations,
-        orphan_sidecars,
-        trailing_content,
-        rule_violations,
-    }
+    StrictReport { passed: violations.is_empty() && orphan_sidecars.is_empty() && trailing_content.is_empty() && rule_violations.is_empty(), error_count: violations.len(), files_checked: files.len(), annotated_count, violations, orphan_sidecars, trailing_content, rule_violations }
 }
 
 /// A lone file has no package neighbourhood, so directory-scale signals and the sidecar census
 /// do not apply and no graph is built.
 pub(crate) fn check_file(root: &Path, files: &[PathBuf], config: &Config) -> StrictReport {
     let (violations, annotated_count, _annotated_files) = check_annotations(root, files, config);
-    StrictReport {
-        passed: violations.is_empty(),
-        error_count: violations.len(),
-        files_checked: files.len(),
-        annotated_count,
-        violations,
-        orphan_sidecars: Vec::new(),
-        trailing_content: Vec::new(),
-        rule_violations: Vec::new(),
-    }
+    StrictReport { passed: violations.is_empty(), error_count: violations.len(), files_checked: files.len(), annotated_count, violations, orphan_sidecars: Vec::new(), trailing_content: Vec::new(), rule_violations: Vec::new() }
 }
 
-fn check_annotations(
-    root: &Path,
-    files: &[PathBuf],
-    config: &Config,
-) -> (Vec<AnnotationViolation>, usize, Vec<String>) {
+fn check_annotations(root: &Path, files: &[PathBuf], config: &Config) -> (Vec<AnnotationViolation>, usize, Vec<String>) {
     let mut violations: Vec<AnnotationViolation> = Vec::new();
     let mut annotated_count = 0usize;
     // `require_package_charter` only fires on a package whose files are actually annotated.
@@ -397,16 +265,8 @@ fn check_annotations(
                 if annotation::content_past_first_line(&body).is_some() {
                     continue;
                 }
-                match defect_parts(annotation::analyze_charter(
-                    &body,
-                    config.rules.max_annotation_length,
-                )) {
-                    Some(parts) => violations.push(bare_violation(
-                        rel_of(root, &sidecar::path_for(path)),
-                        SIDECAR_LANGUAGE,
-                        &file_name(&rel),
-                        parts,
-                    )),
+                match defect_parts(annotation::analyze_charter(&body, config.rules.max_annotation_length)) {
+                    Some(parts) => violations.push(bare_violation(rel_of(root, &sidecar::path_for(path)), SIDECAR_LANGUAGE, &file_name(&rel), parts)),
                     None => annotated_count += 1,
                 }
             }
@@ -414,9 +274,7 @@ fn check_annotations(
         };
         let mk = marker(lang);
 
-        let Some((line, category, defect, found, seed, detail)) = defect_parts(
-            annotation::analyze_file(path, lang, config.rules.max_annotation_length),
-        ) else {
+        let Some((line, category, defect, found, seed, detail)) = defect_parts(annotation::analyze_file(path, lang, config.rules.max_annotation_length)) else {
             annotated_count += 1;
             annotated_files.push(rel);
             continue;
@@ -426,21 +284,8 @@ fn check_annotations(
             annotated_files.push(rel.clone());
         }
         let seed = seed.as_deref().filter(|s| !s.is_empty());
-        let suggestion = (!matches!(category, Category::AnnotationTooLong))
-            .then(|| tailored_suggestion(&mk, &rel, seed));
-        violations.push(AnnotationViolation {
-            path: rel,
-            line,
-            language: lang.name.clone(),
-            category,
-            marker: mk,
-            example: lang.example(),
-            defect,
-            expected: EXPECTED,
-            suggestion,
-            found,
-            detail,
-        });
+        let suggestion = (!matches!(category, Category::AnnotationTooLong)).then(|| tailored_suggestion(&mk, &rel, seed));
+        violations.push(AnnotationViolation { path: rel, line, language: lang.name.clone(), category, marker: mk, example: lang.example(), defect, expected: EXPECTED, suggestion, found, detail });
     }
 
     violations.extend(charter_violations(root, files, config));
@@ -450,85 +295,28 @@ fn check_annotations(
 }
 
 /// `line`, [`Category`], `defect`, `found` text, a concern `seed`, and `detail`.
-type DefectParts = (
-    usize,
-    Category,
-    Defect,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-);
+type DefectParts = (usize, Category, Defect, Option<String>, Option<String>, Option<String>);
 
 /// `None` for `Ok`. Shared by the per-file lint AND the `.annotation` charter check.
 fn defect_parts(outcome: annotation::Outcome) -> Option<DefectParts> {
     use annotation::Outcome;
     match outcome {
         Outcome::Ok => None,
-        Outcome::Missing { line, raw } => Some((
-            line,
-            Category::MissingAnnotation,
-            Defect {
-                missing: vec![
-                    annotation::PART_CONCERN,
-                    annotation::PART_NON_CONCERN,
-                    annotation::PART_IO,
-                ],
-                length: None,
-                max: None,
-            },
-            raw.map(|r| r.trim().to_string()),
-            None,
-            None,
-        )),
-        Outcome::Malformed {
-            line,
-            actual,
-            missing,
-            detail,
-        } => {
+        Outcome::Missing { line, raw } => Some((line, Category::MissingAnnotation, Defect { missing: vec![annotation::PART_CONCERN, annotation::PART_NON_CONCERN, annotation::PART_IO], length: None, max: None }, raw.map(|r| r.trim().to_string()), None, None)),
+        Outcome::Malformed { line, actual, missing, detail } => {
             let seed = annotation::concern_seed(&actual).to_string();
-            Some((
-                line,
-                Category::MalformedAnnotation,
-                Defect {
-                    missing,
-                    length: None,
-                    max: None,
-                },
-                Some(actual),
-                Some(seed),
-                detail,
-            ))
+            Some((line, Category::MalformedAnnotation, Defect { missing, length: None, max: None }, Some(actual), Some(seed), detail))
         }
-        Outcome::TooLong {
-            line,
-            actual,
-            length,
-            max,
-        } => {
+        Outcome::TooLong { line, actual, length, max } => {
             let detail = too_long_detail(length, max);
-            Some((
-                line,
-                Category::AnnotationTooLong,
-                Defect {
-                    missing: Vec::new(),
-                    length: Some(length),
-                    max: Some(max),
-                },
-                Some(actual),
-                None,
-                Some(detail),
-            ))
+            Some((line, Category::AnnotationTooLong, Defect { missing: Vec::new(), length: Some(length), max: Some(max) }, Some(actual), None, Some(detail)))
         }
     }
 }
 
 /// Rendered once here so the JSON `detail` and the TEXT message carry byte-identical prose.
 fn too_long_detail(length: usize, max: usize) -> String {
-    format!(
-        "the annotation is {}, over the {max} limit",
-        annotation::counted(length, "character")
-    )
+    format!("the annotation is {}, over the {max} limit", annotation::counted(length, "character"))
 }
 
 /// Opting in means doing it right: a malformed breadcrumb is fatal, not a silent no-op.
@@ -541,54 +329,21 @@ fn charter_violations(root: &Path, files: &[PathBuf], config: &Config) -> Vec<An
         if annotation::content_past_first_line(&content).is_some() {
             continue;
         }
-        let Some(parts) = defect_parts(annotation::analyze_charter(
-            &content,
-            config.rules.max_annotation_length,
-        )) else {
+        let Some(parts) = defect_parts(annotation::analyze_charter(&content, config.rules.max_annotation_length)) else {
             continue;
         };
         let path = charter_rel(root, &dir);
-        let dir_name = dir
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let dir_name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         out.push(bare_violation(path, CHARTER_LANGUAGE, &dir_name, parts));
     }
     out
 }
 
 /// ONE builder for both a directory charter and a file sidecar, so the two scales cannot drift.
-fn bare_violation(
-    path: String,
-    language: &str,
-    subject: &str,
-    (line, category, defect, found, seed, detail): DefectParts,
-) -> AnnotationViolation {
+fn bare_violation(path: String, language: &str, subject: &str, (line, category, defect, found, seed, detail): DefectParts) -> AnnotationViolation {
     let seed = seed.as_deref().filter(|s| !s.is_empty());
-    let suggestion = (!matches!(category, Category::AnnotationTooLong)).then(|| {
-        found
-            .as_deref()
-            .and_then(annotation::unwrapped_bare_line)
-            .map(|wrapped| wrapped.bare)
-            .unwrap_or_else(|| {
-                tailored_suggestion("", subject, seed)
-                    .trim_start()
-                    .to_string()
-            })
-    });
-    AnnotationViolation {
-        path,
-        line,
-        language: language.to_string(),
-        category,
-        marker: String::new(),
-        example: charter::EXAMPLE.to_string(),
-        defect,
-        expected: EXPECTED,
-        suggestion,
-        found,
-        detail,
-    }
+    let suggestion = (!matches!(category, Category::AnnotationTooLong)).then(|| found.as_deref().and_then(annotation::unwrapped_bare_line).map(|wrapped| wrapped.bare).unwrap_or_else(|| tailored_suggestion("", subject, seed).trim_start().to_string()));
+    AnnotationViolation { path, line, language: language.to_string(), category, marker: String::new(), example: charter::EXAMPLE.to_string(), defect, expected: EXPECTED, suggestion, found, detail }
 }
 
 /// A dangling sidecar is precisely the one no listed file points at.
@@ -617,11 +372,7 @@ fn orphan_sidecars(root: &Path, files: &[PathBuf]) -> Vec<OrphanSidecar> {
     out
 }
 
-fn sidecar_trailing_contents(
-    root: &Path,
-    files: &[PathBuf],
-    config: &Config,
-) -> Vec<TrailingContent> {
+fn sidecar_trailing_contents(root: &Path, files: &[PathBuf], config: &Config) -> Vec<TrailingContent> {
     let mut out = Vec::new();
     for file in files {
         if config.language_for_path(file).is_some() {
@@ -631,10 +382,7 @@ fn sidecar_trailing_contents(
             continue;
         };
         if let Some(line) = annotation::content_past_first_line(&body) {
-            out.push(trailing_content(
-                rel_of(root, &sidecar::path_for(file)),
-                line,
-            ));
+            out.push(trailing_content(rel_of(root, &sidecar::path_for(file)), line));
         }
     }
     out
@@ -700,45 +448,21 @@ fn rel_dir(dir: &Path, root_canon: &Path) -> String {
 }
 
 fn owning_dir<'a>(file_rel: &str, pkg_dirs: &'a [String]) -> Option<&'a str> {
-    pkg_dirs
-        .iter()
-        .map(String::as_str)
-        .filter(|dir| dir_contains(dir, file_rel))
-        .max_by_key(|dir| dir.len())
+    pkg_dirs.iter().map(String::as_str).filter(|dir| dir_contains(dir, file_rel)).max_by_key(|dir| dir.len())
 }
 
 /// An empty `dir_rel` is the root package, which contains every file under the tree.
 fn dir_contains(dir_rel: &str, file_rel: &str) -> bool {
-    dir_rel.is_empty()
-        || file_rel
-            .strip_prefix(dir_rel)
-            .is_some_and(|rest| rest.starts_with('/'))
+    dir_rel.is_empty() || file_rel.strip_prefix(dir_rel).is_some_and(|rest| rest.starts_with('/'))
 }
 
-fn packages_owning_annotations(
-    graph: &graph::Graph,
-    root_canon: &Path,
-    annotated_files: &[String],
-) -> std::collections::HashSet<String> {
-    let pkg_dirs: Vec<String> = graph
-        .packages
-        .iter()
-        .map(|p| rel_dir(&p.dir, root_canon))
-        .collect();
-    annotated_files
-        .iter()
-        .filter_map(|f| owning_dir(f, &pkg_dirs))
-        .map(str::to_string)
-        .collect()
+fn packages_owning_annotations(graph: &graph::Graph, root_canon: &Path, annotated_files: &[String]) -> std::collections::HashSet<String> {
+    let pkg_dirs: Vec<String> = graph.packages.iter().map(|p| rel_dir(&p.dir, root_canon)).collect();
+    annotated_files.iter().filter_map(|f| owning_dir(f, &pkg_dirs)).map(str::to_string).collect()
 }
 
 /// A manifest-bearing package that OWNS an annotated file but resolves NO concern charter.
-fn package_charter_violations(
-    graph: &graph::Graph,
-    root_canon: &Path,
-    annotated_files: &[String],
-    config: &Config,
-) -> Vec<RuleViolation> {
+fn package_charter_violations(graph: &graph::Graph, root_canon: &Path, annotated_files: &[String], config: &Config) -> Vec<RuleViolation> {
     let owned = packages_owning_annotations(graph, root_canon, annotated_files);
     graph
         .packages
@@ -772,9 +496,7 @@ fn tailored_suggestion(marker: &str, path: &str, seed: Option<&str>) -> String {
         Some(s) => s.to_string(),
         None => format!("<what {} does>", file_stem(path)),
     };
-    format!(
-        "{marker} Concern: {concern} | Non-concern: <a concern an agent would expect here but this file does NOT own> | IO: (<inputs>) -> <outputs>"
-    )
+    format!("{marker} Concern: {concern} | Non-concern: <a concern an agent would expect here but this file does NOT own> | IO: (<inputs>) -> <outputs>")
 }
 
 fn file_stem(path: &str) -> &str {
@@ -784,9 +506,5 @@ fn file_stem(path: &str) -> &str {
 
 /// Falls back to `#` for a language with no delimiter configured.
 fn marker(lang: &crate::config::Language) -> String {
-    lang.line
-        .clone()
-        .or_else(|| lang.block.as_ref().map(|(open, _)| open.clone()))
-        .or_else(|| lang.docstring.first().cloned())
-        .unwrap_or_else(|| "#".to_string())
+    lang.line.clone().or_else(|| lang.block.as_ref().map(|(open, _)| open.clone())).or_else(|| lang.docstring.first().cloned()).unwrap_or_else(|| "#".to_string())
 }

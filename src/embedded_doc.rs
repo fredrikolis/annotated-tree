@@ -3,14 +3,8 @@
 /// Read with the BUILT-IN markdown grammar, never [`Config`](crate::config::Config) — a
 /// compiled-in document's grammar cannot vary with a user's file.
 pub(crate) fn embedded_body<'a>(doc: &'a str, name: &str) -> &'a str {
-    assert_eq!(
-        crate::annotation::sole_annotation_line(doc, &crate::config::builtin_markdown()),
-        Some(0),
-        "{name} line 1 must be nothing but a conforming three-field `<!-- … -->` annotation, to strip"
-    );
-    doc.split_once('\n')
-        .expect("a located annotation on line 1 is followed by a newline")
-        .1
+    assert_eq!(crate::annotation::sole_annotation_line(doc, &crate::config::builtin_markdown()), Some(0), "{name} line 1 must be nothing but a conforming three-field `<!-- … -->` annotation, to strip");
+    doc.split_once('\n').expect("a located annotation on line 1 is followed by a newline").1
 }
 
 #[cfg(test)]

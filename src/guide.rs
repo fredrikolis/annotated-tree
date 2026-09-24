@@ -12,20 +12,13 @@ const MORE_MARKER: &str = "<!-- more -->\n";
 /// cannot advertise different shapes.
 fn substituted() -> String {
     let rest = embedded_doc::embedded_body(GUIDE, "annotation guide");
-    assert!(
-        GUIDE.contains(MORE_MARKER),
-        "annotation guide must carry the `{MORE_MARKER}` marker splitting --help essence from the --strict-check tail"
-    );
-    rest.replace("{TEMPLATE}", strict::EXPECTED.template)
-        .replace("{EXAMPLE}", &config::builtin_example())
+    assert!(GUIDE.contains(MORE_MARKER), "annotation guide must carry the `{MORE_MARKER}` marker splitting --help essence from the --strict-check tail");
+    rest.replace("{TEMPLATE}", strict::EXPECTED.template).replace("{EXAMPLE}", &config::builtin_example())
 }
 
 pub fn essence() -> String {
     let full = substituted();
-    let head = full
-        .split(MORE_MARKER)
-        .next()
-        .expect("split always yields a head segment");
+    let head = full.split(MORE_MARKER).next().expect("split always yields a head segment");
     head.trim_end().to_string()
 }
 

@@ -30,10 +30,7 @@ impl ParsedManifest {
     /// A well-formed manifest that declares no package (e.g. a `pyproject.toml`
     /// with only tool config). Not an error — just nothing to graph.
     fn empty() -> Self {
-        ParsedManifest {
-            name: None,
-            deps: Vec::new(),
-        }
+        ParsedManifest { name: None, deps: Vec::new() }
     }
 }
 
@@ -54,12 +51,7 @@ pub trait ManifestParser {
 }
 
 pub fn parsers() -> Vec<Box<dyn ManifestParser>> {
-    vec![
-        Box::new(Python),
-        Box::new(Npm),
-        Box::new(Cargo),
-        Box::new(Go),
-    ]
+    vec![Box::new(Python), Box::new(Npm), Box::new(Cargo), Box::new(Go)]
 }
 
 /// Normalize a Python distribution name to its PEP 503 canonical form so that
@@ -84,19 +76,8 @@ impl ManifestParser for Python {
         let Some(project) = value.get("project") else {
             return Ok(ParsedManifest::empty());
         };
-        let name = project
-            .get("name")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        let deps = project
-            .get("dependencies")
-            .and_then(|v| v.as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(|v| v.as_str())
-            .filter_map(pep508_name)
-            .map(|name| Dep { name, local: false })
-            .collect();
+        let name = project.get("name").and_then(|v| v.as_str()).map(str::to_string);
+        let deps = project.get("dependencies").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|v| v.as_str()).filter_map(pep508_name).map(|name| Dep { name, local: false }).collect();
         Ok(ParsedManifest { name, deps })
     }
 }
@@ -104,9 +85,7 @@ impl ManifestParser for Python {
 /// Extract the distribution name from a PEP 508 requirement like
 /// `acme-core[extra] >= 1.0`.
 fn pep508_name(req: &str) -> Option<String> {
-    let end = req
-        .find(|c: char| "[<>=!~; (".contains(c))
-        .unwrap_or(req.len());
+    let end = req.find(|c: char| "[<>=!~; (".contains(c)).unwrap_or(req.len());
     let name = req[..end].trim();
     (!name.is_empty()).then(|| name.to_string())
 }
@@ -121,25 +100,14 @@ impl ManifestParser for Npm {
     }
     fn parse(&self, path: &Path) -> Result<ParsedManifest> {
         let text = read_file(path)?;
-        let value: serde_json::Value =
-            serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-        let name = value
-            .get("name")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
+        let value: serde_json::Value = serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        let name = value.get("name").and_then(|v| v.as_str()).map(str::to_string);
         let mut deps = Vec::new();
         for table in ["dependencies", "devDependencies"] {
             if let Some(obj) = value.get(table).and_then(|v| v.as_object()) {
                 for (dep_name, spec) in obj {
-                    let local = spec.as_str().is_some_and(|s| {
-                        s.starts_with("workspace:")
-                            || s.starts_with("file:")
-                            || s.starts_with("link:")
-                    });
-                    deps.push(Dep {
-                        name: dep_name.clone(),
-                        local,
-                    });
+                    let local = spec.as_str().is_some_and(|s| s.starts_with("workspace:") || s.starts_with("file:") || s.starts_with("link:"));
+                    deps.push(Dep { name: dep_name.clone(), local });
                 }
             }
         }
@@ -157,20 +125,13 @@ impl ManifestParser for Cargo {
     }
     fn parse(&self, path: &Path) -> Result<ParsedManifest> {
         let value: toml::Value = read_toml(path)?;
-        let name = value
-            .get("package")
-            .and_then(|p| p.get("name"))
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
+        let name = value.get("package").and_then(|p| p.get("name")).and_then(|v| v.as_str()).map(str::to_string);
         let mut deps = Vec::new();
         for table in ["dependencies", "dev-dependencies", "build-dependencies"] {
             if let Some(obj) = value.get(table).and_then(|v| v.as_table()) {
                 for (dep_name, spec) in obj {
                     let local = spec.get("path").is_some();
-                    deps.push(Dep {
-                        name: dep_name.clone(),
-                        local,
-                    });
+                    deps.push(Dep { name: dep_name.clone(), local });
                 }
             }
         }
@@ -234,10 +195,7 @@ fn parse_go_mod(text: &str) -> ParsedManifest {
 fn push_go_require(line: &str, deps: &mut Vec<Dep>) {
     let module = first_token(line);
     if !module.is_empty() {
-        deps.push(Dep {
-            name: module.to_string(),
-            local: false,
-        });
+        deps.push(Dep { name: module.to_string(), local: false });
     }
 }
 

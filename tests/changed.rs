@@ -18,39 +18,18 @@ fn temp_workspace(tag: &str) -> PathBuf {
     let pkg = |name: &str, deps: &str, module: &str| {
         let base = dir.join("packages").join(name);
         std::fs::create_dir_all(base.join(module)).unwrap();
-        std::fs::write(
-            base.join("pyproject.toml"),
-            format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\ndependencies = [{deps}]\n"),
-        )
-        .unwrap();
-        std::fs::write(
-            base.join(module).join("code.py"),
-            format!("# Concern: does {module} for the changed fixture | Non-concern: real behavior (a test stub) | IO: none\n"),
-        )
-        .unwrap();
+        std::fs::write(base.join("pyproject.toml"), format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\ndependencies = [{deps}]\n")).unwrap();
+        std::fs::write(base.join(module).join("code.py"), format!("# Concern: does {module} for the changed fixture | Non-concern: real behavior (a test stub) | IO: none\n")).unwrap();
     };
 
     pkg("acme-core", "\"pydantic>=2.0\"", "acme_core");
     pkg("acme-api", "\"acme-core\", \"fastapi>=0.110\"", "acme_api");
-    pkg(
-        "acme-worker",
-        "\"acme-core\", \"celery>=5.3\"",
-        "acme_worker",
-    );
+    pkg("acme-worker", "\"acme-core\", \"celery>=5.3\"", "acme_worker");
     dir
 }
 
 fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
-        .status()
-        .expect("git must be installed to run this test");
+    let status = Command::new("git").arg("-C").arg(dir).args(args).env("GIT_AUTHOR_NAME", "Test").env("GIT_AUTHOR_EMAIL", "test@example.com").env("GIT_COMMITTER_NAME", "Test").env("GIT_COMMITTER_EMAIL", "test@example.com").status().expect("git must be installed to run this test");
     assert!(status.success(), "git {args:?} failed");
 }
 
@@ -72,27 +51,14 @@ fn editing_core_surfaces_api_and_worker_as_blast_radius() {
     git(&dir, &["add", "-A"]);
     git(&dir, &["commit", "-q", "-m", "initial"]);
 
-    std::fs::write(
-        dir.join("packages/acme-core/acme_core/code.py"),
-        "# Concern: the edited acme_core file for the changed fixture | Non-concern: real behavior (a test stub) | IO: none\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("packages/acme-core/acme_core/code.py"), "# Concern: the edited acme_core file for the changed fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
 
     let (out, code) = run_capture(&dir, &["--since", "HEAD"]);
     assert_eq!(code, 0, "a normal filtered run exits 0:\n{out}");
 
-    assert!(
-        out.contains("acme_core"),
-        "the edited core file must appear:\n{out}"
-    );
-    assert!(
-        out.contains("acme_api"),
-        "api (depends on core) must surface as blast radius:\n{out}"
-    );
-    assert!(
-        out.contains("acme_worker"),
-        "worker (depends on core) must surface as blast radius:\n{out}"
-    );
+    assert!(out.contains("acme_core"), "the edited core file must appear:\n{out}");
+    assert!(out.contains("acme_api"), "api (depends on core) must surface as blast radius:\n{out}");
+    assert!(out.contains("acme_worker"), "worker (depends on core) must surface as blast radius:\n{out}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -106,18 +72,11 @@ fn untracked_file_under_subdir_root_is_surfaced() {
     git(&dir, &["commit", "-q", "-m", "initial"]);
 
     let subroot = dir.join("packages").join("acme-core");
-    std::fs::write(
-        subroot.join("acme_core").join("brandnew.py"),
-        "# Concern: a fresh untracked brandnew file for the changed fixture | Non-concern: real behavior (a test stub) | IO: none\n",
-    )
-    .unwrap();
+    std::fs::write(subroot.join("acme_core").join("brandnew.py"), "# Concern: a fresh untracked brandnew file for the changed fixture | Non-concern: real behavior (a test stub) | IO: none\n").unwrap();
 
     let (out, code) = run_capture(&subroot, &["--changed"]);
     assert_eq!(code, 0, "a subdir --changed run exits 0:\n{out}");
-    assert!(
-        out.contains("brandnew"),
-        "an untracked file under a subdirectory root must surface, not vanish:\n{out}"
-    );
+    assert!(out.contains("brandnew"), "an untracked file under a subdirectory root must surface, not vanish:\n{out}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -129,25 +88,14 @@ fn bad_ref_and_non_repo_are_errors_not_empty() {
     git(&dir, &["add", "-A"]);
     git(&dir, &["commit", "-q", "-m", "initial"]);
 
-    let cli = Cli::parse_from([
-        "annotated-tree",
-        "--since",
-        "no-such-ref-xyz",
-        &dir.to_string_lossy(),
-    ]);
+    let cli = Cli::parse_from(["annotated-tree", "--since", "no-such-ref-xyz", &dir.to_string_lossy()]);
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    assert!(
-        annotated_tree::run(&cli, &mut out, &mut err).is_err(),
-        "a bad ref must be an explicit error, not an empty result"
-    );
+    assert!(annotated_tree::run(&cli, &mut out, &mut err).is_err(), "a bad ref must be an explicit error, not an empty result");
 
     let non_repo = temp_workspace("nonrepo");
     let cli2 = Cli::parse_from(["annotated-tree", "--changed", &non_repo.to_string_lossy()]);
     let (mut out2, mut err2) = (Vec::new(), Vec::new());
-    assert!(
-        annotated_tree::run(&cli2, &mut out2, &mut err2).is_err(),
-        "a non-git directory must be an explicit error"
-    );
+    assert!(annotated_tree::run(&cli2, &mut out2, &mut err2).is_err(), "a non-git directory must be an explicit error");
 
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&non_repo);

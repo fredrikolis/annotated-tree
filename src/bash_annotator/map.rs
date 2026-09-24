@@ -6,11 +6,7 @@ pub enum Shape {
     Prefixed,
 }
 
-pub const MAP: &[(&str, Shape)] = &[
-    ("ls", Shape::Listed),
-    ("find", Shape::Listed),
-    ("grep", Shape::Prefixed),
-];
+pub const MAP: &[(&str, Shape)] = &[("ls", Shape::Listed), ("find", Shape::Listed), ("grep", Shape::Prefixed)];
 
 pub fn shape_of(tool: &str) -> Option<Shape> {
     MAP.iter().find(|(name, _)| *name == tool).map(|(_, s)| *s)

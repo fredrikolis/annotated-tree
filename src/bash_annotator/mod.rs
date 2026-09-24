@@ -16,32 +16,7 @@ use anyhow::Result;
 use crate::cli::BashAnnotator;
 use crate::exit;
 
-const VERBS: &[(&str, &str)] = &[
-    (
-        "--install-claude-hook [FILE]",
-        "switch all three hook entries on [default: ~/.claude/settings.json]",
-    ),
-    (
-        "--uninstall-claude-hook [FILE]",
-        "remove the entries this tool added, and nothing else",
-    ),
-    (
-        "--check CMD…",
-        "print what each quoted CMD would become; runs nothing",
-    ),
-    (
-        "--rewrite-tool-call",
-        "hook entry point: one PreToolUse event on stdin",
-    ),
-    (
-        "--session-announcement",
-        "hook entry point: print what a SessionStart tells the agent",
-    ),
-    (
-        "--annotate-tool-output CMD…",
-        "pipeline entry point: annotate the producer's output",
-    ),
-];
+const VERBS: &[(&str, &str)] = &[("--install-claude-hook [FILE]", "switch all three hook entries on [default: ~/.claude/settings.json]"), ("--uninstall-claude-hook [FILE]", "remove the entries this tool added, and nothing else"), ("--check CMD…", "print what each quoted CMD would become; runs nothing"), ("--rewrite-tool-call", "hook entry point: one PreToolUse event on stdin"), ("--session-announcement", "hook entry point: print what a SessionStart tells the agent"), ("--annotate-tool-output CMD…", "pipeline entry point: annotate the producer's output")];
 
 fn modes(args: &BashAnnotator) -> Vec<&'static str> {
     let mut set = Vec::new();
@@ -74,30 +49,14 @@ fn usage(err: &mut impl Write) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn dispatch(
-    args: &BashAnnotator,
-    out: &mut impl Write,
-    err: &mut impl Write,
-) -> Result<i32> {
+pub(crate) fn dispatch(args: &BashAnnotator, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
     // trailing_var_arg makes clap swallow a mistyped flag into `args` instead of rejecting it.
     let set = modes(args);
     if set.len() != 1 {
         if set.len() > 1 {
-            writeln!(
-                err,
-                "annotated-tree bash-annotator: {} and {} are exclusive; pass exactly one.",
-                set[0], set[1]
-            )?;
-        } else if let Some(unknown) = args
-            .args
-            .first()
-            .filter(|a| a.to_string_lossy().starts_with('-'))
-        {
-            writeln!(
-                err,
-                "annotated-tree bash-annotator: unknown flag {}",
-                unknown.to_string_lossy()
-            )?;
+            writeln!(err, "annotated-tree bash-annotator: {} and {} are exclusive; pass exactly one.", set[0], set[1])?;
+        } else if let Some(unknown) = args.args.first().filter(|a| a.to_string_lossy().starts_with('-')) {
+            writeln!(err, "annotated-tree bash-annotator: unknown flag {}", unknown.to_string_lossy())?;
         } else {
             writeln!(err, "annotated-tree bash-annotator: no verb given.")?;
         }
@@ -121,34 +80,19 @@ pub(crate) fn dispatch(
 }
 
 /// cargo has no install/uninstall step; the only code it runs is build.rs, at BUILD time.
-fn hook_file(
-    args: &BashAnnotator,
-    verb: &str,
-    out: &mut impl Write,
-    err: &mut impl Write,
-) -> Result<i32> {
+fn hook_file(args: &BashAnnotator, verb: &str, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
     let path = match args.args.first() {
         Some(p) => std::path::PathBuf::from(p),
         None => match hookfile::default_path() {
             Some(p) => p,
             None => {
-                writeln!(
-                    err,
-                    "annotated-tree bash-annotator: no HOME, so no default settings file."
-                )?;
-                writeln!(
-                    err,
-                    "Pass one: annotated-tree bash-annotator {verb} <path/to/settings.json>"
-                )?;
+                writeln!(err, "annotated-tree bash-annotator: no HOME, so no default settings file.")?;
+                writeln!(err, "Pass one: annotated-tree bash-annotator {verb} <path/to/settings.json>")?;
                 return Ok(exit::USAGE);
             }
         },
     };
-    let done = if args.install_claude_hook {
-        hookfile::install(&path)
-    } else {
-        hookfile::uninstall(&path)
-    };
+    let done = if args.install_claude_hook { hookfile::install(&path) } else { hookfile::uninstall(&path) };
     match done {
         Ok(outcome) => {
             writeln!(out, "{}", outcome.describe(&path))?;
@@ -229,16 +173,9 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
 }
 
 /// Tool NOT run here — the shell already ran it; the session's own `grep`/`find` are the engines.
-fn annotate_tool_output(
-    args: &BashAnnotator,
-    out: &mut impl Write,
-    err: &mut impl Write,
-) -> Result<i32> {
+fn annotate_tool_output(args: &BashAnnotator, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
     if args.args.is_empty() {
-        writeln!(
-            err,
-            "annotated-tree bash-annotator: --annotate-tool-output needs the producer's argv."
-        )?;
+        writeln!(err, "annotated-tree bash-annotator: --annotate-tool-output needs the producer's argv.")?;
         writeln!(
             err,
             "usage: <tool> [args...] | annotated-tree bash-annotator \

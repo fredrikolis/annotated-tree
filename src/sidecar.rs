@@ -41,12 +41,7 @@ pub fn candidates_in(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
-    let mut out: Vec<PathBuf> = entries
-        .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
-        .map(|e| e.path())
-        .filter(|p| named_target(p).is_some())
-        .collect();
+    let mut out: Vec<PathBuf> = entries.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_file())).map(|e| e.path()).filter(|p| named_target(p).is_some()).collect();
     out.sort();
     out
 }
@@ -58,18 +53,12 @@ mod tests {
     #[test]
     fn the_bare_charter_file_is_not_a_sidecar() {
         assert_eq!(named_target(Path::new("a/.annotation")), None);
-        assert_eq!(
-            named_target(Path::new("a/trials.csv.annotation")),
-            Some(PathBuf::from("a/trials.csv"))
-        );
+        assert_eq!(named_target(Path::new("a/trials.csv.annotation")), Some(PathBuf::from("a/trials.csv")));
         assert_eq!(named_target(Path::new("a/trials.csv")), None);
     }
 
     #[test]
     fn path_for_appends_the_suffix_to_the_whole_name() {
-        assert_eq!(
-            path_for(Path::new("a/trials.csv")),
-            PathBuf::from("a/trials.csv.annotation")
-        );
+        assert_eq!(path_for(Path::new("a/trials.csv")), PathBuf::from("a/trials.csv.annotation"));
     }
 }
