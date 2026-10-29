@@ -1,4 +1,4 @@
-// Concern: appends the annotator to a Bash pipeline whose stdout the model reads | Non-concern: lexing, the tool table, or annotating a line | IO: (command) -> rewrite + tools, or None
+// Concern: appends the annotator to a shell pipeline whose stdout the model reads | Non-concern: lexing, the tool table, or annotating a line | IO: (command) -> rewrite + tools, or None
 
 use super::lex::{lex, Kind, Token};
 use super::map::shape_of;
@@ -37,7 +37,7 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         return None;
     }
 
-    // A subshell makes the pipeline ONE command; `${PIPESTATUS[i]}` inside it can't describe the stages.
+    // A later `${PIPESTATUS[i]}` sees the subshell as ONE command, not the stages.
     if command.contains("PIPESTATUS") {
         return None;
     }
@@ -102,19 +102,8 @@ pub fn rewrite(command: &str) -> Option<(String, Vec<String>)> {
         // Raw source text, not re-quoted: re-quoting once turned `ls "$d"` into literal `'$d'`.
         let argv: Vec<&str> = producer.words.iter().filter(|t| t.start >= tok.start).filter(|t| matches!(t.kind, Kind::Word(_))).map(|t| &command[t.start..t.end]).collect();
 
-        // `PIPESTATUS` is captured FIRST because any later command replaces it.
-        let n = pipe.len() - 1;
-        edits.push((
-            from,
-            to,
-            format!(
-                "( {} | {annotator} {} ; __ps=(\"${{PIPESTATUS[@]}}\"); __rc=${{__ps[{n}]}}; \
-                 [[ -o pipefail ]] && for __s in \"${{__ps[@]}}\"; do ((__s)) && __rc=$__s; \
-                 done; exit $__rc )",
-                &command[from..to],
-                argv.join(" ")
-            ),
-        ));
+        // POSIX for zsh and sh. Status leaves on fd 3 after `||`, which `set -e` never skips.
+        edits.push((from, to, format!("( exec 4>&1; __rc=$( {{ {{ __s=0; {} || __s=$?; echo $__s >&3; }} | {annotator} {} >&4; }} 3>&1 ); exit ${{__rc:-1}} )", &command[from..to], argv.join(" "))));
         annotated.push(prog);
     }
 

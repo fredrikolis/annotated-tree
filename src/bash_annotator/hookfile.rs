@@ -1,12 +1,26 @@
-// Concern: adds or removes our hook entries in a settings file, keeping every other key | Non-concern: what to rewrite, or the hook event format | IO: (settings path) -> edited file, outcome
+// Concern: where each harness keeps its hook file, and adding or removing our entries there, sparing other keys | Non-concern: what to rewrite, or the event format | IO: (harness, path) -> edited file
 
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
 
+/// (event, matcher, command suffix, the verb that marks an entry as ours)
+type Entry = (&'static str, &'static str, &'static str, &'static str);
+
+/// Both harnesses read the same `{"hooks": {Event: [{matcher, hooks}]}}` shape, so one editor serves both.
+pub struct Harness {
+    entries: &'static [Entry],
+    default_path: fn() -> Option<PathBuf>,
+    pub home_vars: &'static str,
+    pub next_step: Option<&'static str>,
+}
+
 /// `SessionStart` names every source; `compact` matters most since a compacted session would
 /// otherwise never hear the announcement again.
-const ENTRIES: &[(&str, &str, &str, &str)] = &[("PreToolUse", "Bash", "bash-annotator --rewrite-tool-call", "--rewrite-tool-call"), ("SessionStart", "startup|resume|clear|compact|fork", "bash-annotator --session-announcement", "--session-announcement"), ("PostToolUse", "Write|Edit|MultiEdit|NotebookEdit", "edit-hook --claude", "edit-hook")];
+pub const CLAUDE: Harness = Harness { entries: &[("PreToolUse", "Bash", "bash-annotator --rewrite-tool-call", "--rewrite-tool-call"), ("SessionStart", "startup|resume|clear|compact|fork", "bash-annotator --session-announcement", "--session-announcement"), ("PostToolUse", "Write|Edit|MultiEdit|NotebookEdit", "edit-hook --claude", "edit-hook")], default_path: claude_path, home_vars: "HOME", next_step: None };
+
+/// Codex reports its `exec_command` tool as `Bash` to hooks, and every file write as `apply_patch`.
+pub const CODEX: Harness = Harness { entries: &[("PreToolUse", "Bash", "bash-annotator --rewrite-codex-tool-call", "--rewrite-codex-tool-call"), ("SessionStart", "startup|resume|clear|compact|fork", "bash-annotator --session-announcement", "--session-announcement"), ("PostToolUse", "apply_patch", "edit-hook --codex", "edit-hook")], default_path: codex_path, home_vars: "CODEX_HOME or HOME", next_step: Some("Codex skips a hook until you trust it: start `codex` and accept the hook review it opens, or trust each entry under /hooks.") };
 
 /// A bare name (not absolute, unlike the rewritten-pipeline annotator): the harness runs it
 /// directly, no pipe to SIGPIPE if it fails to resolve.
@@ -39,10 +53,22 @@ impl Outcome {
     }
 }
 
+impl Harness {
+    pub fn default_path(&self) -> Option<PathBuf> {
+        (self.default_path)()
+    }
+}
+
 /// User-level settings; a per-repo hook instead passes `.claude/settings.local.json`.
-pub fn default_path() -> Option<PathBuf> {
+fn claude_path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
     Some(PathBuf::from(home).join(".claude").join("settings.json"))
+}
+
+/// As Codex resolves its home; a per-repo hook passes `.codex/hooks.json`.
+fn codex_path() -> Option<PathBuf> {
+    let home = std::env::var_os("CODEX_HOME").filter(|h| !h.is_empty()).map(PathBuf::from).or_else(|| Some(PathBuf::from(std::env::var_os("HOME")?).join(".codex")))?;
+    Some(home.join("hooks.json"))
 }
 
 /// Substring, not final-path-segment: that tail is identical for a bare vs. absolute command.
@@ -51,8 +77,8 @@ fn names(entry: &Value, needle: &str) -> bool {
 }
 
 /// Any entry naming one of our verbs, regardless of which event it sits under.
-fn is_ours(entry: &Value) -> bool {
-    ENTRIES.iter().any(|(_, _, _, verb)| names(entry, verb))
+fn is_ours(harness: &Harness, entry: &Value) -> bool {
+    harness.entries.iter().any(|(_, _, _, verb)| names(entry, verb))
 }
 
 /// Read the settings file as an object, or an empty one when it does not exist yet.
@@ -95,11 +121,11 @@ fn write(path: &Path, root: &Map<String, Value>) -> Result<(), String> {
 }
 
 /// Each event is considered on its own, so a file missing one entry still gains it.
-pub fn install(path: &Path) -> Result<Outcome, String> {
+pub fn install(harness: &Harness, path: &Path) -> Result<Outcome, String> {
     let mut root = read(path)?;
     let mut added = false;
     let mut replaced = false;
-    for (event, matcher, suffix, verb) in ENTRIES {
+    for (event, matcher, suffix, verb) in harness.entries {
         let hooks = root.entry("hooks").or_insert_with(|| json!({})).as_object_mut().ok_or_else(|| format!("`hooks` in {} is not an object", path.display()))?;
         let list = hooks.entry(*event).or_insert_with(|| json!([])).as_array_mut().ok_or_else(|| format!("`hooks.{event}` in {} is not an array", path.display()))?;
         // The verb, not the whole command: an entry a user rewrote to an absolute path is already doing this event's one job, and re-spelling it would be a change they did not ask for.
@@ -107,7 +133,7 @@ pub fn install(path: &Path) -> Result<Outcome, String> {
             continue;
         }
         let before = list.len();
-        list.retain(|e| !is_ours(e));
+        list.retain(|e| !is_ours(harness, e));
         replaced |= list.len() != before;
         list.push(json!({
             "matcher": matcher,
@@ -124,7 +150,7 @@ pub fn install(path: &Path) -> Result<Outcome, String> {
 
 /// Remove our entries and nothing else, pruning the containers we would have created so the file
 /// returns to the shape it had before `install`.
-pub fn uninstall(path: &Path) -> Result<Outcome, String> {
+pub fn uninstall(harness: &Harness, path: &Path) -> Result<Outcome, String> {
     let mut root = read(path)?;
     let mut removed = false;
     // A block, so the borrow of `root` ends before the last container is pruned off `root` itself.
@@ -132,12 +158,12 @@ pub fn uninstall(path: &Path) -> Result<Outcome, String> {
         let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) else {
             return Ok(Outcome::NotPresent);
         };
-        for (event, _, _, _) in ENTRIES {
+        for (event, _, _, _) in harness.entries {
             let Some(list) = hooks.get_mut(*event).and_then(Value::as_array_mut) else {
                 continue;
             };
             let before = list.len();
-            list.retain(|e| !is_ours(e));
+            list.retain(|e| !is_ours(harness, e));
             if list.len() == before {
                 continue;
             }
@@ -172,10 +198,10 @@ mod tests {
     #[test]
     fn installing_twice_adds_one_entry_per_event() {
         let p = tmp("twice");
-        assert_eq!(install(&p).unwrap(), Outcome::Added);
-        assert_eq!(install(&p).unwrap(), Outcome::AlreadyPresent);
+        assert_eq!(install(&CLAUDE, &p).unwrap(), Outcome::Added);
+        assert_eq!(install(&CLAUDE, &p).unwrap(), Outcome::AlreadyPresent);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
-        for (event, matcher, suffix, _verb) in ENTRIES {
+        for (event, matcher, suffix, _verb) in CLAUDE.entries {
             let list = v["hooks"][event].as_array().unwrap();
             assert_eq!(list.len(), 1, "{event} was duplicated");
             assert_eq!(list[0]["matcher"], *matcher);
@@ -187,7 +213,7 @@ mod tests {
     fn re_installing_over_a_pretooluse_only_file_adds_the_sessionstart_entry() {
         let p = tmp("upgrade");
         std::fs::write(&p, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"annotated-tree bash-annotator --rewrite-tool-call"}]}]}}"#).unwrap();
-        assert_eq!(install(&p).unwrap(), Outcome::Added);
+        assert_eq!(install(&CLAUDE, &p).unwrap(), Outcome::Added);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
         assert_eq!(v["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
@@ -197,7 +223,7 @@ mod tests {
     fn an_entry_under_an_event_that_runs_a_different_verb_is_replaced() {
         let p = tmp("stale");
         std::fs::write(&p, r#"{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"annotated-tree bash-annotator --rewrite-tool-call"}]}]}}"#).unwrap();
-        assert_eq!(install(&p).unwrap(), Outcome::Replaced);
+        assert_eq!(install(&CLAUDE, &p).unwrap(), Outcome::Replaced);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         let list = v["hooks"]["SessionStart"].as_array().unwrap();
         assert_eq!(list.len(), 1, "the stale entry was left beside the new one");
@@ -208,7 +234,7 @@ mod tests {
     fn the_tracked_settings_example_is_what_install_writes() {
         // Generated, not authored: regenerate with `--install-claude-hook .claude/settings.json`.
         let p = tmp("example");
-        install(&p).unwrap();
+        install(&CLAUDE, &p).unwrap();
         let tracked = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".claude").join("settings.json");
         assert_eq!(std::fs::read_to_string(&p).unwrap(), std::fs::read_to_string(&tracked).unwrap(), "the tracked example has drifted from what install writes");
     }
@@ -217,9 +243,9 @@ mod tests {
     fn both_entries_round_trip() {
         let p = tmp("roundtrip");
         std::fs::write(&p, "{\n  \"permissions\": {}\n}\n").unwrap();
-        assert_eq!(install(&p).unwrap(), Outcome::Added);
-        assert_eq!(uninstall(&p).unwrap(), Outcome::Removed);
-        assert_eq!(uninstall(&p).unwrap(), Outcome::NotPresent);
+        assert_eq!(install(&CLAUDE, &p).unwrap(), Outcome::Added);
+        assert_eq!(uninstall(&CLAUDE, &p).unwrap(), Outcome::Removed);
+        assert_eq!(uninstall(&CLAUDE, &p).unwrap(), Outcome::NotPresent);
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "{\n  \"permissions\": {}\n}\n");
     }
 
@@ -227,12 +253,12 @@ mod tests {
     fn every_other_key_survives_both_directions() {
         let p = tmp("keys");
         std::fs::write(&p, r#"{"permissions":{"allow":["Bash(ls:*)"]},"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"other"}]}]}}"#).unwrap();
-        install(&p).unwrap();
+        install(&CLAUDE, &p).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(v["permissions"]["allow"][0], "Bash(ls:*)");
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 2);
 
-        assert_eq!(uninstall(&p).unwrap(), Outcome::Removed);
+        assert_eq!(uninstall(&CLAUDE, &p).unwrap(), Outcome::Removed);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(v["permissions"]["allow"][0], "Bash(ls:*)");
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
@@ -244,8 +270,8 @@ mod tests {
     fn uninstall_restores_the_shape_install_found() {
         let p = tmp("shape");
         std::fs::write(&p, r#"{"permissions":{"allow":[]}}"#).unwrap();
-        install(&p).unwrap();
-        uninstall(&p).unwrap();
+        install(&CLAUDE, &p).unwrap();
+        uninstall(&CLAUDE, &p).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert!(v.get("hooks").is_none(), "empty containers were left behind");
         assert!(v.get("permissions").is_some());
@@ -256,10 +282,10 @@ mod tests {
         let p = tmp("abs");
         std::fs::write(&p, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"/home/x/.cargo/bin/annotated-tree bash-annotator --rewrite-tool-call"}]}]}}"#).unwrap();
         // The SessionStart half is still added, but the recognised PreToolUse entry is not duplicated — and uninstall takes the absolute-path spelling away with it.
-        assert_eq!(install(&p).unwrap(), Outcome::Added);
+        assert_eq!(install(&CLAUDE, &p).unwrap(), Outcome::Added);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
-        assert_eq!(uninstall(&p).unwrap(), Outcome::Removed);
+        assert_eq!(uninstall(&CLAUDE, &p).unwrap(), Outcome::Removed);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert!(v.get("hooks").is_none());
     }
@@ -268,7 +294,7 @@ mod tests {
     fn a_malformed_file_is_refused_rather_than_replaced() {
         let p = tmp("malformed");
         std::fs::write(&p, "{ not json").unwrap();
-        assert!(install(&p).is_err());
+        assert!(install(&CLAUDE, &p).is_err());
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "{ not json");
     }
 
@@ -276,14 +302,14 @@ mod tests {
     fn uninstalling_what_was_never_installed_changes_nothing() {
         let p = tmp("absent");
         std::fs::write(&p, "{\n  \"permissions\": {}\n}\n").unwrap();
-        assert_eq!(uninstall(&p).unwrap(), Outcome::NotPresent);
+        assert_eq!(uninstall(&CLAUDE, &p).unwrap(), Outcome::NotPresent);
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "{\n  \"permissions\": {}\n}\n");
     }
 
     #[test]
     fn a_missing_file_is_created_with_only_our_entries() {
         let p = tmp("fresh");
-        assert_eq!(install(&p).unwrap(), Outcome::Added);
+        assert_eq!(install(&CLAUDE, &p).unwrap(), Outcome::Added);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(v["hooks"]["PreToolUse"][0]["matcher"], "Bash");
         assert!(v["hooks"]["SessionStart"][0]["matcher"].as_str().is_some_and(|m| m.contains("compact")));
@@ -298,8 +324,31 @@ mod tests {
         let p = tmp("edit-hook-flag-only");
         // Flag-only matching would wrongly claim, then remove, someone else's entry.
         std::fs::write(&p, r#"{"hooks":{"PostToolUse":[{"matcher":"Write","hooks":[{"type":"command","command":"annotated-tree some-other-verb --claude"}]}]}}"#).unwrap();
-        assert_eq!(uninstall(&p).unwrap(), Outcome::NotPresent);
+        assert_eq!(uninstall(&CLAUDE, &p).unwrap(), Outcome::NotPresent);
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(v["hooks"]["PostToolUse"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_tracked_codex_example_is_what_install_writes() {
+        // Generated, not authored: regenerate with `--install-codex-hook .codex/hooks.json`.
+        let p = tmp("codex-example");
+        install(&CODEX, &p).unwrap();
+        let tracked = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".codex").join("hooks.json");
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), std::fs::read_to_string(&tracked).unwrap(), "the tracked example has drifted from what install writes");
+    }
+
+    #[test]
+    fn the_codex_rewrite_verb_is_told_apart_from_the_claude_one() {
+        // Neither verb is a substring of the other.
+        let p = tmp("codex-stale");
+        std::fs::write(&p, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"annotated-tree bash-annotator --rewrite-tool-call"}]}]}}"#).unwrap();
+        install(&CODEX, &p).unwrap();
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        let commands: Vec<&str> = v["hooks"]["PreToolUse"].as_array().unwrap().iter().filter_map(|e| e["hooks"][0]["command"].as_str()).collect();
+        assert!(commands.contains(&"annotated-tree bash-annotator --rewrite-codex-tool-call"), "{commands:?}");
+        assert_eq!(uninstall(&CODEX, &p).unwrap(), Outcome::Removed);
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "annotated-tree bash-annotator --rewrite-tool-call", "uninstall took an entry Codex install never wrote");
     }
 }

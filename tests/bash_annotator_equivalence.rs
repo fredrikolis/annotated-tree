@@ -82,10 +82,10 @@ const COMMANDS: &[&str] = &[
     "ls | nl -ba",
     "ls | tail -n +2",
     "grep -rn Concern a.rs",
-    // pipefail reads the rightmost stage; the annotator's success hides a failure.
+    // pipefail: the status carried out is the pipeline's own, so an early stage's failure shows.
     "set -o pipefail; grep -rl zzznomatch . | sort",
     "set -o pipefail; ls nosuchentry | sort",
-    // `set -e` masks it: subshell ends before `exit` runs.
+    // `set -e` must not end the group before it carries the status out.
     "set -euo pipefail; ls nosuchentry | sort",
     // Subshell reduces the pipeline to ONE command, hiding stages from PIPESTATUS.
     "ls nosuchentry | sort; echo ${PIPESTATUS[0]}",
@@ -149,7 +149,11 @@ fn have_bash() -> bool {
 }
 
 fn shell(dir: &Path, cmd: &str) -> (Vec<u8>, Option<i32>) {
-    let out = Command::new("bash").args(["-c", cmd]).current_dir(dir).stderr(Stdio::null()).output().expect("spawn bash");
+    run_in(&["bash", "-c"], dir, cmd)
+}
+
+fn run_in(sh: &[&str], dir: &Path, cmd: &str) -> (Vec<u8>, Option<i32>) {
+    let out = Command::new(sh[0]).args(&sh[1..]).arg(cmd).current_dir(dir).stderr(Stdio::null()).output().expect("spawn shell");
     (out.stdout, out.status.code())
 }
 
@@ -227,4 +231,34 @@ fn every_rewritten_command_agrees_with_the_command_the_agent_wrote() {
          exercising the thing it exists to check",
         COMMANDS.len()
     );
+}
+
+/// Codex runs a command under the session's shell, and Claude Code under zsh when `$SHELL` is zsh.
+const PORTABLE: &[&str] = &["ls a.rs && echo AND", "ls nosuchentry && echo AND", "ls nosuchentry || echo OR", "ls a.rs || echo OR", "grep -rl zzznomatch .; echo rc=$?", "ls nosuchentry | sort; echo rc=$?", "d=docs; ls \"$d\"", "ls docs src | head -1; echo rc=$?", "set -e; ls nosuchentry", "set -e; ls a.rs; echo after"];
+
+#[test]
+fn a_rewrite_keeps_its_status_and_control_flow_under_sh_and_zsh() {
+    let zsh = Command::new("zsh").args(["-fc", "true"]).status().is_ok_and(|s| s.success());
+    if !zsh {
+        eprintln!("SKIPPED the zsh half: no zsh on PATH");
+    }
+    let shells: Vec<&[&str]> = if zsh { vec![&["sh", "-c"], &["zsh", "-fc"]] } else { vec![&["sh", "-c"]] };
+    let dir = fixture("portable");
+    let mut wrong: Vec<String> = Vec::new();
+    for sh in shells {
+        for cmd in PORTABLE {
+            let sub = rewritten(&dir, cmd);
+            assert_ne!(sub, *cmd, "{cmd:?} must be rewritten for this to test anything");
+            let (raw_out, raw_code) = run_in(sh, &dir, cmd);
+            let (new_out, new_code) = run_in(sh, &dir, &sub);
+            let raw_lines: Vec<&[u8]> = raw_out.split(|b| *b == b'\n').collect();
+            let new_lines: Vec<&[u8]> = new_out.split(|b| *b == b'\n').collect();
+            let lines_agree = raw_lines.len() == new_lines.len() && raw_lines.iter().zip(&new_lines).all(|(r, n)| same_line(r, n));
+            if raw_code != new_code || !lines_agree {
+                wrong.push(format!("  {} {cmd:?}\n    exit {raw_code:?} -> {new_code:?}\n    raw: {:?}\n    new: {:?}", sh[0], String::from_utf8_lossy(&raw_out), String::from_utf8_lossy(&new_out)));
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(wrong.is_empty(), "rewrites that changed behaviour outside bash:\n{}", wrong.join("\n"));
 }

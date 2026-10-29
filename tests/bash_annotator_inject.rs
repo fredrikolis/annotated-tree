@@ -361,14 +361,13 @@ fn the_decision_table_holds() {
 fn the_rest_of_the_command_survives_byte_for_byte() {
     // The agent's own text — spacing, quoting, globs — must reappear verbatim inside the parens.
     let spaced = check("ls    -la");
-    assert!(spaced.contains("( ls    -la | "), "spacing changed: {spaced}");
+    assert!(spaced.contains("__s=0; ls    -la || "), "spacing changed: {spaced}");
     let quoted = check("grep -rn \"a\\|b\" .");
-    assert!(quoted.contains("( grep -rn \"a\\|b\" . | "), "a quoted pipe was treated as a pipeline: {quoted}");
+    assert!(quoted.contains("__s=0; grep -rn \"a\\|b\" . || "), "a quoted pipe was treated as a pipeline: {quoted}");
     let both = check("cd src && ls -la && grep -rn foo .");
-    assert!(both.starts_with("cd src && ( ls -la | ") && both.contains("( grep -rn foo . | "), "the surrounding command was altered: {both}");
-    // Exit-code recovery indexes the stage last BEFORE the annotator; equivalence.rs checks the CODE itself.
-    assert!(check("ls | sort").contains("__rc=${__ps[1]}"), "a two-stage pipeline must re-raise stage 1, not stage 0");
-    assert!(check("ls -la").contains("__rc=${__ps[0]}"), "a one-stage pipeline must re-raise stage 0");
+    assert!(both.starts_with("cd src && ( exec 4>&1; ") && both.contains("__s=0; grep -rn foo . || "), "the surrounding command was altered: {both}");
+    // The status read is the whole pipeline's, so every stage sits inside the group; equivalence.rs checks the CODE itself.
+    assert!(check("ls | sort").contains("__s=0; ls | sort || __s=$?; "), "the status must be the last stage's, not the producer's");
 }
 
 #[test]

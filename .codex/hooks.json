@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "annotated-tree edit-hook --codex",
+            "type": "command"
+          }
+        ],
+        "matcher": "apply_patch"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "annotated-tree bash-annotator --rewrite-codex-tool-call",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "annotated-tree bash-annotator --session-announcement",
+            "type": "command"
+          }
+        ],
+        "matcher": "startup|resume|clear|compact|fork"
+      }
+    ]
+  }
+}
