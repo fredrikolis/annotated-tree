@@ -31,7 +31,7 @@ Have your agent write a one-line annotation at the top of each file (point it at
 Well-written commit-time githooks will catch: a) **structural** issues mechanically using `annotated-tree --strict-check` and, b) **editorial** issues using a neutral agent reviewer (see ours here [`.githooks/`](.githooks/)). Blocking at commit catches the rot while the agent still has the context to fix it.
 
 3. **Put them in front of the agent during daily work.**  
-Most agents did not see `annotated-tree` in their training set and will reflexively explore a folder using traditional `grep`/`find`/`ls`. To make sure that agents still see and use annotations for decision making, we can install a `PreToolUse` hook (see ours here [`.claude/settings.json`](.claude/settings.json)). The tool call still runs unchanged, but each path in the output is printed along with its annotation.
+Most agents did not see `annotated-tree` in their training set and will reflexively explore a folder using traditional `grep`/`find`/`ls`. To make sure that agents still see and use annotations for decision making, we can install a `PreToolUse` hook (see ours here for Claude Code, [`.claude/settings.json`](.claude/settings.json), and for Codex, [`.codex/hooks.json`](.codex/hooks.json)). The hook rewrites the command to pipe its output through an annotator: the exit status is the same, and each line that names a path gains that path's annotation at its end.
 
 ## TL;DR (for humans)
 
@@ -66,10 +66,11 @@ Then:
   `annotated-tree --annotation-guide`.
 - Add the commit-time git hooks. Start at `annotated-tree --githook-guide`.
 - Put annotations in tool results:
-  `annotated-tree bash-annotator --install-claude-hook .claude/settings.json`.
-  Naming the file keeps it to this workspace; the default is my global
-  settings. Tell me to restart Claude Code afterwards, or it does not take
-  effect.
+  `annotated-tree bash-annotator --install-claude-hook .claude/settings.json`,
+  or `--install-codex-hook .codex/hooks.json` for Codex. Naming the file keeps
+  it to this workspace; the default is my global settings. Tell me to restart
+  Claude Code afterwards; for Codex, tell me to trust the hooks in its review.
+  Codex reads a project's `.codex/hooks.json` only once the project is trusted.
 - Wire the map into every session.
 
 Set up only what fits, not everything. Recommend, then do it, and ask me only
@@ -330,7 +331,7 @@ Same prebuilt binary on every channel.
 to disk:
 
 - `bash-annotator --install-claude-hook` and `--uninstall-claude-hook`, which edit one file: your
-  Claude Code settings.
+  Claude Code settings. `--install-codex-hook` and `--uninstall-codex-hook` edit Codex's `hooks.json`.
 - `strip`, which rewrites the files you name, or with `-R` every annotated file in a directory.
 
 ### The commands
@@ -371,7 +372,7 @@ them.
 Your agent starts a task by searching, and what comes back is a list of paths that says
 nothing about what any of them is for. A Claude Code hook pipes your agent's own `grep`,
 `find` and `ls` output through an annotator, so the paths come back carrying the annotations.
-The commands themselves run exactly as written:
+Each output line keeps its text, with the annotation appended, and the exit status is unchanged:
 
 ```
 $ grep -rl "Renderer" src
@@ -387,6 +388,13 @@ what any command would become with `annotated-tree bash-annotator --check '<cmd>
 If you allowlist Bash commands, a `Bash(grep:*)` rule stops matching once the command is
 rewritten, and those searches start prompting. Widen the rule, approve the prompts, or leave the
 hook off where the allowlist matters more.
+
+For Codex, `--install-codex-hook` writes Codex's form of the three hooks to `$CODEX_HOME/hooks.json`
+(default `~/.codex/hooks.json`). Codex skips a hook until you trust it, in the review it opens at
+startup or under `/hooks`. The rewritten command still meets Codex's approval policy, and its rules
+see the rewritten string. Under the `untrusted` policy, an `ls`, `grep` or `find` that a rule let
+run unasked may now ask for approval. Codex prefers `rg`, which the annotator does not read, so
+only its `ls`, `find` and `grep` calls are annotated.
 
 ### Wire it into every session
 

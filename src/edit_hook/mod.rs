@@ -22,8 +22,8 @@ use crate::{guide, sidecar, util};
 const CONFIG_FILE: &str = ".annotated-tree.toml";
 
 pub(crate) fn dispatch(args: &EditHook, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
-    if !args.claude {
-        writeln!(err, "annotated-tree edit-hook: pass --claude.")?;
+    if !args.claude && !args.codex {
+        writeln!(err, "annotated-tree edit-hook: pass --claude or --codex.")?;
         return Ok(exit::USAGE);
     }
     let mut raw = String::new();
@@ -33,20 +33,55 @@ pub(crate) fn dispatch(args: &EditHook, out: &mut impl Write, err: &mut impl Wri
     let Ok(event) = serde_json::from_str::<Value>(&raw) else {
         return Ok(exit::SUCCESS);
     };
-    let Some(file) = written(&event) else {
-        return Ok(exit::SUCCESS);
-    };
-    match findings(&file) {
-        Ok(Some(envelope)) => writeln!(out, "{envelope}")?,
-        Ok(None) => {}
-        Err(reason) => writeln!(out, "{}", could_not_check(&reason))?,
+    let files = if args.codex { patched(&event) } else { written(&event).into_iter().collect() };
+    let mut found = Vec::new();
+    let mut unchecked = Vec::new();
+    for file in files {
+        match defects(&file) {
+            Ok(Some(d)) => found.push(d),
+            Ok(None) => {}
+            Err(reason) => unchecked.push(format!("annotated-tree edit-hook: couldn't check {} — {reason}", file.display())),
+        }
+    }
+    if !found.is_empty() {
+        writeln!(out, "{}", envelope(&found, &unchecked))?;
+    } else if !unchecked.is_empty() {
+        writeln!(out, "{}", could_not_check(&unchecked.join("\n")))?;
     }
     Ok(exit::SUCCESS)
 }
 
+fn cwd(event: &Value) -> PathBuf {
+    event.pointer("/cwd").and_then(Value::as_str).map_or_else(|| PathBuf::from("."), PathBuf::from)
+}
+
 fn written(event: &Value) -> Option<PathBuf> {
-    let cwd = event.pointer("/cwd").and_then(Value::as_str).map_or_else(|| PathBuf::from("."), PathBuf::from);
+    let cwd = cwd(event);
     ["/tool_input/file_path", "/tool_response/filePath", "/tool_input/notebook_path"].iter().filter_map(|p| event.pointer(p).and_then(Value::as_str)).map(|p| cwd.join(p)).find(|p| p.is_file())
+}
+
+/// Codex hands over the patch text itself; a moved file is checked under the name it moved to.
+fn patched(event: &Value) -> Vec<PathBuf> {
+    let Some(patch) = event.pointer("/tool_input/command").and_then(Value::as_str) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = Vec::new();
+    // `Move to:` renames only the file the `Update File:` right above it named.
+    let mut updating = false;
+    for line in patch.lines() {
+        if let Some(p) = line.strip_prefix("*** Add File: ").or_else(|| line.strip_prefix("*** Update File: ")) {
+            files.push(PathBuf::from(p.trim()));
+            updating = line.starts_with("*** Update");
+        } else if let Some(p) = line.strip_prefix("*** Move to: ").filter(|_| updating) {
+            files.pop();
+            files.push(PathBuf::from(p.trim()));
+        } else if line.starts_with("*** ") {
+            updating = false;
+        }
+    }
+    let cwd = cwd(event);
+    let mut seen = std::collections::HashSet::new();
+    files.into_iter().map(|p| cwd.join(p)).filter(|p| p.is_file() && seen.insert(p.clone())).collect()
 }
 
 fn git_root(file: &Path) -> Option<PathBuf> {
@@ -59,10 +94,17 @@ fn git_root(file: &Path) -> Option<PathBuf> {
     }
 }
 
+/// One file's violations, with what [`envelope`] needs to state them.
+struct Defects {
+    root: PathBuf,
+    violations: Vec<AnnotationViolation>,
+    no_guide: bool,
+}
+
 /// `Ok(None)` where the repo never opted in, or the same walk `.githooks/pre-commit` runs would
 /// never reach `file` — the gate's own predicate, so this cannot report what it would pass.
 /// `Err` names a reason this couldn't be checked at all — distinct from "nothing to report".
-fn findings(file: &Path) -> Result<Option<String>, String> {
+fn defects(file: &Path) -> Result<Option<Defects>, String> {
     let Some(root) = git_root(file) else {
         return Ok(None);
     };
@@ -85,7 +127,7 @@ fn findings(file: &Path) -> Result<Option<String>, String> {
     if report.violations.is_empty() {
         return Ok(None);
     }
-    Ok(Some(envelope(&root, &report.violations, &config)))
+    Ok(Some(Defects { root, violations: report.violations, no_guide: config.display.no_guide }))
 }
 
 /// Resolves what to actually hand [`strict::check_file`]. A `.annotation` charter and a
@@ -107,23 +149,29 @@ fn subject(file: &Path, canon: &Path, root: &Path, walked: &WalkedTree) -> Optio
     walked.files.iter().find(|p| p.canonicalize().is_ok_and(|c| c == *canon)).cloned()
 }
 
-fn envelope(root: &Path, violations: &[AnnotationViolation], config: &Config) -> String {
-    let headline = "annotated-tree: this file's annotation is malformed, missing, or over the bound — \
-         --strict-check reports it.";
-    let lines: Vec<String> = violations.iter().map(AnnotationViolation::message).collect();
-
+fn envelope(found: &[Defects], unchecked: &[String]) -> String {
+    let whose = if found.len() > 1 { "these files' annotations are" } else { "this file's annotation is" };
+    let headline = format!("annotated-tree: {whose} malformed, missing, or over the bound — --strict-check reports it.");
+    let mut lines: Vec<String> = Vec::new();
     let mut body = String::new();
-    let _ = writeln!(body, "# paths relative to {}", root.display());
-    for l in &lines {
-        let _ = writeln!(body, "{l}");
+    for d in found {
+        let _ = writeln!(body, "# paths relative to {}", d.root.display());
+        for l in d.violations.iter().map(AnnotationViolation::message) {
+            let _ = writeln!(body, "{l}");
+            lines.push(l);
+        }
     }
-    let guide = if config.display.no_guide { String::new() } else { format!("\n{}", guide::full()) };
+    for u in unchecked {
+        let _ = writeln!(body, "{u}");
+        lines.push(u.clone());
+    }
+    let guide = if found.iter().all(|d| d.no_guide) { String::new() } else { format!("\n{}", guide::full()) };
     let context = format!(
         "{headline}\n\n{body}{guide}\nDeleting the annotation is not a fix, and neither is \
          raising [rules] max_annotation_length.",
     );
 
-    let mut message = headline.to_string();
+    let mut message = headline.clone();
     for l in lines.iter().take(6) {
         let _ = write!(message, "\n{l}");
     }
@@ -134,8 +182,7 @@ fn envelope(root: &Path, violations: &[AnnotationViolation], config: &Config) ->
     .to_string()
 }
 
-fn could_not_check(reason: &str) -> String {
-    let message = format!("annotated-tree edit-hook: couldn't check this file — {reason}");
+fn could_not_check(message: &str) -> String {
     json!({
         "systemMessage": message,
         "hookSpecificOutput": { "hookEventName": "PostToolUse", "additionalContext": message },
@@ -152,6 +199,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    fn findings(file: &Path) -> Result<Option<String>, String> {
+        defects(file).map(|d| d.map(|d| envelope(&[d], &[])))
     }
 
     fn init_repo(dir: &Path) {
@@ -282,5 +333,33 @@ mod tests {
         let v: Value = serde_json::from_str(&out).unwrap();
         let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
         assert!(!ctx.contains(guide::full().lines().next().unwrap()));
+    }
+
+    #[test]
+    fn a_codex_patch_names_every_file_it_leaves_behind() {
+        let dir = tmp("codex-patch");
+        for f in ["added.rs", "updated.rs", "moved.rs"] {
+            std::fs::write(dir.join(f), "fn main() {}\n").unwrap();
+        }
+        // `updated.rs` twice, and a stray `Move to:` after a delete that must not rename `moved.rs`.
+        let patch = "*** Begin Patch\n*** Add File: added.rs\n+fn main() {}\n*** Update File: updated.rs\n@@\n-a\n+b\n*** Update File: old.rs\n*** Move to: moved.rs\n*** Update File: updated.rs\n*** Delete File: gone.rs\n*** Move to: added.rs\n*** End Patch\n";
+        let event = json!({ "cwd": dir, "tool_name": "apply_patch", "tool_input": { "command": patch } });
+        assert_eq!(patched(&event), vec![dir.join("added.rs"), dir.join("updated.rs"), dir.join("moved.rs")]);
+    }
+
+    #[test]
+    fn two_broken_files_in_one_patch_share_one_envelope() {
+        let dir = tmp("codex-two");
+        init_repo(&dir);
+        for f in ["a.rs", "b.rs"] {
+            std::fs::write(dir.join(f), "fn main() {}\n").unwrap();
+        }
+        let found: Vec<Defects> = ["a.rs", "b.rs"].iter().filter_map(|f| defects(&dir.join(f)).unwrap()).collect();
+        let v: Value = serde_json::from_str(&envelope(&found, &["annotated-tree edit-hook: couldn't check c.rs — a reason".to_string()])).unwrap();
+        let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+        assert!(ctx.contains("a.rs") && ctx.contains("b.rs"), "{ctx}");
+        assert_eq!(ctx.matches(guide::full().lines().next().unwrap()).count(), 1, "the guide was repeated per file");
+        assert!(ctx.contains("couldn't check c.rs"), "a file that could not be checked was dropped beside the findings: {ctx}");
+        assert!(v["systemMessage"].as_str().is_some_and(|m| m.contains("these files'")), "{v}");
     }
 }

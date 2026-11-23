@@ -16,29 +16,11 @@ use anyhow::Result;
 use crate::cli::BashAnnotator;
 use crate::exit;
 
-const VERBS: &[(&str, &str)] = &[("--install-claude-hook [FILE]", "switch all three hook entries on [default: ~/.claude/settings.json]"), ("--uninstall-claude-hook [FILE]", "remove the entries this tool added, and nothing else"), ("--check CMD…", "print what each quoted CMD would become; runs nothing"), ("--rewrite-tool-call", "hook entry point: one PreToolUse event on stdin"), ("--session-announcement", "hook entry point: print what a SessionStart tells the agent"), ("--annotate-tool-output CMD…", "pipeline entry point: annotate the producer's output")];
+const VERBS: &[(&str, &str)] = &[("--install-claude-hook [FILE]", "switch all three hook entries on [default: ~/.claude/settings.json]"), ("--uninstall-claude-hook [FILE]", "remove the entries this tool added, and nothing else"), ("--install-codex-hook [FILE]", "the same three, for Codex [default: ~/.codex/hooks.json]"), ("--uninstall-codex-hook [FILE]", "remove the Codex entries this tool added, and nothing else"), ("--check CMD…", "print what each quoted CMD would become; runs nothing"), ("--rewrite-tool-call", "hook entry point: one Claude Code PreToolUse event on stdin"), ("--rewrite-codex-tool-call", "hook entry point: one Codex PreToolUse event on stdin"), ("--session-announcement", "hook entry point: print what a SessionStart tells the agent"), ("--annotate-tool-output CMD…", "pipeline entry point: annotate the producer's output")];
 
 fn modes(args: &BashAnnotator) -> Vec<&'static str> {
-    let mut set = Vec::new();
-    if args.install_claude_hook {
-        set.push("--install-claude-hook");
-    }
-    if args.uninstall_claude_hook {
-        set.push("--uninstall-claude-hook");
-    }
-    if args.check {
-        set.push("--check");
-    }
-    if args.rewrite_tool_call {
-        set.push("--rewrite-tool-call");
-    }
-    if args.session_announcement {
-        set.push("--session-announcement");
-    }
-    if args.annotate_tool_output {
-        set.push("--annotate-tool-output");
-    }
-    set
+    let flags = [(args.install_claude_hook, "--install-claude-hook"), (args.uninstall_claude_hook, "--uninstall-claude-hook"), (args.install_codex_hook, "--install-codex-hook"), (args.uninstall_codex_hook, "--uninstall-codex-hook"), (args.check, "--check"), (args.rewrite_tool_call, "--rewrite-tool-call"), (args.rewrite_codex_tool_call, "--rewrite-codex-tool-call"), (args.session_announcement, "--session-announcement"), (args.annotate_tool_output, "--annotate-tool-output")];
+    flags.into_iter().filter_map(|(on, flag)| on.then_some(flag)).collect()
 }
 
 fn usage(err: &mut impl Write) -> Result<()> {
@@ -65,13 +47,19 @@ pub(crate) fn dispatch(args: &BashAnnotator, out: &mut impl Write, err: &mut imp
     }
 
     if args.install_claude_hook || args.uninstall_claude_hook {
-        return hook_file(args, set[0], out, err);
+        return hook_file(&hookfile::CLAUDE, args.install_claude_hook, args, set[0], out, err);
+    }
+    if args.install_codex_hook || args.uninstall_codex_hook {
+        return hook_file(&hookfile::CODEX, args.install_codex_hook, args, set[0], out, err);
     }
     if args.check {
         return check(args, out);
     }
     if args.rewrite_tool_call {
-        return rewrite_tool_call(out, err);
+        return rewrite_tool_call(None, out, err);
+    }
+    if args.rewrite_codex_tool_call {
+        return rewrite_tool_call(Some("allow"), out, err);
     }
     if args.session_announcement {
         return session_announcement(out);
@@ -80,22 +68,25 @@ pub(crate) fn dispatch(args: &BashAnnotator, out: &mut impl Write, err: &mut imp
 }
 
 /// cargo has no install/uninstall step; the only code it runs is build.rs, at BUILD time.
-fn hook_file(args: &BashAnnotator, verb: &str, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
+fn hook_file(harness: &hookfile::Harness, installing: bool, args: &BashAnnotator, verb: &str, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
     let path = match args.args.first() {
         Some(p) => std::path::PathBuf::from(p),
-        None => match hookfile::default_path() {
+        None => match harness.default_path() {
             Some(p) => p,
             None => {
-                writeln!(err, "annotated-tree bash-annotator: no HOME, so no default settings file.")?;
-                writeln!(err, "Pass one: annotated-tree bash-annotator {verb} <path/to/settings.json>")?;
+                writeln!(err, "annotated-tree bash-annotator: no {}, so no default hook file.", harness.home_vars)?;
+                writeln!(err, "Pass one: annotated-tree bash-annotator {verb} <path/to/hook-file.json>")?;
                 return Ok(exit::USAGE);
             }
         },
     };
-    let done = if args.install_claude_hook { hookfile::install(&path) } else { hookfile::uninstall(&path) };
+    let done = if installing { hookfile::install(harness, &path) } else { hookfile::uninstall(harness, &path) };
     match done {
         Ok(outcome) => {
             writeln!(out, "{}", outcome.describe(&path))?;
+            if let (Some(step), hookfile::Outcome::Added | hookfile::Outcome::Replaced) = (harness.next_step, &outcome) {
+                writeln!(out, "{step}")?;
+            }
             Ok(exit::SUCCESS)
         }
         // Never exit 1: here that means "--strict-check found a violation".
@@ -128,13 +119,12 @@ fn session_announcement(out: &mut impl Write) -> Result<i32> {
 }
 
 /// `PreToolUse` hook entry point: JSON in, JSON out or nothing. ALWAYS exit::SUCCESS; exit 2 blocks the tool call.
-fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
+///
+/// `decision` is the harnesses' one wire difference. In Claude Code `allow` skips permission checks
+/// for the whole `&&` chain; Codex drops an `updatedInput` sent without it, and still approval-checks the rewrite.
+fn rewrite_tool_call(decision: Option<&str>, out: &mut impl Write, err: &mut impl Write) -> Result<i32> {
     if std::io::stdin().is_terminal() {
-        writeln!(
-            err,
-            "annotated-tree bash-annotator --rewrite-tool-call: reads one Claude Code \
-             PreToolUse event on stdin; a terminal will never send one."
-        )?;
+        writeln!(err, "annotated-tree bash-annotator: a rewrite verb reads one PreToolUse event on stdin; a terminal will never send one.")?;
         return Ok(exit::SUCCESS);
     }
 
@@ -158,17 +148,11 @@ fn rewrite_tool_call(out: &mut impl Write, err: &mut impl Write) -> Result<i32> 
 
     let mut updated = input.clone();
     updated.insert("command".into(), serde_json::Value::String(rewritten));
-    // No `permissionDecision`: "allow" would skip permission checks for the whole `&&` chain.
-    writeln!(
-        out,
-        "{}",
-        serde_json::json!({
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "updatedInput": serde_json::Value::Object(updated),
-            }
-        })
-    )?;
+    let mut hook_out = serde_json::json!({ "hookEventName": "PreToolUse", "updatedInput": serde_json::Value::Object(updated) });
+    if let Some(d) = decision {
+        hook_out["permissionDecision"] = d.into();
+    }
+    writeln!(out, "{}", serde_json::json!({ "hookSpecificOutput": hook_out }))?;
     Ok(exit::SUCCESS)
 }
 

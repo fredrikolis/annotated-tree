@@ -14,6 +14,10 @@ to [Semantic Versioning](https://semver.org/).
 - `edit-hook --claude`, a `PostToolUse` hook entry point: reports a just-written file's annotation
   defect, informing but never blocking.
 - `bash-annotator --install-claude-hook` now writes a third entry, for `edit-hook --claude`.
+- `bash-annotator --install-codex-hook` and `--uninstall-codex-hook`, for Codex's `hooks.json`.
+- `.codex/hooks.json`, what `--install-codex-hook` writes.
+- `bash-annotator --rewrite-codex-tool-call`, the Codex `PreToolUse` entry point.
+- `edit-hook --codex`, for each file a Codex `apply_patch` adds or updates.
 
 ### Changed
 - **BREAKING:** `-L 0` is uncapped; it previously floored to `-L 1`.
@@ -22,6 +26,9 @@ to [Semantic Versioning](https://semver.org/).
 - The comment-budget gate is `comment-crusher`, configured by `.comment-crusher.toml`, replacing
   `cargo-lint-extra`. `--githook-guide` names it.
 - Commit gates declare `git-agent-verdict` 2.0's bundled standards.
+
+### Fixed
+- The rewritten pipeline runs under POSIX `sh` and zsh, not only bash.
 
 ### Removed
 - `docs/repo-standards.md` and `docs/communication-style.md`, now bundled standards.

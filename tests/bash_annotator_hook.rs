@@ -4,7 +4,11 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn hook(event: &str) -> (String, i32) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_annotated-tree")).args(["bash-annotator", "--rewrite-tool-call"]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().expect("spawn injector");
+    hook_via("--rewrite-tool-call", event)
+}
+
+fn hook_via(verb: &str, event: &str) -> (String, i32) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_annotated-tree")).args(["bash-annotator", verb]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().expect("spawn injector");
     child.stdin.take().expect("stdin").write_all(event.as_bytes()).expect("write event");
     let out = child.wait_with_output().expect("wait");
     (String::from_utf8_lossy(&out.stdout).into_owned(), out.status.code().unwrap_or(-1))
@@ -20,11 +24,11 @@ fn wraps(command: &serde_json::Value, pipeline: &str) -> bool {
     let Some(c) = command.as_str() else {
         return false;
     };
-    c.starts_with(&format!("( {pipeline} | "))
+    c.starts_with(&format!("( exec 4>&1; __rc=$( {{ {{ __s=0; {pipeline} || __s=$?; "))
         && c.contains("bash-annotator --annotate-tool-output")
-        // Exit code from PIPESTATUS; equivalence.rs checks the CODE itself.
-        && c.contains("PIPESTATUS")
-        && c.contains("exit $__rc )")
+        // Exit code carried out on fd 3; equivalence.rs checks the CODE itself.
+        && c.contains("echo $__s >&3")
+        && c.contains("exit ${__rc:-1} )")
 }
 
 #[test]
@@ -105,4 +109,27 @@ fn a_command_carrying_non_ascii_still_gets_a_hook_response() {
     let (out, code) = hook(r#"{"tool_name":"Bash","tool_input":{"command":"grep -rn \"— the\" src"}}"#);
     assert_eq!(code, 0);
     assert!(wraps(&json(&out)["hookSpecificOutput"]["updatedInput"]["command"], "grep -rn \"\u{2014} the\" src"), "non-ASCII command was not handled: {out}");
+}
+
+/// Field for field what Codex 0.162 sends for its `exec_command` tool, which hooks see as `Bash`.
+const CODEX_EVENT: &str = r#"{"session_id":"s","turn_id":"t","transcript_path":null,"cwd":"/tmp","hook_event_name":"PreToolUse","model":"gpt-5","permission_mode":"default","tool_name":"Bash","tool_input":{"command":"ls src"},"tool_use_id":"call_1"}"#;
+
+#[test]
+fn a_codex_rewrite_carries_the_allow_codex_requires_beside_it() {
+    let (out, code) = hook_via("--rewrite-codex-tool-call", CODEX_EVENT);
+    assert_eq!(code, 0);
+    let hook_out = &json(&out)["hookSpecificOutput"];
+    assert_eq!(hook_out["hookEventName"], "PreToolUse");
+    // Codex discards an updatedInput that arrives without it.
+    assert_eq!(hook_out["permissionDecision"], "allow");
+    assert!(wraps(&hook_out["updatedInput"]["command"], "ls src"), "unexpected rewrite: {hook_out}");
+}
+
+#[test]
+fn the_codex_rewriter_is_silent_where_the_claude_one_is() {
+    for event in [CODEX_EVENT.replace("ls src", "cat file.txt"), CODEX_EVENT.replace("ls src", "ls > out.txt"), CODEX_EVENT.replace("\"Bash\"", "\"apply_patch\""), "not json".to_string()] {
+        let (out, code) = hook_via("--rewrite-codex-tool-call", &event);
+        assert_eq!(out, "", "expected silence for {event}");
+        assert_eq!(code, 0);
+    }
 }

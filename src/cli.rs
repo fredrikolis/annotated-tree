@@ -128,7 +128,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Put each file's annotation in your agent's Bash tool results.
+    /// Put each file's annotation in your agent's shell tool results (Claude Code or Codex).
     BashAnnotator(BashAnnotator),
     /// Remove first-line annotations from FILEs, and from DIRs under -R.
     Strip(Strip),
@@ -158,8 +158,12 @@ pub struct EditHook {
     /// NotebookEdit) on stdin. Prints a JSON envelope naming the file's annotation defect if it
     /// has one, and nothing if it doesn't. Always exits 0 — the pre-commit gate is what refuses
     /// a bad annotation; this only tells you sooner, while the change is still live in context.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "codex")]
     pub claude: bool,
+
+    /// The same, for one Codex apply_patch event: every file the patch adds or updates is checked.
+    #[arg(long)]
+    pub codex: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -173,6 +177,15 @@ pub struct BashAnnotator {
     #[arg(long)]
     pub uninstall_claude_hook: bool,
 
+    /// Add the same three entries for Codex — PreToolUse, SessionStart and PostToolUse — to FILE
+    /// [default: $CODEX_HOME/hooks.json, else ~/.codex/hooks.json]. Codex runs them once trusted.
+    #[arg(long)]
+    pub install_codex_hook: bool,
+
+    /// Remove the Codex hook entries this tool added from FILE, and nothing else.
+    #[arg(long)]
+    pub uninstall_codex_hook: bool,
+
     /// Print what each quoted CMD would become. Substitutes nothing and runs nothing.
     #[arg(long)]
     pub check: bool,
@@ -180,6 +193,11 @@ pub struct BashAnnotator {
     /// Hook entry point: one PreToolUse event on stdin, an updatedInput or nothing out.
     #[arg(long)]
     pub rewrite_tool_call: bool,
+
+    /// Codex's form of --rewrite-tool-call: Codex applies an updatedInput only beside
+    /// `permissionDecision: "allow"`, which there still leaves the command to its approval policy.
+    #[arg(long)]
+    pub rewrite_codex_tool_call: bool,
 
     /// Print the once-per-session announcement to stdout and exit: the SessionStart hook entry
     /// runs this, so what the agent is told is what you see here.
